@@ -132,7 +132,9 @@ export async function POST(req: Request) {
         sizeEn: String(t.sizeEn || t.size || ''),
         ...(t.exprSheet ? { exprSheet: String(t.exprSheet) } : {}),
         ...(expr ? { expression: { kr: String(expr.kr), en: String(expr.en) } } : {}),
-        ...(outfit ? { outfit: { code: outfit.code, desc: outfit.desc, descEn: outfit.descEn || '' } } : {}),
+        ...(outfit
+          ? { outfit: { code: outfit.code, desc: outfit.desc, descEn: outfit.descEn || '', ...(outfit.cropUrl ? { cropUrl: outfit.cropUrl } : {}) } }
+          : {}),
       });
     }
 

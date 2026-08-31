@@ -104,8 +104,10 @@ export interface Outfit {
   desc: string;
   /** 영문 표기 — 프롬프트에 들어간다 */
   descEn: string;
-  /** web/img/none/clothes/<code>.jpg */
+  /** web/img/none/clothes/<code>.jpg — 얼굴 포함 원본. 참조로 쓰지 말 것. */
   imageUrl: string;
+  /** 얼굴을 잘라낸 의상 전용 크롭 — 생성 참조는 반드시 이쪽 (레퍼 얼굴 오염 방지) */
+  cropUrl?: string;
 }
 
 export interface TalentDoc {

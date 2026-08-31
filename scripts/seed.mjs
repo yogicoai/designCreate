@@ -245,7 +245,7 @@ for (const cat of A.models.CATEGORIES || []) {
 const OUTFIT_RE = /\b([A-D]_[WM]_C_\d{2}|KID_[AB]_\d{2})\b/;
 const EXPRESSIONS = ['은은한미소', '밝은미소', '곁눈질미소', '따뜻한미소', '자연스러운미소', '미소'];
 
-function parseRecipe(spec) {
+function parseRecipe(spec, productHex) {
   const s = String(spec || '');
   const codes = new Set();
 
@@ -271,25 +271,41 @@ function parseRecipe(spec) {
     if (km) codes.add(`K_${km[1]}`);
   }
 
+  // 포즈(조인 가능)와 생성 방식(포토에딧/jp레퍼)은 다른 축이다.
+  // 섞어 넣으면 pose_refs 조인이 깨진다 (전수조사 비평에서 33건 실측).
   let pose;
+  let method;
   const pn = s.match(/포즈\s*(\d+)/) || s.match(/\bp(\d+)\b/);
   if (pn) pose = `p${pn[1]}`;
   else if (/포즈레퍼|poseref/i.test(s)) pose = 'poseref';
-  // yogibo.jp 실사 레퍼 기반 컷 ('jp1', 'prm_7' 등)
-  else if (/\bjp(\d+)\b/i.test(s)) pose = `jp${s.match(/\bjp(\d+)\b/i)[1]}`;
-  else if (/레퍼\s*원본|포토\s*에딧/.test(s)) pose = 'photoedit';
+  if (/\bjp(\d+)\b/i.test(s)) method = `jp${s.match(/\bjp(\d+)\b/i)[1]}`;
+  else if (/레퍼\s*원본|포토\s*에딧/.test(s)) method = 'photoedit';
 
   const expression = EXPRESSIONS.find((e) => s.replace(/\s/g, '').includes(e));
-  const background = s.match(/#([0-9a-fA-F]{6})/)?.[0];
+
+  // 배경 hex — spec 관행상 제품색이 먼저, 배경(#f2f2f4)이 마지막에 온다.
+  // 첫 매치를 잡으면 제품색이 배경으로 오염된다 (85건 실측). 마지막 hex 를 잡되
+  // 그것이 제품색과 같으면(배경 언급 없는 spec) 배경 없음으로 둔다.
+  const allHex = [...s.matchAll(/#([0-9a-fA-F]{6})/g)].map((m) => m[0]);
+  const lastHex = allHex.length ? allHex[allHex.length - 1] : undefined;
+  const background =
+    lastHex && lastHex.toLowerCase() !== String(productHex || '').toLowerCase() ? lastHex : undefined;
 
   return {
     talentCodes: [...codes],
     ...(pose ? { pose } : {}),
+    ...(method ? { method } : {}),
     ...(expression ? { expression } : {}),
     ...(outfit ? { outfit } : {}),
     ...(background ? { background } : {}),
   };
 }
+
+/** cuts.line → pose_refs.key 접두사. 조인에 반드시 필요한데 어디에도 없던 표. */
+const POSE_PREFIX = {
+  Max: 'max', Slim: 'slim', Midi: 'midi', Mini: 'mini', Drop: 'dr',
+  Lounger: 'lg', Pyramid: 'py', Pod: 'pd', Double: 'db', Support: 'sp',
+};
 
 const now = new Date();
 const cuts = [];
@@ -299,6 +315,11 @@ for (const p of A.thumbs.PRODUCTS) {
     if (c.url) entries.push({ url: c.url, spec: c.spec || '' });
     for (const cu of c.cuts || []) entries.push({ url: cu.url, spec: cu.spec || '' });
     for (const e of entries) {
+      const recipe = parseRecipe(e.spec, c.hex);
+      // 조인 가능한 정규화 포즈 키 (예: Lounger + p5 -> lg_p5)
+      if (recipe.pose && /^p\d+$/.test(recipe.pose) && POSE_PREFIX[p.product]) {
+        recipe.poseKey = `${POSE_PREFIX[p.product]}_${recipe.pose}`;
+      }
       cuts.push({
         line: p.product,
         colorKey: c.key,
@@ -306,7 +327,7 @@ for (const p of A.thumbs.PRODUCTS) {
         hex: c.hex || '',
         url: e.url,
         spec: e.spec,
-        recipe: parseRecipe(e.spec),
+        recipe,
         source: 'legacy',
         hidden: false,
         note: '',

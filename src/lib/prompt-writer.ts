@@ -12,7 +12,7 @@ import Anthropic from '@anthropic-ai/sdk';
  * 그래서 참조 목록과 프롬프트를 따로 만들지 않고 여기서 함께 만든다.
  */
 
-export type RefKind = 'base' | 'style' | 'background' | 'shape' | 'pose' | 'usage' | 'talent' | 'swatch';
+export type RefKind = 'base' | 'style' | 'background' | 'shape' | 'pose' | 'usage' | 'talent' | 'outfit' | 'swatch';
 
 export interface RefSlot {
   kind: RefKind;
@@ -76,7 +76,7 @@ export interface TalentSpec {
   exprSheet?: string;
   /** 사용할 표정 패널 */
   expression?: { kr: string; en: string };
-  outfit?: { code: string; desc: string; descEn: string };
+  outfit?: { code: string; desc: string; descEn: string; cropUrl?: string };
 }
 
 export interface GenerationSpec {
@@ -217,6 +217,23 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
         talents.length > 1
           ? `the identity reference for PERSON ${i + 1} (counting people from the LEFT of the base image) — a sheet of ONE model in 8 expressions; use that exact face construction, features, skin tone and hairstyle`
           : 'a reference sheet of ONE model in 8 expressions — use that exact face construction, features, skin tone and hairstyle',
+    });
+  });
+
+  // 의상 크롭 (얼굴 제거본) — 자리가 남을 때만. 원본(imageUrl)은 절대 넣지 않는다:
+  // 레퍼 속 모델 얼굴이 결과에 섞이는 사고가 실측으로 확인돼 있다.
+  talents.forEach((t, i) => {
+    if (!t.outfit?.cropUrl) return;
+    if (slots.length >= MAX_REFS - 1) return; // 스와치 자리는 남겨둔다
+    slots.push({
+      kind: 'outfit',
+      title: `의상 크롭 · ${t.outfit.code}`,
+      url: t.outfit.cropUrl,
+      personIndex: i + 1,
+      role:
+        talents.length > 1
+          ? `the outfit reference for PERSON ${i + 1} — garment only (the face has been cropped out on purpose; take ONLY the clothing design and colours from it)`
+          : 'the outfit reference — garment only (the face has been cropped out on purpose; take ONLY the clothing design and colours from it)',
     });
   });
 
