@@ -42,3 +42,7 @@ next-env.d.ts
 !.env.local.example
 out/
 dev.log
+
+# 임시 점검 스크립트 (서브에이전트/수동 확인용)
+_chk*.mjs
+*.tmp.json
