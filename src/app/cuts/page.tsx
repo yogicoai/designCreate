@@ -31,14 +31,21 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
     getTalents(),
   ]);
 
-  // 생성일자별로 묶는다 — 게시판의 축은 날짜다
+  /*
+   * 생성일자별로 묶는다 — 게시판의 축은 날짜다.
+   * 단 이관(legacy) 컷의 createdAt 은 "시드를 돌린 날"이라 실제 작업일이 아니다.
+   * 날짜 그룹에 섞으면 이관일에 151컷을 만든 것처럼 보이므로 별도 섹션으로 뺀다.
+   */
+  const LEGACY_KEY = '__legacy__';
   const byDay = new Map<string, typeof cuts>();
   for (const c of cuts) {
-    const day = String(c.createdAt).slice(0, 10);
+    const day = c.source === 'legacy' ? LEGACY_KEY : String(c.createdAt).slice(0, 10);
     if (!byDay.has(day)) byDay.set(day, []);
     byDay.get(day)!.push(c);
   }
-  const days = [...byDay.keys()].sort().reverse();
+  // 생성분 날짜는 최신순, 이관 섹션은 맨 뒤
+  const days = [...byDay.keys()].filter((d) => d !== LEGACY_KEY).sort().reverse();
+  if (byDay.has(LEGACY_KEY)) days.push(LEGACY_KEY);
 
   const generated = cuts.filter((c) => c.source === 'imgcreate').length;
   const activeFilter = line || colorKey || talentCode || source;
@@ -97,13 +104,15 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
 
       {days.map((day) => {
         const list = byDay.get(day)!;
-        const isNew = list.some((c) => c.source === 'imgcreate');
+        const isLegacy = day === LEGACY_KEY;
         return (
           <section key={day} className="mb-7">
             <div className="flex items-baseline gap-2.5 mb-3">
-              <h2 className="h-section">{dayLabel(day)}</h2>
+              <h2 className="h-section">{isLegacy ? '기존 이관 컷' : dayLabel(day)}</h2>
               <span className="text-[12px]" style={{ color: 'var(--text-mute)' }}>{list.length}컷</span>
-              {isNew && <span className="chip" style={{ color: 'var(--accent)' }}>생성</span>}
+              {isLegacy
+                ? <span className="text-[11px]" style={{ color: 'var(--text-mute)' }}>youtube 프로젝트에서 가져온 기존 작업분</span>
+                : <span className="chip" style={{ color: 'var(--accent)' }}>생성</span>}
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
               {list.map((c) => (
