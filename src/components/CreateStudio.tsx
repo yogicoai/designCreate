@@ -51,10 +51,11 @@ const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
 ];
 
 /**
- * 장당 단가 — Pro 2K 출력 $0.134 + 참조 8장·프롬프트 입력 ≈ $0.010, ₩1,400/$ 환산.
- * (출력만 치면 ₩188이지만 참조 입력까지 정직하게 반영)
+ * 장당 단가 — 출력 + 참조 8장·프롬프트 입력 포함, ₩1,400/$ 환산.
+ *   pro   = gemini-3-pro-image 2K ($0.134 + 입력) ≈ ₩200 — 다중 참조 아이덴티티 유지 최상
+ *   draft = gemini-3.1-flash-image 2K ($0.101 + 입력) ≈ ₩145 — 구도·분위기 초안용
  */
-const WON_PER_IMAGE = 200;
+const WON_BY_TIER = { pro: 200, draft: 145 } as const;
 const ORD = ['①', '②', '③', '④'];
 const MY_SIZE_GROUP = '내 규격';
 
@@ -116,6 +117,8 @@ export default function CreateStudio(p: Props) {
   const [variationIds, setVariationIds] = useState<Record<string, string>>({});
   const [direction, setDirection] = useState('');
   const [samples, setSamples] = useState(1);
+  /** 품질 티어 — 초안은 Flash 로 싸게 돌려보고, 확정본만 Pro 로 */
+  const [tier, setTier] = useState<'pro' | 'draft'>('pro');
   const [showStaging, setShowStaging] = useState(false);
 
   const [uploadNote, setUploadNote] = useState('');
@@ -224,6 +227,7 @@ export default function CreateStudio(p: Props) {
       ...(hasBaseUpload && editTargets.length ? { editTargets } : {}),
       variationIds: Object.values(variationIds).filter((v) => v && !v.endsWith(':auto')),
       ...(direction.trim() ? { direction: direction.trim() } : {}),
+      tier,
     };
   }
 
@@ -281,7 +285,7 @@ export default function CreateStudio(p: Props) {
     }
   }
 
-  const cost = samples * WON_PER_IMAGE;
+  const cost = samples * WON_BY_TIER[tier];
   const isMySize = size?.group === MY_SIZE_GROUP;
 
   return (
@@ -688,6 +692,20 @@ export default function CreateStudio(p: Props) {
                 ? '프롬프트 확인 (Opus · 약 ₩50)'
                 : '프롬프트 확인 (무료)'}
           </button>
+          <div className="flex gap-1.5">
+            {([['pro', '고품질 · ₩200'], ['draft', '초안 · ₩145']] as const).map(([v, l]) => (
+              <button key={v} onClick={() => setTier(v)} className="chip flex-1 justify-center"
+                      title={v === 'pro' ? '최종 컷용 — 얼굴·제품 참조 유지력 최상 (Pro 2K)' : '구도·분위기 확인용 — 참조 유지력이 낮아 얼굴이 덜 붙을 수 있음 (Flash 2K)'}
+                      style={tier === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {tier === 'draft' && (
+            <div className="text-[10px] px-1" style={{ color: 'var(--warn)' }}>
+              초안 모드는 얼굴·제품 참조 유지력이 낮습니다. 확정본은 고품질로 다시 뽑으세요.
+            </div>
+          )}
           <div className="flex gap-2">
             <select className="input flex-1" value={samples} onChange={(e) => setSamples(Number(e.target.value))}>
               <option value={1}>1장</option>
