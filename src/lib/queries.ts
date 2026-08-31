@@ -127,6 +127,27 @@ export async function getUsageShots(line?: string): Promise<WithId<UsageShotDoc>
   return docs.map((d) => plain(d)!);
 }
 
+/** 레퍼런스 보관함 항목 */
+export interface ReferenceDoc {
+  url: string;
+  title: string;
+  width: number;
+  height: number;
+  createdAt: Date | string | null;
+}
+
+export async function getReferences(limit = 80): Promise<ReferenceDoc[]> {
+  const col = await collection<ReferenceDoc & { active?: boolean }>('references');
+  const docs = await col.find({ active: { $ne: false } }).sort({ createdAt: -1 }).limit(limit).toArray();
+  return docs.map((d) => ({
+    url: d.url,
+    title: d.title ?? '',
+    width: d.width ?? 0,
+    height: d.height ?? 0,
+    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : null,
+  }));
+}
+
 /** 대시보드 집계 — 한 번에 필요한 숫자를 모아온다 */
 export async function getOverview() {
   const [products, talents, poses, cutsCol] = await Promise.all([

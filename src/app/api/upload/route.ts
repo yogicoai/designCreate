@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { uploadBuffer, REF_SUBPATH, ftpConfigured } from '@/lib/ftp';
+import { getDb } from '@/lib/db';
 
 /**
  * POST /api/upload — MD 가 올린 레퍼런스 이미지를 cafe24 FTP 로 올리고 공개 URL 을 돌려준다.
@@ -60,6 +61,20 @@ export async function POST(req: Request) {
     const url = await uploadBuffer(REF_SUBPATH, `ref_${stamp}_${rand}.${ext}`, buf);
 
     const title = String(form?.get('title') || file.name || '레퍼런스').slice(0, 120);
+
+    // 보관함 자동 등록 — 다음 작업에서 재업로드 없이 골라 쓸 수 있게.
+    // 등록 실패가 업로드 자체를 실패시키면 안 되므로 조용히 넘어간다.
+    try {
+      const db = await getDb();
+      await db.collection('references').updateOne(
+        { url },
+        { $set: { url, title, width: meta.width ?? 0, height: meta.height ?? 0, bytes: buf.length, active: true },
+          $setOnInsert: { createdAt: new Date() } },
+        { upsert: true },
+      );
+    } catch (e) {
+      console.warn('[upload] 보관함 등록 실패(업로드는 성공):', (e as Error).message);
+    }
 
     return NextResponse.json({
       ok: true,

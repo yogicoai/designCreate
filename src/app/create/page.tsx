@@ -1,13 +1,13 @@
 import CreateStudio from '@/components/CreateStudio';
 import {
   getProducts, getTalents, getPoseRefs, getSizePresets,
-  getVariationOptions, getPreservationModes, getExpressions, getCuts,
+  getVariationOptions, getPreservationModes, getExpressions, getCuts, getReferences,
 } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CreatePage() {
-  const [products, talents, poses, sizes, variations, preservations, expressions, recentCuts] = await Promise.all([
+  const [products, talents, poses, sizes, variations, preservations, expressions, recentCuts, references] = await Promise.all([
     getProducts(),
     getTalents(),
     getPoseRefs(),
@@ -16,6 +16,7 @@ export default async function CreatePage() {
     getPreservationModes(),
     getExpressions(),
     getCuts({ limit: 400 }),
+    getReferences(80),
   ]);
 
   // 베이스로 쓸 수 있는 컷만 (라인이 있는 것) — 클라이언트로 넘기는 양을 줄인다
@@ -40,6 +41,7 @@ export default async function CreatePage() {
       preservations={preservations}
       expressions={expressions}
       baseCuts={baseCuts}
+      references={references}
     />
   );
 }

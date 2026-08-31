@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useRef } from 'react';
 import type { ProductDoc, TalentDoc, PoseRefDoc, ExpressionDoc } from '@/lib/types';
-import type { SizePresetDoc, VariationDoc, PreservationDoc } from '@/lib/queries';
+import type { SizePresetDoc, VariationDoc, PreservationDoc, ReferenceDoc } from '@/lib/queries';
 import { shrinkForUpload, formatBytes } from '@/lib/client-image';
 
 type WithId<T> = T & { id: string };
@@ -20,6 +20,8 @@ interface Props {
   preservations: WithId<PreservationDoc>[];
   expressions: WithId<ExpressionDoc>[];
   baseCuts: BaseCut[];
+  /** 자산관리 > 레퍼런스 보관함 (생성 중 업로드분도 자동 등록됨) */
+  references: ReferenceDoc[];
 }
 
 type RefRole = 'style' | 'base' | 'background';
@@ -48,6 +50,7 @@ const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
 /** 장당 단가 — Pro 2K 기준 (₩1,400/$ 환산) */
 const WON_PER_IMAGE = 188;
 const ORD = ['①', '②', '③', '④'];
+const MY_SIZE_GROUP = '내 규격';
 
 interface DryRunResult {
   prompt: string;
@@ -61,11 +64,11 @@ interface GenResult {
   error?: string; blockReason?: string | null;
 }
 
-function Section({ n, title, hint, children, right }: {
-  n: string; title: string; hint?: string; children: React.ReactNode; right?: React.ReactNode;
+function Section({ n, title, hint, children, right, id }: {
+  n: string; title: string; hint?: string; children: React.ReactNode; right?: React.ReactNode; id?: string;
 }) {
   return (
-    <section className="card p-4">
+    <section className="card p-4" id={id}>
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
           <div className="flex items-center gap-2">
@@ -84,9 +87,13 @@ function Section({ n, title, hint, children, right }: {
 
 export default function CreateStudio(p: Props) {
   const [mode, setMode] = useState<'thumbnail' | 'banner'>('thumbnail');
+  /** 프리셋 목록 — 커스텀 규격을 저장하면 여기 즉시 추가된다 */
+  const [sizes, setSizes] = useState<WithId<SizePresetDoc>[]>(p.sizes);
   const [sizeValue, setSizeValue] = useState(p.sizes.find((s) => s.value === '1000x1000')?.value ?? p.sizes[0]?.value ?? '');
   const [customW, setCustomW] = useState('1200');
   const [customH, setCustomH] = useState('800');
+  const [sizeName, setSizeName] = useState('');
+  const [savingSize, setSavingSize] = useState(false);
   const [line, setLine] = useState('');
   const [colorKey, setColorKey] = useState('');
   /** 선택 순서 유지 — ①②③④ = 사진 왼쪽부터 */
@@ -96,6 +103,8 @@ export default function CreateStudio(p: Props) {
   const [poseRefKey, setPoseRefKey] = useState('');
   const [shapeRefKey, setShapeRefKey] = useState('');
   const [uploads, setUploads] = useState<UploadedRef[]>([]);
+  const [library, setLibrary] = useState<ReferenceDoc[]>(p.references);
+  const [showLibrary, setShowLibrary] = useState(false);
   const [preservation, setPreservation] = useState('similar');
   const [editTargets, setEditTargets] = useState<EditTarget[]>([]);
   const [variationIds, setVariationIds] = useState<Record<string, string>>({});
@@ -112,7 +121,7 @@ export default function CreateStudio(p: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const product = p.products.find((x) => x.line === line);
-  const size = p.sizes.find((s) => s.value === sizeValue);
+  const size = sizes.find((s) => s.value === sizeValue);
   const linePoses = p.poses.filter((x) => x.line === line);
   const hasBaseUpload = uploads.some((u) => u.role === 'base');
   const lineCuts = useMemo(
@@ -122,9 +131,9 @@ export default function CreateStudio(p: Props) {
 
   const sizeGroups = useMemo(() => {
     const m = new Map<string, WithId<SizePresetDoc>[]>();
-    for (const s of p.sizes) { if (!m.has(s.group)) m.set(s.group, []); m.get(s.group)!.push(s); }
+    for (const s of sizes) { if (!m.has(s.group)) m.set(s.group, []); m.get(s.group)!.push(s); }
     return [...m.entries()];
-  }, [p.sizes]);
+  }, [sizes]);
 
   const varAxes = useMemo(() => {
     const m = new Map<string, WithId<VariationDoc>[]>();
@@ -140,6 +149,47 @@ export default function CreateStudio(p: Props) {
       const t = p.talents.find((x) => x.code === code);
       return [...cur, { code, expression: 'soft_smile', outfitCode: t?.outfits[0]?.code ?? '' }];
     });
+  }
+
+  /** 보관함에서 현재 작업으로 가져오기 (중복 제외) */
+  function addFromLibrary(r: ReferenceDoc) {
+    setUploads((cur) => (cur.some((u) => u.url === r.url) ? cur : [...cur, { url: r.url, title: r.title, role: 'style' }]));
+  }
+
+  /** 직접 지정 규격을 '내 규격' 프리셋으로 저장 */
+  async function saveCustomSize() {
+    setSavingSize(true); setErr('');
+    try {
+      const res = await fetch('/api/size-presets', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ width: Number(customW), height: Number(customH), label: sizeName }),
+      });
+      const json = await res.json();
+      if (!json.ok) { setErr(json.error || '저장 실패'); return; }
+      const preset = json.preset as WithId<SizePresetDoc>;
+      if (!json.existed) setSizes((cur) => [...cur, preset]);
+      setSizeValue(preset.value); // 저장 즉시 그 규격이 선택된다
+      setSizeName('');
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setSavingSize(false);
+    }
+  }
+
+  /** '내 규격' 프리셋 삭제 */
+  async function deleteMySize(value: string) {
+    if (!window.confirm('이 규격을 삭제할까요?')) return;
+    const res = await fetch('/api/size-presets', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value }),
+    });
+    if ((await res.json()).ok) {
+      setSizes((cur) => cur.filter((s) => s.value !== value));
+      setSizeValue('1000x1000');
+    }
   }
 
   function payload(dryRun: boolean) {
@@ -199,8 +249,14 @@ export default function CreateStudio(p: Props) {
         fd.append('title', f.name);
         const res = await fetch('/api/upload', { method: 'POST', body: fd });
         const json = await res.json();
-        if (json.ok) setUploads((u) => [...u, { url: json.url, title: json.title, role: 'style' }]);
-        else setErr(json.error || '업로드 실패');
+        if (json.ok) {
+          setUploads((u) => [...u, { url: json.url, title: json.title, role: 'style' }]);
+          // 보관함(서버에도 자동 등록됨)에 즉시 반영
+          setLibrary((cur) => [
+            { url: json.url, title: json.title, width: json.width, height: json.height, createdAt: new Date().toISOString() },
+            ...cur.filter((x) => x.url !== json.url),
+          ]);
+        } else setErr(json.error || '업로드 실패');
       }
     } finally {
       setUploading(false);
@@ -209,26 +265,28 @@ export default function CreateStudio(p: Props) {
   }
 
   const cost = samples * WON_PER_IMAGE;
-  const sizeInfo = sizeValue === 'custom'
-    ? null
-    : size && (size.retention < 1 || size.variableHeight)
-      ? size
-      : size;
+  const isMySize = size?.group === MY_SIZE_GROUP;
 
   return (
     <div className="flex h-full">
       {/* ── 좌: 선택 ── */}
       <div className="flex-1 min-w-0 p-7 overflow-y-auto">
-        <header className="mb-5">
-          <h1 className="text-[22px] font-extrabold tracking-tight">이미지 생성</h1>
-          <p className="text-[13px] mt-1" style={{ color: 'var(--text-dim)' }}>
-            모델과 레퍼런스를 고르고 방향만 적으면 됩니다. 프롬프트는 자동으로 만들어집니다.
-          </p>
+        <header className="mb-5 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-[22px] font-extrabold tracking-tight">이미지 생성</h1>
+            <p className="text-[13px] mt-1" style={{ color: 'var(--text-dim)' }}>
+              모델과 레퍼런스를 고르고 방향만 적으면 됩니다. 프롬프트는 자동으로 만들어집니다.
+            </p>
+          </div>
+          {/* 가장 흔한 시작 행동 — 사진 들고 와서 시작. 바로 파일창이 열린다. */}
+          <button className="btn" onClick={() => fileInput.current?.click()} disabled={uploading}>
+            ＋ 레퍼런스로 시작
+          </button>
         </header>
 
         <div className="flex flex-col gap-3 max-w-[680px]">
           {/* ① 용도 · 규격 */}
-          <Section n="1" title="용도와 규격" hint="프리셋에서 고르거나 픽셀을 직접 지정합니다.">
+          <Section n="1" title="용도와 규격" hint="프리셋에서 고르거나 픽셀을 직접 지정합니다. 직접 지정한 규격은 저장해서 다시 쓸 수 있습니다.">
             <div className="flex gap-1.5 mb-3">
               {([['thumbnail', '상품 썸네일'], ['banner', '이벤트 배너 · SNS']] as const).map(([v, l]) => (
                 <button key={v} onClick={() => setMode(v)} className="btn"
@@ -247,32 +305,163 @@ export default function CreateStudio(p: Props) {
                 <option value="custom">📐 규격 직접 입력…</option>
               </optgroup>
             </select>
+
             {sizeValue === 'custom' && (
-              <div className="flex items-center gap-2 mt-2">
-                <input className="input w-[110px]" type="number" min={64} max={8192} value={customW}
-                       onChange={(e) => setCustomW(e.target.value)} placeholder="가로 px" />
-                <span style={{ color: 'var(--text-mute)' }}>×</span>
-                <input className="input w-[110px]" type="number" min={64} max={8192} value={customH}
-                       onChange={(e) => setCustomH(e.target.value)} placeholder="세로 px" />
-                <span className="text-[11px]" style={{ color: 'var(--text-mute)' }}>px</span>
+              <div className="mt-2 flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <input className="input w-[110px]" type="number" min={64} max={8192} value={customW}
+                         onChange={(e) => setCustomW(e.target.value)} placeholder="가로 px" />
+                  <span style={{ color: 'var(--text-mute)' }}>×</span>
+                  <input className="input w-[110px]" type="number" min={64} max={8192} value={customH}
+                         onChange={(e) => setCustomH(e.target.value)} placeholder="세로 px" />
+                  <span className="text-[11px]" style={{ color: 'var(--text-mute)' }}>px</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input className="input flex-1" value={sizeName} maxLength={40}
+                         onChange={(e) => setSizeName(e.target.value)}
+                         placeholder="규격 이름 (선택 — 예: 카카오 채널 배너)" />
+                  <button className="btn" onClick={saveCustomSize} disabled={savingSize}>
+                    {savingSize ? '저장 중…' : '내 규격으로 저장'}
+                  </button>
+                </div>
+                <div className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>
+                  저장하면 &lsquo;{MY_SIZE_GROUP}&rsquo; 그룹에 추가되고 다음부터 목록에서 바로 고를 수 있습니다.
+                </div>
               </div>
             )}
-            {sizeValue !== 'custom' && sizeInfo && (
-              <div className="text-[11px] mt-2 flex gap-3 flex-wrap" style={{ color: 'var(--text-mute)' }}>
-                <span>생성 비율 <b style={{ color: 'var(--text-dim)' }}>{sizeInfo.genAspect}</b></span>
-                {sizeInfo.retention < 1 && (
-                  <span style={{ color: sizeInfo.retention < 0.7 ? 'var(--warn)' : 'var(--text-mute)' }}>
-                    {sizeInfo.cropAxis === 'vertical' ? '세로' : '가로'} {Math.round((1 - sizeInfo.retention) * 100)}% 크롭
-                    {sizeInfo.retention < 0.7 && ' — 손실이 큽니다'}
+
+            {sizeValue !== 'custom' && size && (
+              <div className="text-[11px] mt-2 flex items-center gap-3 flex-wrap" style={{ color: 'var(--text-mute)' }}>
+                <span>생성 비율 <b style={{ color: 'var(--text-dim)' }}>{size.genAspect}</b></span>
+                {size.retention < 1 && (
+                  <span style={{ color: size.retention < 0.7 ? 'var(--warn)' : 'var(--text-mute)' }}>
+                    {size.cropAxis === 'vertical' ? '세로' : '가로'} {Math.round((1 - size.retention) * 100)}% 크롭
+                    {size.retention < 0.7 && ' — 손실이 큽니다'}
                   </span>
                 )}
-                {sizeInfo.variableHeight && <span>세로 가변</span>}
+                {size.variableHeight && <span>세로 가변</span>}
+                {isMySize && (
+                  <button onClick={() => deleteMySize(size.value)} className="text-[10.5px]"
+                          style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                    이 규격 삭제
+                  </button>
+                )}
               </div>
             )}
           </Section>
 
-          {/* ② 제품 */}
-          <Section n="2" title="제품 · 컬러" hint="선택하면 실측 치수·기하 서술·컬러 스와치가 자동으로 들어갑니다.">
+          {/* ② 레퍼런스 — 가장 흔한 시작 행동이라 위로 올렸다 */}
+          <Section n="2" title="레퍼런스 이미지"
+                   hint="새로 올리거나 보관함에서 가져옵니다. 올린 이미지는 자동으로 보관함에 등록돼 다른 썸네일·배너 작업에도 재사용됩니다."
+                   right={
+                     <button className="btn btn-ghost text-[11px]" onClick={() => setShowLibrary((v) => !v)}>
+                       보관함 {showLibrary ? '접기' : `열기 (${library.length})`}
+                     </button>
+                   }>
+            <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} />
+            <div className="flex gap-2 flex-wrap items-start mb-1">
+              <button className="btn" onClick={() => fileInput.current?.click()} disabled={uploading}>
+                {uploading ? '업로드 중…' : '＋ 이미지 추가'}
+              </button>
+            </div>
+            {uploadNote && <div className="text-[10.5px] mb-2" style={{ color: 'var(--ok)' }}>{uploadNote}</div>}
+
+            {showLibrary && (
+              <div className="mb-3 p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                <div className="label mb-1.5">보관함 — 클릭하면 이번 작업에 추가됩니다</div>
+                {library.length ? (
+                  <div className="grid grid-cols-6 gap-1.5 max-h-[180px] overflow-y-auto pr-1">
+                    {library.map((r) => {
+                      const used = uploads.some((u) => u.url === r.url);
+                      return (
+                        <button key={r.url} onClick={() => addFromLibrary(r)} title={r.title} disabled={used}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={r.url} alt={r.title} loading="lazy"
+                               className="w-full aspect-square object-cover rounded-md border"
+                               style={{ borderColor: used ? 'var(--accent)' : 'var(--line)', opacity: used ? 0.45 : 1 }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-[11px] py-2" style={{ color: 'var(--text-mute)' }}>
+                    아직 비어 있습니다. 자산관리 &gt; 레퍼런스에서 미리 등록해둘 수도 있습니다.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {uploads.map((u, i) => (
+              <div key={u.url} className="flex gap-2.5 p-2 rounded-lg mb-2" style={{ background: 'var(--surface-2)' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={u.url} alt={u.title} className="w-[76px] h-[76px] object-cover rounded-lg shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] truncate" style={{ color: 'var(--text-dim)' }}>{u.title}</div>
+                    <button onClick={() => setUploads((a) => a.filter((_, j) => j !== i))}
+                            className="text-[11px] shrink-0" style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                      빼기
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                    {ROLE_META.map((r) => (
+                      <button key={r.value} title={r.desc}
+                              onClick={() => setUploads((a) => a.map((x, j) => j === i ? { ...x, role: r.value } : x))}
+                              className="chip"
+                              style={u.role === r.value ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[10px] mt-1" style={{ color: 'var(--text-mute)' }}>
+                    {ROLE_META.find((r) => r.value === u.role)?.desc}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* base 역할이 있으면: 무엇을 바꿀지 */}
+            {hasBaseUpload && (
+              <div className="mt-2 p-2.5 rounded-lg" style={{ background: 'var(--accent-soft)' }}>
+                <div className="label mb-1.5">이 사진에서 무엇을 바꿀까요 (복수 선택)</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {EDIT_TARGETS.map((t) => {
+                    const on = editTargets.includes(t.value);
+                    return (
+                      <button key={t.value} title={t.desc}
+                              onClick={() => setEditTargets((c) => on ? c.filter((x) => x !== t.value) : [...c, t.value])}
+                              className="chip"
+                              style={on ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--surface)' } : {}}>
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {editTargets.includes('face') || editTargets.includes('person') ? (
+                  <div className="text-[10.5px] mt-2" style={{ color: 'var(--text-dim)' }}>
+                    교체할 모델을 아래 ④에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {uploads.some((u) => u.role !== 'base') && (
+              <div className="mt-2">
+                <div className="label mb-1">분위기 참고를 얼마나 살릴까요</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {p.preservations.map((m) => (
+                    <button key={m.value} onClick={() => setPreservation(m.value)} className="chip"
+                            style={m.value === preservation ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Section>
+
+          {/* ③ 제품 */}
+          <Section n="3" title="제품 · 컬러" hint="선택하면 실측 치수·기하 서술·컬러 스와치가 자동으로 들어갑니다.">
             <select className="input mb-2" value={line} onChange={(e) => { setLine(e.target.value); setColorKey(''); setPoseRefKey(''); setShapeRefKey(''); }}>
               <option value="">— 제품 없음 (인물/분위기만) —</option>
               {p.products.map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>)}
@@ -292,8 +481,8 @@ export default function CreateStudio(p: Props) {
             )}
           </Section>
 
-          {/* ③ 모델 — 다중 선택, 클릭 순서 = 사진 왼쪽부터 */}
-          <Section n="3" title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다. 다시 클릭하면 빠집니다.">
+          {/* ④ 모델 — 다중 선택, 클릭 순서 = 사진 왼쪽부터 */}
+          <Section n="4" title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다. 다시 클릭하면 빠집니다.">
             <div className="flex flex-wrap gap-2 mb-3">
               {p.talents.map((t) => {
                 const idx = picks.findIndex((x) => x.code === t.code);
@@ -343,86 +532,6 @@ export default function CreateStudio(p: Props) {
                     </div>
                   );
                 })}
-              </div>
-            )}
-          </Section>
-
-          {/* ④ 레퍼런스 업로드 — 역할 지정 */}
-          <Section n="4" title="레퍼런스 업로드"
-                   hint="큰 사진도 괜찮습니다 — 브라우저에서 자동으로 줄여서 올립니다. 올린 뒤 역할을 정하세요.">
-            <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} />
-            <div className="flex gap-2 flex-wrap items-start mb-1">
-              <button className="btn" onClick={() => fileInput.current?.click()} disabled={uploading}>
-                {uploading ? '업로드 중…' : '＋ 이미지 추가'}
-              </button>
-            </div>
-            {uploadNote && <div className="text-[10.5px] mb-2" style={{ color: 'var(--ok)' }}>{uploadNote}</div>}
-
-            {uploads.map((u, i) => (
-              <div key={u.url} className="flex gap-2.5 p-2 rounded-lg mb-2" style={{ background: 'var(--surface-2)' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={u.url} alt={u.title} className="w-[76px] h-[76px] object-cover rounded-lg shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-[11px] truncate" style={{ color: 'var(--text-dim)' }}>{u.title}</div>
-                    <button onClick={() => setUploads((a) => a.filter((_, j) => j !== i))}
-                            className="text-[11px] shrink-0" style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                      삭제
-                    </button>
-                  </div>
-                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
-                    {ROLE_META.map((r) => (
-                      <button key={r.value} title={r.desc}
-                              onClick={() => setUploads((a) => a.map((x, j) => j === i ? { ...x, role: r.value } : x))}
-                              className="chip"
-                              style={u.role === r.value ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="text-[10px] mt-1" style={{ color: 'var(--text-mute)' }}>
-                    {ROLE_META.find((r) => r.value === u.role)?.desc}
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {/* base 역할이 있으면: 무엇을 바꿀지 */}
-            {hasBaseUpload && (
-              <div className="mt-2 p-2.5 rounded-lg" style={{ background: 'var(--accent-soft)' }}>
-                <div className="label mb-1.5">이 사진에서 무엇을 바꿀까요 (복수 선택)</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {EDIT_TARGETS.map((t) => {
-                    const on = editTargets.includes(t.value);
-                    return (
-                      <button key={t.value} title={t.desc}
-                              onClick={() => setEditTargets((c) => on ? c.filter((x) => x !== t.value) : [...c, t.value])}
-                              className="chip"
-                              style={on ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--surface)' } : {}}>
-                        {t.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                {editTargets.includes('face') || editTargets.includes('person') ? (
-                  <div className="text-[10.5px] mt-2" style={{ color: 'var(--text-dim)' }}>
-                    교체할 모델을 위 ③에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.
-                  </div>
-                ) : null}
-              </div>
-            )}
-
-            {uploads.some((u) => u.role !== 'base') && (
-              <div className="mt-2">
-                <div className="label mb-1">분위기 참고를 얼마나 살릴까요</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {p.preservations.map((m) => (
-                    <button key={m.value} onClick={() => setPreservation(m.value)} className="chip"
-                            style={m.value === preservation ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
           </Section>
