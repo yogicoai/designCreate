@@ -27,7 +27,7 @@ const PUBLIC_BASE = 'https://yogibo.openhost.cafe24.com/web/design/assets/outfit
 
 // 머리 제거 시작점 — 기본 20%. 롱헤어 모델(여성B·D·아동B 의상)은 머리카락이 가슴까지
 // 내려오므로 더 깊이 자른다. 의상 식별에는 몸통 밴드면 충분하다.
-const CROP_TOP = { default: 0.2, B_W_C_01: 0.26, B_W_C_02: 0.26, D_W_C_01: 0.26, D_W_C_02: 0.26, KID_B_01: 0.26 };
+const CROP_TOP = { default: 0.2, B_W_C_01: 0.26, B_W_C_02: 0.26, D_W_C_01: 0.26, D_W_C_02: 0.26, KID_B_01: 0.26, C_W_C_02: 0.26, D_W_C_03: 0.26 };
 const CROP_BOTTOM = 0.8;
 
 const mongo = new MongoClient(env.MONGODB_URI, { maxPoolSize: 3 });
