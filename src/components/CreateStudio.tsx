@@ -50,8 +50,11 @@ const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
   { value: 'background', label: '배경으로 사용', desc: '공간만 가져오고 인물·제품은 우리 자산으로' },
 ];
 
-/** 장당 단가 — Pro 2K 기준 (₩1,400/$ 환산) */
-const WON_PER_IMAGE = 188;
+/**
+ * 장당 단가 — Pro 2K 출력 $0.134 + 참조 8장·프롬프트 입력 ≈ $0.010, ₩1,400/$ 환산.
+ * (출력만 치면 ₩188이지만 참조 입력까지 정직하게 반영)
+ */
+const WON_PER_IMAGE = 200;
 const ORD = ['①', '②', '③', '④'];
 const MY_SIZE_GROUP = '내 규격';
 

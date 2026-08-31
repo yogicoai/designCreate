@@ -90,7 +90,7 @@ export default function Sidebar() {
       <div className="px-5 py-3 border-t text-[10.5px] leading-relaxed" style={{ borderColor: 'var(--line)', color: 'var(--text-mute)' }}>
         나노바나나 · gemini-3-pro-image
         <br />
-        2K · 약 ₩188/장
+        2K · 약 ₩200/장
       </div>
     </aside>
   );
