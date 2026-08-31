@@ -22,7 +22,8 @@ function Stat({ value, label, sub, accent }: { value: number | string; label: st
 
 export default async function DashboardPage() {
   const o = await getOverview();
-  const recent = await getCuts({ limit: 12 });
+  // 최근 컷은 이 앱이 실제로 생성한 것만 — 이관된 legacy 컷은 갤러리에서 본다
+  const recent = await getCuts({ source: 'imgcreate', limit: 12 });
   const coverage = o.counts.colorSlots ? Math.round((o.counts.coveredSlots / o.counts.colorSlots) * 100) : 0;
 
   return (
@@ -58,27 +59,40 @@ export default async function DashboardPage() {
         {/* 최근 컷 */}
         <section>
           <div className="flex items-baseline justify-between mb-3">
-            <h2 className="h-section">최근 컷</h2>
-            <Link href="/cuts" className="text-[12px]" style={{ color: 'var(--text-mute)' }}>전체 보기 →</Link>
+            <h2 className="h-section">최근 생성 컷</h2>
+            <Link href="/cuts?source=imgcreate" className="text-[12px]" style={{ color: 'var(--text-mute)' }}>전체 보기 →</Link>
           </div>
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
-            {recent.map((c) => (
-              <Link key={c.id} href={`/cuts?line=${c.line}&color=${c.colorKey}`} className="group">
-                {/* 원본이 cafe24 외부 호스트라 next/image 최적화 대신 img 를 쓴다 (URL 이 이미 최적 크기) */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={c.url}
-                  alt={c.spec}
-                  loading="lazy"
-                  className="w-full aspect-square object-cover rounded-lg border transition-colors"
-                  style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
-                />
-                <div className="mt-1.5 text-[11px] truncate" style={{ color: 'var(--text-dim)' }}>
-                  {c.line} · {c.colorName}
-                </div>
-              </Link>
-            ))}
-          </div>
+          {recent.length === 0 ? (
+            <div className="card p-8 text-center">
+              <p className="text-[13px] mb-3" style={{ color: 'var(--text-dim)' }}>
+                아직 이 앱으로 생성한 컷이 없습니다.
+              </p>
+              <Link href="/create" className="btn btn-primary">첫 이미지 생성하기 →</Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+              {recent.map((c) => (
+                <Link key={c.id} href={c.line ? `/cuts?line=${c.line}&color=${c.colorKey}` : '/cuts?source=imgcreate'} className="group">
+                  {/* 원본이 cafe24 외부 호스트라 next/image 최적화 대신 img 를 쓴다 (URL 이 이미 최적 크기) */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={c.url}
+                    alt={c.spec}
+                    loading="lazy"
+                    className="w-full aspect-square object-cover rounded-lg border transition-colors"
+                    style={{ borderColor: 'var(--accent-dim)', background: 'var(--surface-2)' }}
+                  />
+                  <div className="mt-1.5 text-[11px] truncate" style={{ color: 'var(--text-dim)' }}>
+                    {c.line ? `${c.line} · ${c.colorName}` : (c.title || c.spec || '생성 컷')}
+                  </div>
+                  <div className="text-[9.5px]" style={{ color: 'var(--text-mute)' }}>
+                    {String(c.createdAt).slice(0, 10)}
+                    {typeof c.deltaE === 'number' && <span> · ΔE {c.deltaE}</span>}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </section>
 
         <aside className="flex flex-col gap-4">

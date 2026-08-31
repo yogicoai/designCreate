@@ -177,6 +177,8 @@ export interface CutDoc {
   source: 'legacy' | 'imgcreate';
 
   // ── 이 앱이 생성한 컷만 채워지는 필드 ──
+  /** MD 가 붙인 작업 제목 */
+  title?: string;
   prompt?: string;
   aiModel?: string;
   provider?: string;
