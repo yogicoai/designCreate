@@ -1,0 +1,188 @@
+/**
+ * imgCreate 문서 스키마 — 앱(TS)과 시드 스크립트(mjs)가 공유하는 단일 정의.
+ * 검증은 런타임 스키마 대신 이 타입 + 시드의 정규화 함수로 맞춘다.
+ */
+
+/** 제품 컬러 슬롯 — 라인 안의 색상 하나 */
+export interface ProductColor {
+  /** ASCII 키 (FTP 파일명에 쓰임 — 한글 금지) */
+  key: string;
+  /** 표시명 (한글) */
+  name: string;
+  /** 공식 컬러칩 hex */
+  hex: string;
+  /** 대표 컬러 여부 */
+  isRep: boolean;
+  /** Higgsfield Element 토큰 — 70종 중 6종만 보유. 있으면 제품 정확도가 가장 높다. */
+  elementId?: string;
+  /** 360 스프라이트 원본 (프롬프트에 직접 넣으면 안 됨 — 아래 views 를 쓸 것) */
+  sprite360?: string;
+  /** 360에서 뽑아둔 단일 각도 뷰 */
+  views?: Record<string, string>;
+  /**
+   * 컬러 보정 오프셋 (Lab).
+   * 실측 결과 색상별 편차가 다르다(체리레드 ΔE 3~9 / 올리브그린 ΔE 16~21).
+   * 생성 후 제품 영역을 이 값만큼 시프트해 공식 hex 에 맞춘다.
+   */
+  labOffset?: { L: number; a: number; b: number };
+}
+
+/** 제품 기하 서술 — 12차 실측 4종 세트 중 ①③④ (②치수는 dims) */
+export interface ProductGeometry {
+  /** 카테고리 단어 대신 쓰는 기하 서술. "beanbag" 이라고만 하면 둥근 공으로 그려진다. */
+  shape: string;
+  /** NOT 네거티브 */
+  negative: string;
+  /** 사용 자세 / 모드 */
+  modes: string;
+}
+
+export interface ProductDoc {
+  /** 제품 라인 키 — 'Max' | 'Slim' | ... */
+  line: string;
+  emoji: string;
+  /** 화면용 한 줄 설명 */
+  spec: string;
+  /** 실측 치수 */
+  dims: { w?: number; d?: number; h?: number; weight?: number };
+  /** 인체 대비 스케일 앵커 — 모델은 cm 를 못 읽는다 */
+  scalePrompt: string;
+  geometry: ProductGeometry;
+  /** 기본 썸네일 비율 */
+  ratio: string;
+  /** MD 가 지정해둔 추천 모델 (예: '여성A · 여성B · 남성A') */
+  recommendedModels: string;
+  /** 같은 형태의 상위 라인 (Slim/Midi/Mini 는 Max 와 동일 형태, 사이즈만 다름) */
+  sameShapeAs?: string;
+  colors: ProductColor[];
+  order: number;
+  active: boolean;
+}
+
+/** 실사 포즈 레퍼 — 착석 썸네일 품질의 핵심 자산 */
+export interface PoseRefDoc {
+  key: string;
+  /** 소속 제품 라인 */
+  line: string;
+  name: string;
+  /** 모델 제거본 = 제품 형태·눌림(구김) */
+  offUrl: string;
+  /** 모델 포함본 = 포즈·각도·비례 */
+  onUrl: string;
+  note: string;
+  /** '실사' | '실사·남성' | '실사·아동' 등 */
+  tag: string;
+  active: boolean;
+}
+
+/** 전속 모델 아이덴티티 시트 4종 */
+export interface TalentSheets {
+  /** 얼굴 턴어라운드 (5패널) */
+  face?: string;
+  /** 표정 시트 (2x4, 8표정) — 얼굴 드리프트 방지의 핵심. 항상 동반 투입한다. */
+  expr?: string;
+  /** 바디 턴어라운드 (5패널) */
+  body?: string;
+  /** 제품 착석 연출 (2x2) */
+  pose?: string;
+}
+
+export interface TalentDoc {
+  /** 고유 코드 — 'W_A'(여성A) | 'M_A'(남성A) | 'K_B'(아동B) */
+  code: string;
+  /** '여성' | '남성' | '아동' */
+  category: string;
+  /** 카테고리 안의 표시 코드 — 'A' | 'B' | ... */
+  slot: string;
+  name: string;
+  /** 고정 아이덴티티 서술 (락의 핵심) */
+  identity: string;
+  /** 키·체형 — 제품 비례 연출에 필수 */
+  size: string;
+  /** 대표 컷 */
+  rep?: string;
+  sheets: TalentSheets;
+  /** MD 지정 의상 컨셉 */
+  outfits: { code: string; desc: string }[];
+  status: string;
+  order: number;
+  active: boolean;
+}
+
+/** 생성 컷의 레시피 — legacy spec 문자열에서 파싱하거나, 신규 생성 시 직접 기록 */
+export interface CutRecipe {
+  /** 모델 코드 ('W_D' 등). 2인 컷이면 여러 개. */
+  talentCodes: string[];
+  /** 포즈 레퍼 키 또는 번호 ('p4', '포즈레퍼') */
+  pose?: string;
+  /** 표정 ('미소' | '은은한미소' | '밝은미소' | '곁눈질미소' | '따뜻한미소') */
+  expression?: string;
+  /** 의상 코드 ('D_W_C_01' 등) */
+  outfit?: string;
+  /** 배경 hex ('#f2f2f4') */
+  background?: string;
+}
+
+/** 생성에 실제로 넣은 입력 이미지 1장 — 삭제·수정에 흔들리지 않게 URL 을 스냅샷으로 박아둔다 */
+export interface InputImage {
+  /** base=베이스 컷 / shape=형태 레퍼 / pose=포즈 레퍼 / talent=모델 시트 / swatch=컬러 스와치 */
+  kind: 'base' | 'shape' | 'pose' | 'talent' | 'swatch' | 'style';
+  title: string;
+  url: string;
+  role?: string;
+}
+
+export interface CutDoc {
+  line: string;
+  colorKey: string;
+  colorName: string;
+  hex: string;
+  /** 최종 이미지 URL (cafe24) */
+  url: string;
+  /** 원문 스펙 문자열 (legacy 이관분은 여기에 원본이 그대로 남는다) */
+  spec: string;
+  recipe: CutRecipe;
+  /** 'legacy' = youtube 에서 이관 / 'imgcreate' = 이 앱이 생성 */
+  source: 'legacy' | 'imgcreate';
+
+  // ── 이 앱이 생성한 컷만 채워지는 필드 ──
+  prompt?: string;
+  aiModel?: string;
+  provider?: string;
+  inputImages?: InputImage[];
+  width?: number;
+  height?: number;
+  /** 컬러 보정 적용 후 실측 ΔE */
+  deltaE?: number;
+
+  hidden: boolean;
+  note: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ColorChipDoc {
+  id: string;
+  name: string;
+  hex: string;
+  note: string;
+}
+
+/** 전 컷 공통 규칙 — 구 CAUTIONS. MD 가 화면에서 켜고 끌 수 있게 데이터로 둔다. */
+export interface HouseRuleDoc {
+  order: number;
+  /** 화면 표시용 한글 원문 */
+  kr: string;
+  /** 프롬프트에 실제로 들어가는 영문 */
+  en: string;
+  /** ★ 표시된 필수 규칙 여부 */
+  critical: boolean;
+  enabled: boolean;
+}
+
+export interface ApiUsageDoc {
+  key: string;
+  count: number;
+  limit: number;
+  updatedAt: Date;
+}

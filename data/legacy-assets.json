@@ -1,0 +1,2486 @@
+{
+  "thumbs": {
+    "RECIPE": [
+      {
+        "n": "①",
+        "t": "눌림 형태 레퍼 (구김)",
+        "d": "사람 지운 \"빈백 단독 눌림\" 이미지 → 실제 앉았을 때의 구김·압축 물리 재현 (인물 오염 0)",
+        "c": "#26A69A"
+      },
+      {
+        "n": "②",
+        "t": "제품 색상 / Element",
+        "d": "레지스트리의 제품 색상 뷰·Element 락 → 정확한 색상·형태·로고",
+        "c": "#FFB74D"
+      },
+      {
+        "n": "③",
+        "t": "모델 (선택)",
+        "d": "전속 모델 얼굴/헤어/체형 앵커 → 착석 라이프스타일. 제품 단독이면 생략",
+        "c": "#7E57C2"
+      }
+    ],
+    "CAUTIONS": [
+      "★ 모델 표정은 기본 \"자연스러운 미소\"(은은하게 웃는 표정) — 무표정 금지(전 컷 공통)",
+      "★ 얼굴 드리프트 방지: 모델별 \"표정 시트(expr, /models·8표정)\"를 identity+표정 앵커로 함께 투입하고 원하는 패널(옅은미소/밝은미소/놀람 등) 지정. 얼굴 턴어라운드만+프롬프트\"smile\"는 얼굴 흔들림 위험. expr시트 파일=B_A_expr/B_B_expr/B_C_expr/B_D_expr/M_A_expr",
+      "등받이 top은 프롬프트로 모양을 말로 덧씌우지 말고 \"베이스프레임 그대로 복사\"가 원칙(내가 둥근돔/뾰족 등으로 묘사하면 오히려 망가짐). 포즈3=뒤로 말리는 둥근 크레스트(파도 마루/쉼표, 둥근 공·뾰족 삼각 아님) / 포즈2=뒤로 접힘 / 포즈1=길고 낮은 테이퍼",
+      "각도·구도·앉는 연출이 중요한 포즈는 \"형태 레퍼\"가 아니라 \"원본 포즈 프레임(모델 포함)\"을 베이스로 넣어 각도락 후 얼굴/의상/색/배경만 교체",
+      "실제 Max엔 없는 지퍼/봉제선 넣지 않기(원단 매끈·연속)",
+      "실제 Max 비례(약 170×70×45cm) ↔ 모델 신체 사이즈 반영 — \"넓적\"하게 크지 않게",
+      "모델별 의상 매핑 정확히(A의상을 D에 쓰는 식 오사용 금지)",
+      "★ 배경색은 순백이 아니라 #f2f2f4 (연한 라이트그레이 스튜디오) — 이제부터 전 컷 공통",
+      "2048 무손실 업로드 — 일부러 사이즈 줄이지 않기",
+      "생성 전 스펙(색+포즈+모델+의상) 재확인 + 크레딧(잔액·차감) 고지 후 진행"
+    ],
+    "CANDIDATES": [
+      {
+        "key": "navy_c_p2",
+        "name": "C · 네이비 · 포즈2 (각도락)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_navy_c_p2.png?v=2",
+        "note": "체어형 · ¾측면·접힘top 정확 · 지퍼X · C의상(화이트티+네이비슬랙스)"
+      },
+      {
+        "key": "olive_a_p1",
+        "name": "A · 올리브그린 · 포즈1 (각도락)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_olive_a_p1.png?v=1",
+        "note": "눕듯 리클라이너 · 길고 낮은 테이퍼 · A의상(브라운티+그레이스웰)"
+      },
+      {
+        "key": "orange_d_p3",
+        "name": "D · 스위트오렌지 · 포즈3 (각도락)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_orange_d_p3.png?v=4",
+        "note": "흰스튜디오 리클라이너 · 크레스트 top · 비례보정 v4(모델 173≈Max170) · 맨발 · D의상"
+      },
+      {
+        "key": "aqua_b_p4",
+        "name": "B · 아쿠아블루 · 포즈4 (¾측면)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_aqua_b_p4.png?v=1",
+        "note": "플랫 데이베드 · 낮은 플로어 라운징 · B의상(그레이티+데님쇼츠) · 맨발"
+      },
+      {
+        "key": "aqua_b_p4_front",
+        "name": "B · 아쿠아블루 · 포즈4 (정면 연출)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_aqua_b_p4_front.png?v=2",
+        "note": "플랫 라운저 정면 · 빈백 확대(v2) · B_W_C_02(크림 오버셔츠+와이드) · 맨발"
+      },
+      {
+        "key": "darkgrey_ma_p5",
+        "name": "남A · 다크그레이 · 포즈5 (게이밍)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_darkgrey_ma_p5.png?v=2",
+        "note": "게이밍 체어 · 양반다리 정면 · 미소+빈백확대(v2) · 공식다크그레이#353B3E · A_M_C_02"
+      },
+      {
+        "key": "cherry_b_pose",
+        "name": "B · 체리레드 · 포즈레퍼(미소)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_cherry_b_pose.png?v=1",
+        "note": "test02 포즈 차용 · 은은한 미소(눈감음) · B_W_C_02 · 비례 172↔170"
+      },
+      {
+        "key": "choco_c_pose",
+        "name": "C · 초코브라운 · 랩탑연출 → Drop 배치",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_choco_c_pose.png?v=1",
+        "note": "test03 포즈 차용 · 라운드형=Drop 제품으로 이동됨 · 무브랜드 랩탑 · C_W_C_01"
+      }
+    ],
+    "PRESS_REFS": [
+      {
+        "key": "max_p1",
+        "name": "Max 리클라이너 (포즈1)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/max/max_p_none_01.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/max/max_p_01.webp",
+        "note": "실사·모델제거 · 눕듯 리클라이너 · 버건디(거실)",
+        "tag": "실사"
+      },
+      {
+        "key": "max_p2",
+        "name": "Max 업라이트 체어 (포즈2)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/max/max_p_none_02.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/max/max_p_02.webp",
+        "note": "실사·모델제거 · 세워 앉는 체어형 · 블랙(거실)",
+        "tag": "실사"
+      },
+      {
+        "key": "max_p3",
+        "name": "Max 리클라이너 · 흰 스튜디오 (포즈3)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/max/max_p_none_03.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/max/max_p_03.jpg",
+        "note": "실사·모델제거 · 볼륨/구김 O · 썸네일 최적 · 아쿠아",
+        "tag": "실사"
+      },
+      {
+        "key": "max_p4",
+        "name": "Max 플랫 라운저 (포즈4)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/max/max_p_none_04.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/max/max_p_04.png",
+        "note": "실사·모델제거 · 바닥에 낮게 눕힌 플랫 데이베드형 · 낮은 플로어 라운징 · 아쿠아",
+        "tag": "실사"
+      },
+      {
+        "key": "max_p5",
+        "name": "Max 게이밍 체어 (포즈5)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/max/max_p_05_none.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/max/max_p_05.png",
+        "note": "실사·모델제거 · 게이밍 체어형(등받이+좌석) · 양반다리 정면 게이밍 연출 · 블랙/레드",
+        "tag": "실사"
+      }
+    ],
+    "SLIM_REFS": [
+      {
+        "key": "slim_p2",
+        "name": "Slim 보트 리클라이너 (포즈2)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_02_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_02_on.jpg",
+        "note": "실사·모델제거 · 낮은 보트형 리클라이너·기대어 눕기(¾측면) · 차콜",
+        "tag": "실사"
+      },
+      {
+        "key": "slim_p3",
+        "name": "Slim 업라이트 리클라이너 (포즈3)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_03_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_03_on.jpg",
+        "note": "실사·모델제거 · 업라이트 리클라이너·책읽기(¾정면) · 차콜",
+        "tag": "실사"
+      },
+      {
+        "key": "slim_p4",
+        "name": "Slim 플랫 로우 라운저 (포즈4)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_04_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_04_on.png",
+        "note": "실사·모델제거 · 바닥에 낮게 눕힌 플랫 라운저 · 엎드려 팔꿈치 괴고 릴랙스(¾측면) · 차콜",
+        "tag": "실사"
+      },
+      {
+        "key": "slim_p6",
+        "name": "Slim 업라이트 체어·게이밍 (포즈6)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_06_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_06_on.png",
+        "note": "실사·모델제거 · 업라이트 체어형 착석 게이밍(¾측면) · 남성 · 올리브",
+        "tag": "실사·남성"
+      },
+      {
+        "key": "slim_p7",
+        "name": "Slim 세로 업라이트·옆 기대기 (포즈7)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_07_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_07_on.png",
+        "note": "실사·모델제거 · 세로로 세운 Slim 옆에 서서 손 얹고 기대기(제품 높이 강조·바닥지지) · 라이트그레이",
+        "tag": "실사"
+      },
+      {
+        "key": "slim_p8",
+        "name": "Slim 허그·옆 감싸안기 (포즈8)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_08_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_08_on.png",
+        "note": "실사·모델제거 · 세로 Slim 옆에서 감싸안기·볼 기대기·팔 끝까지 안감김 · 남성 · 오렌지",
+        "tag": "실사·남성"
+      },
+      {
+        "key": "slim_p9",
+        "name": "Slim 업라이트 체어 정면 착석·게이밍 (포즈9)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_09_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_09_on.png",
+        "note": "실사·모델제거 · 정면 착석 게이밍(업라이트 체어형) · 남성 · 블루/퍼플",
+        "tag": "실사·남성"
+      }
+    ],
+    "MIDI_REFS": [
+      {
+        "key": "midi_p1",
+        "name": "Midi 플랫 라운저·누워 스트레칭 (포즈1)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/midi/midi_01_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/midi/midi_01_on.jpg",
+        "note": "실사·모델제거 · 낮게 눕힌 롱 웨지형 · 등받이 슬로프에 거의 눕듯 기대어 양팔 머리 위 스트레칭·다리 뻗기(¾측면) · 차콜",
+        "tag": "실사"
+      }
+    ],
+    "MINI_REFS": [
+      {
+        "key": "mini_p1",
+        "name": "Mini 사이드 리클라인 (포즈1)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_01_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_01_on.jpg",
+        "note": "실사·모델제거 · 성인 여성이 옆으로 기대 앉기(¾측면·다리 뻗기) · 차콜",
+        "tag": "실사"
+      },
+      {
+        "key": "mini_p2",
+        "name": "Mini 바닥 라운지·체스 (포즈2)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_02_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_02_on.jpg",
+        "note": "실사·모델제거 · 바닥에 앉아 Mini에 기대어 놀이/체스(¾측면) · 베이지",
+        "tag": "실사"
+      },
+      {
+        "key": "mini_p3",
+        "name": "Mini 아동 기대 책읽기 (포즈3)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_03_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_03_on.jpg",
+        "note": "실사·모델제거 · 아동이 Mini에 기대 앉아 책읽기(¾정면) · 그린",
+        "tag": "실사·아동"
+      },
+      {
+        "key": "mini_p4",
+        "name": "Mini 아동 2인 함께 (포즈4)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_04_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_04_on.jpg",
+        "note": "실사·모델제거 · 아동 두 명이 낮은 Mini에 함께 앉기(자매 연출) · 레드",
+        "tag": "실사·아동"
+      },
+      {
+        "key": "mini_p5",
+        "name": "Mini 앉아 공부·트레이 (포즈5)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_05_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_05_on.jpg",
+        "note": "실사·모델제거 · 남아가 Mini에 앉아 무릎 트레이로 공부/그리기(¾측면) · 모카",
+        "tag": "실사·아동"
+      },
+      {
+        "key": "mini_p6",
+        "name": "Mini 아동 앉아 책읽기 (포즈6)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_06_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_06_on.png",
+        "note": "실사·모델제거 · 아동이 Mini에 폭 안겨 앉아 책읽기(책장 앞·측면) · 브라운",
+        "tag": "실사·아동"
+      },
+      {
+        "key": "mini_p7",
+        "name": "Mini 아동 착석 독서 (포즈7)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_07_off.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_07_on.png",
+        "note": "실사·모델제거 · 아동이 Mini에 앉아 무릎에 책 놓고 읽기(¾측면·방 연출) · 모카",
+        "tag": "실사·아동"
+      }
+    ],
+    "LOUNGER_REFS": [
+      {
+        "key": "lg_p1",
+        "name": "Lounger 포즈1",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_01.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_01.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "lg_p2",
+        "name": "Lounger 포즈2",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_02.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_02.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "lg_p3",
+        "name": "Lounger 포즈3",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_03.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_03.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "lg_p4",
+        "name": "Lounger 포즈4",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_04.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_04.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "lg_p5",
+        "name": "Lounger 포즈5",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_05.jpg",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_05.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "lg_p6",
+        "name": "Lounger 포즈6",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_06.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_06.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "lg_p7",
+        "name": "Lounger 포즈7",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_07.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_07.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      }
+    ],
+    "DROP_REFS": [
+      {
+        "key": "dr_p1",
+        "name": "Drop 포즈1",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_01.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_01.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "dr_p2",
+        "name": "Drop 포즈2",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_02.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_02.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "dr_p3",
+        "name": "Drop 포즈3",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_03.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_03.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "dr_p4",
+        "name": "Drop 포즈4",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_04.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_04.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "dr_p5",
+        "name": "Drop 포즈5",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_05.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_05.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "dr_p6",
+        "name": "Drop 포즈6",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_06.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_06.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "dr_p7",
+        "name": "Drop 포즈7",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_07.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_07.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "dr_p8",
+        "name": "Drop 포즈8",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_08.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_08.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      }
+    ],
+    "PYRAMID_REFS": [
+      {
+        "key": "py_p1",
+        "name": "Pyramid 포즈1",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_01.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_01.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "py_p2",
+        "name": "Pyramid 포즈2",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_02.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_02.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "py_p3",
+        "name": "Pyramid 포즈3",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_03.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_03.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "py_p4",
+        "name": "Pyramid 포즈4",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_04.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_04.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "py_p5",
+        "name": "Pyramid 포즈5",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_05.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_05.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "py_p6",
+        "name": "Pyramid 포즈6",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_06.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_06.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      }
+    ],
+    "POD_REFS": [
+      {
+        "key": "pd_p1",
+        "name": "Pod 포즈1",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_01.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_01.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "pd_p2",
+        "name": "Pod 포즈2",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_02.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_02.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "pd_p3",
+        "name": "Pod 포즈3",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_03.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_03.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "pd_p4",
+        "name": "Pod 포즈4",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_04.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_04.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "pd_p5",
+        "name": "Pod 포즈5",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_05.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_05.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "pd_p6",
+        "name": "Pod 포즈6",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_06.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_06.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      }
+    ],
+    "DOUBLE_REFS": [
+      {
+        "key": "db_p1",
+        "name": "Double 포즈1",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_off_01.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_on_01.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "db_p2",
+        "name": "Double 포즈2",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_off_02.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_on_02.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "db_p3",
+        "name": "Double 포즈3",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_off_03.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_on_03.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      }
+    ],
+    "SUPPORT_REFS": [
+      {
+        "key": "sp_p1",
+        "name": "Support 포즈1",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/support/support_off_01.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/support/support_on_01.png",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      },
+      {
+        "key": "sp_p2",
+        "name": "Support 포즈2",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/support/support_off_02.png",
+        "orig": "https://yogibo.openhost.cafe24.com/web/img/none/support/support_on_02.jpg",
+        "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+        "tag": "실사"
+      }
+    ],
+    "MIDI_POSEREFS": [
+      {
+        "key": "tp01",
+        "name": "착석·다리 뻗고 릴랙스",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/test/test_01.jpg",
+        "note": "¾ 착석 · 다리 뻗고 릴랙스"
+      },
+      {
+        "key": "tp02",
+        "name": "보트 리클라이너·기대 눕기",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/test/test_02.jpg",
+        "note": "¾측면 · 무릎 세우고 기대 눕기"
+      },
+      {
+        "key": "tp03",
+        "name": "라운드 착석·랩탑",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/test/test_03.jpg",
+        "note": "앉아서 랩탑 사용"
+      },
+      {
+        "key": "tp04",
+        "name": "깊게 앉기·거실 세팅",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/test/test_04.webp",
+        "note": "¾정면 · 깊게 파묻혀 앉기"
+      },
+      {
+        "key": "tp05",
+        "name": "사이드 리클라인",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/test/test_05.jpg",
+        "note": "옆으로 기대 눕기"
+      },
+      {
+        "key": "tp06",
+        "name": "플랫 리클라인(남성)",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/test/test_06.jpg",
+        "note": "뒤로 기대 평평하게 눕기"
+      },
+      {
+        "key": "tp07",
+        "name": "리클라인·헤드폰 릴랙스",
+        "url": "https://yogibo.openhost.cafe24.com/web/img/none/test/test_07.jpg",
+        "note": "¾ · 헤드폰 음악 릴랙스"
+      }
+    ],
+    "THUMB_MODELS": [
+      {
+        "cat": "여성",
+        "emoji": "👩",
+        "items": [
+          {
+            "code": "A",
+            "rep": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_A_rep.jpg?v=smile",
+            "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_A_expr.png?v=hair",
+            "desc": "유럽계 · 다크 텍스처 보브 · 키168 슬림 · 차분/미니멀",
+            "outfits": [
+              {
+                "f": "A_W_C_01",
+                "t": "브라운 티+그레이 스웻"
+              }
+            ]
+          },
+          {
+            "code": "B",
+            "rep": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_B_rep.jpg?v=e2",
+            "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_B_expr.png?v=v2",
+            "desc": "유럽계 · 롱 체스트넛 웨이브(주근깨) · 키172 · 청순/내추럴",
+            "outfits": [
+              {
+                "f": "B_W_C_01",
+                "t": "그레이 티+데님 쇼츠"
+              },
+              {
+                "f": "B_W_C_02",
+                "t": "크림 오버셔츠+와이드"
+              }
+            ]
+          },
+          {
+            "code": "C",
+            "rep": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_C_rep.jpg?v=smile",
+            "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_C_expr.png?v=hair",
+            "desc": "유럽계 · 블론드 레이어드 롭+커튼뱅 · 키169 · 쿨/미니멀",
+            "outfits": [
+              {
+                "f": "C_W_C_01",
+                "t": "화이트 티+네이비 슬랙스"
+              }
+            ]
+          },
+          {
+            "code": "D",
+            "rep": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_D_rep.jpg?v=smile2",
+            "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_D_expr.png?v=hair",
+            "desc": "동아시아계 · 롱 흑발+시스루뱅 · 키173 · 쿨/에디토리얼",
+            "outfits": [
+              {
+                "f": "D_W_C_01",
+                "t": "그레이 티+라이트 배기진"
+              },
+              {
+                "f": "D_W_C_02",
+                "t": "네이비 스트라이프 니트"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "cat": "남성",
+        "emoji": "👨",
+        "items": [
+          {
+            "code": "A",
+            "rep": "https://yogibo.openhost.cafe24.com/web/img/api/modal/M_A_rep.jpg?v=smile",
+            "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/M_A_expr.png?v=hair",
+            "desc": "유럽계 · 미디엄 터슬드 웨이브 · 키180 · 클린컷/애슬레틱",
+            "outfits": [
+              {
+                "f": "A_M_C_01",
+                "t": "그레이 티+스웻"
+              },
+              {
+                "f": "A_M_C_02",
+                "t": "화이트 티+블랙 슬랙스"
+              },
+              {
+                "f": "A_M_C_03",
+                "t": "올리브 후디+차콜"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "cat": "아동",
+        "emoji": "🧒",
+        "items": [
+          {
+            "code": "K_A",
+            "rep": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_A_rep_new.png?v=smile",
+            "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_A_expr.png?v=braid",
+            "desc": "유럽계 여아 6~7세 · 라이트브라운 양갈래 땋은머리(핀) · 밝고 명랑 · 키~120 · ①얼굴②표정 완료",
+            "outfits": [
+              {
+                "f": "KID_A_01",
+                "t": "그레이 프린트 티+크림 반바지"
+              }
+            ]
+          },
+          {
+            "code": "K_B",
+            "rep": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_B_rep_new.png?v=smile",
+            "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_B_expr.png?v=straight",
+            "desc": "유럽계 여아 10~12세 · 오번 롱 생머리(센터파트)·주근깨 · 청순 · 키~150 · ①얼굴②표정 완료",
+            "outfits": [
+              {
+                "f": "KID_B_01",
+                "t": "아이보리 링거 티+그레이 숏팬츠"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "SPECS": [
+      {
+        "t": "상품 리스트",
+        "ratio": "1:1",
+        "use": "cafe24 리스트 · 정사각"
+      },
+      {
+        "t": "상세/배너",
+        "ratio": "4:5 · 16:9",
+        "use": "상세 상단 · 배너"
+      },
+      {
+        "t": "SNS",
+        "ratio": "4:5 · 9:16",
+        "use": "인스타 · 릴스/쇼츠"
+      }
+    ],
+    "PRODUCTS": [
+      {
+        "product": "Max",
+        "emoji": "🛋️",
+        "spec": "대표 빈백 소파 · 170×70×45cm 6.6kg · Slim/Midi/Mini 동일 형태(사이즈만 다름)",
+        "ratio": "1:1",
+        "bg": "화이트",
+        "size": "h170 × w70 × d45 · 6.6kg",
+        "scale": "a large bean bag sofa as long as an adult is tall (170cm) - long enough for a grown-up to lie down on fully; stood upright it stands taller than a 160cm woman, topping her head by about 10cm",
+        "colors": [
+          {
+            "key": "aqua",
+            "name": "아쿠아블루",
+            "hex": "#0075BD",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_aqua_b_p4_front.png?v=4",
+                "spec": "B · 포즈4 정면(플랫라운저·확대) · 미소 · 색보정 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_aqua_b_pose2.png?v=2",
+                "spec": "B · 포즈2(체어·미소) · 색보정 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_aqua_b_poseref.png?v=3",
+                "spec": "B · 포즈레퍼(리클라이너·은은한미소) · 색보정 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_aqua_b_pose1.png?v=2",
+                "spec": "B · 포즈1(눕듯·곁눈질 미소) · Max확대·색스와치락 · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "navy",
+            "name": "네이비블루",
+            "hex": "#1D395D",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_navy_c_pose1.png?v=2",
+                "spec": "C · 포즈1(눕듯·밝은미소) · 아쿠아연출 비례·얼굴C재락 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_navy_c_pose3.png?v=1",
+                "spec": "C · 포즈3(리클라이너·은은한미소) · 색스와치락 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_navy_c_pose4.png?v=1",
+                "spec": "C · 포즈4(플랫라운저·곁눈질미소) · 색스와치락 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_navy_c_pose2_smile.png?v=1",
+                "spec": "C · 포즈2(체어·밝은미소) · 표정변화컷 · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "olive",
+            "name": "올리브그린",
+            "hex": "#668B01",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_olive_a_pose1.png?v=1",
+                "spec": "A · 포즈1(눕듯·밝은미소) · A_W_C_01 · 색스와치락 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_olive_a_poseref.png?v=1",
+                "spec": "A · 포즈레퍼(낮은크레스트·은은한미소) · A_W_C_01 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_olive_a_pose2.png?v=1",
+                "spec": "A · 포즈2(체어·곁눈질미소) · A_W_C_01 · 색스와치락 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_olive_a_pose4.png?v=1",
+                "spec": "A · 포즈4(플랫라운저·따뜻한미소) · A_W_C_01 · 색스와치락 · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "darkgrey",
+            "name": "다크그레이",
+            "hex": "#353B3E",
+            "el": true,
+            "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_darkgrey_ma_p5.png?v=2",
+            "spec": "남A · 포즈5(게이밍·미소) · A_M_C_02 · 2048"
+          },
+          {
+            "key": "lightgrey",
+            "name": "라이트그레이",
+            "hex": "#E5DED3"
+          },
+          {
+            "key": "chocobrown",
+            "name": "초코브라운",
+            "hex": "#583E30"
+          },
+          {
+            "key": "cherryred",
+            "name": "체리레드",
+            "hex": "#790619",
+            "el": true,
+            "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_cherry_b_pose.png?v=1",
+            "spec": "B모델(172) · test02 포즈(리클라이너·미소) · B_W_C_02 · 2048"
+          },
+          {
+            "key": "wineburgundy",
+            "name": "와인버건디",
+            "hex": "#7A031F"
+          },
+          {
+            "key": "livingcoral",
+            "name": "리빙코랄",
+            "hex": "#EA3D19"
+          },
+          {
+            "key": "livingcoral",
+            "name": "리빙코랄",
+            "hex": "#EA3D19",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_sweetorange_b_jp2.png?v=2",
+                "spec": "B(172cm) · yogibo.jp 레퍼 원본 그대로(측면 프로필·턱 괴기·코랄 Support·그레이 빈백·플로럴 톱·방 배경 유지) + 얼굴/헤어만 모델B 교체(포토 에딧) · 컬러명 코랄로 등록 · 2샘플 중 선택 · 1회생성(미검수) · v2 의상 크림 오버셔츠+와이드(B_W_C_02)로 교체(포토 에딧·2샘플 중 1)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_coral_ma_jp2.png?v=1",
+                "spec": "남성A(180cm) · yogibo.jp 레퍼 원본 그대로(측면 프로필·턱 괴기·코랄 Support·그레이 빈백·방 배경 유지) + 인물을 남성A로 교체 + 흰 반팔티·청바지(포토 에딧) · 2샘플 중 선택 · 1회생성(미검수)"
+              }
+            ]
+          },
+          {
+            "key": "sweetorange",
+            "name": "스위트오렌지",
+            "hex": "#EE780C",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_sweetorange_d_pose1.png?v=1",
+                "spec": "D · 포즈1(눕듯·밝은미소) · D_W_C_01 · 색스와치락 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_sweetorange_d_pose2.png?v=1",
+                "spec": "D · 포즈2(체어·은은한미소) · D_W_C_01 · 색스와치락 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_sweetorange_d_pose3.png?v=1",
+                "spec": "D · 포즈3(리클라이너·곁눈질미소) · D_W_C_01 · 색스와치락 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_sweetorange_d_pose4.png?v=1",
+                "spec": "D · 포즈4(플랫라운저·따뜻한미소) · D_W_C_01 · 색스와치락 · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "brightyellow",
+            "name": "브라이트옐로우",
+            "hex": "#EBCD00"
+          },
+          {
+            "key": "rosepink",
+            "name": "로즈핑크",
+            "hex": "#EF0066"
+          },
+          {
+            "key": "blossompink",
+            "name": "블라썸핑크",
+            "hex": "#E5B9C8"
+          },
+          {
+            "key": "brightpurple",
+            "name": "브라이트퍼플",
+            "hex": "#644D9A"
+          },
+          {
+            "key": "deeppurple",
+            "name": "딥퍼플",
+            "hex": "#5F2A38"
+          },
+          {
+            "key": "lavender",
+            "name": "라벤더퍼플",
+            "hex": "#CDA7DB"
+          },
+          {
+            "key": "pastelblue",
+            "name": "파스텔블루",
+            "hex": "#BEDDEF"
+          },
+          {
+            "key": "freshmint",
+            "name": "프레시민트",
+            "hex": "#B0EEE7"
+          }
+        ]
+      },
+      {
+        "product": "Slim",
+        "emoji": "📏",
+        "spec": "Max 동일 형태 · 130×65×45cm 4.4kg · 폭 슬림(세로형) · Slim 전용 실사레퍼",
+        "ratio": "1:1",
+        "sameLine": "Max",
+        "size": "h130 × w65 × d45 · 4.4kg",
+        "models": "여성A · 여성B · 여성D · 남성A",
+        "refs": [
+          {
+            "key": "slim_p2",
+            "name": "Slim 보트 리클라이너 (포즈2)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_02_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_02_on.jpg",
+            "note": "실사·모델제거 · 낮은 보트형 리클라이너·기대어 눕기(¾측면) · 차콜",
+            "tag": "실사"
+          },
+          {
+            "key": "slim_p3",
+            "name": "Slim 업라이트 리클라이너 (포즈3)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_03_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_03_on.jpg",
+            "note": "실사·모델제거 · 업라이트 리클라이너·책읽기(¾정면) · 차콜",
+            "tag": "실사"
+          },
+          {
+            "key": "slim_p4",
+            "name": "Slim 플랫 로우 라운저 (포즈4)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_04_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_04_on.png",
+            "note": "실사·모델제거 · 바닥에 낮게 눕힌 플랫 라운저 · 엎드려 팔꿈치 괴고 릴랙스(¾측면) · 차콜",
+            "tag": "실사"
+          },
+          {
+            "key": "slim_p6",
+            "name": "Slim 업라이트 체어·게이밍 (포즈6)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_06_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_06_on.png",
+            "note": "실사·모델제거 · 업라이트 체어형 착석 게이밍(¾측면) · 남성 · 올리브",
+            "tag": "실사·남성"
+          },
+          {
+            "key": "slim_p7",
+            "name": "Slim 세로 업라이트·옆 기대기 (포즈7)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_07_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_07_on.png",
+            "note": "실사·모델제거 · 세로로 세운 Slim 옆에 서서 손 얹고 기대기(제품 높이 강조·바닥지지) · 라이트그레이",
+            "tag": "실사"
+          },
+          {
+            "key": "slim_p8",
+            "name": "Slim 허그·옆 감싸안기 (포즈8)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_08_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_08_on.png",
+            "note": "실사·모델제거 · 세로 Slim 옆에서 감싸안기·볼 기대기·팔 끝까지 안감김 · 남성 · 오렌지",
+            "tag": "실사·남성"
+          },
+          {
+            "key": "slim_p9",
+            "name": "Slim 업라이트 체어 정면 착석·게이밍 (포즈9)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_09_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/slim/slim_09_on.png",
+            "note": "실사·모델제거 · 정면 착석 게이밍(업라이트 체어형) · 남성 · 블루/퍼플",
+            "tag": "실사·남성"
+          }
+        ],
+        "scale": "a narrow vertical bean bag about chest height of a standing adult (130cm); one adult reclines against it with legs extended",
+        "colors": [
+          {
+            "key": "lightgrey",
+            "name": "라이트그레이",
+            "hex": "#E5DED3",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_lightgrey_b_p4.png?v=2",
+                "spec": "B · 포즈4(로우 라운저·엎드려 릴랙스) · 볼륨보정(통통) · 그레이티+데님쇼츠 · 중앙 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_lightgrey_b_p2_v2.png?v=2",
+                "spec": "B · 포즈2(보트 리클라이너) · 그레이티+데님쇼츠 · 중앙 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_lightgrey_b_p3.png?v=1",
+                "spec": "B · 포즈3(업라이트 리클라이너) · 그레이티+데님쇼츠 · 중앙 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_lightgrey_b_hug.png?v=5",
+                "spec": "B · 허그 연출(실물 slim_05 on/off 레퍼락·두께면 보임·팔 끝까지 안감김·바닥~머리 스케일) · 그레이티+데님쇼츠 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_lightgrey_ma_p6.png?v=1",
+                "spec": "남성A(180cm) · 포즈6(업라이트 체어·게이밍·¾측면) · 화이트티+블랙슬랙스 · 라이트그레이 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_lightgrey_duo_p9.png?v=3",
+                "spec": "여성A + 남성A 2인 · 포즈9(게이밍·자연스러운 연출) · 실물 slim_09 on/off 형태락(체어형·130 사이즈·유령머리 해결) · 그레이티+롱와이드데님 / 화이트티+블랙슬랙스 · 라이트그레이+리빙코랄 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_lightgrey_ma_p3.png?v=1",
+                "spec": "남성A(180cm) · 포즈3(업라이트 리클라이너) · 올리브후디+차콜조거 · 라이트그레이 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_lightgrey_ma_p3_white.png?v=1",
+                "spec": "남성A(180cm) · 포즈3(업라이트 리클라이너) · 화이트티+블랙슬랙스 · 라이트그레이 · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "olive",
+            "name": "올리브그린",
+            "hex": "#668B01",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_olive_d_p2.png?v=1",
+                "spec": "D · 포즈2(보트 리클라이너) · 네이비 스트라이프 니트(긴팔)+데님쇼츠 · 올리브 #668B01 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_olive_d_p3.png?v=1",
+                "spec": "D · 포즈3(업라이트 리클라이너) · 네이비 스트라이프 니트(반팔)+데님쇼츠 · 올리브 #668B01 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_olive_d_p2b.png?v=2",
+                "spec": "D · 보트 리클라이너(포즈 변화·팔 젖혀 릴랙스·다리 교차) · 네이비 스트라이프 니트+데님쇼츠 · 올리브 #668B01(색보정: 밝게) · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "livingcoral",
+            "name": "리빙코랄",
+            "hex": "#EA3D19",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_coral_a_p4.png?v=1",
+                "spec": "A · 포즈4(로우 라운저·엎드려 릴랙스) · 브라운 티+그레이 스웻팬츠 · 리빙코랄 #EA3D19 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_coral_a_p3.png?v=1",
+                "spec": "A · 포즈3(업라이트 리클라이너) · 브라운 티+그레이 스웻팬츠 · 리빙코랄 #EA3D19 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_slim_coral_a_p2.png?v=1",
+                "spec": "A · 포즈2(보트 리클라이너) · 브라운 티+그레이 스웻팬츠 · 리빙코랄 #EA3D19 · #f2f2f4"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "product": "Midi",
+        "emoji": "🟦",
+        "spec": "Max 동일 형태 · 125×70×45cm 4.8kg · 가슴 높이 · 눌림레퍼 공유",
+        "ratio": "1:1",
+        "sameLine": "Max",
+        "size": "h125 × w70 × d45 · 4.8kg",
+        "models": "여성A · 여성B · 여성D · 남성A",
+        "refs": [
+          {
+            "key": "midi_p1",
+            "name": "Midi 플랫 라운저·누워 스트레칭 (포즈1)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/midi/midi_01_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/midi/midi_01_on.jpg",
+            "note": "실사·모델제거 · 낮게 눕힌 롱 웨지형 · 등받이 슬로프에 거의 눕듯 기대어 양팔 머리 위 스트레칭·다리 뻗기(¾측면) · 차콜",
+            "tag": "실사"
+          }
+        ],
+        "scale": "a mid-size bean bag reaching an adult chest when stood upright (125cm); one adult can curl up on it lying down, or sit with full back support",
+        "colors": [
+          {
+            "key": "lavender",
+            "name": "라벤더퍼플",
+            "hex": "#CDA7DB",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_midi_lavender_d_m01.png?v=1",
+                "spec": "여성D(173cm) · Midi포즈1(플랫 라운저·누워 양팔 스트레칭·midi_01 on/off 각도락) · 그레이티+라이트배기진(D_W_C_01 의상레퍼) · 라벤더퍼플 #CDA7DB · 125×70×45 실측비례 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_midi_lavender_b_p2.png?v=1",
+                "spec": "B · 포즈2 실사레퍼 형태락(보트 리클라이너) + 사이드 리클라인 연출 · 크림 오버셔츠+와이드(B_W_C_02 의상레퍼) · 라벤더퍼플 #CDA7DB · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_midi_lavender_b_p3.png?v=2",
+                "spec": "B · 포즈3(업라이트 리클라이너·책읽기 ¾정면·slim_03 on/off 자세각도락·소프트 빈백폼) · 크림 오버셔츠+와이드(B_W_C_02 의상레퍼) · 라벤더퍼플 #CDA7DB · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_midi_lavender_b_p8.png?v=1",
+                "spec": "B · 포즈8(허그·옆 감싸안기·팔 끝까지 안감김) · 크림 오버셔츠+와이드(B_W_C_02 의상레퍼) · 라벤더퍼플 #CDA7DB · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "navy",
+            "name": "네이비블루",
+            "hex": "#1D395D",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_midi_navy_a_p3.png?v=1",
+                "spec": "여성A(168cm) · 포즈3(업라이트 리클라이너·책읽기 ¾정면·소프트 빈백폼) · 브라운티+그레이스웻(A_W_C_01 의상레퍼) · 네이비블루 #1D395D · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_midi_navy_a_m01.png?v=1",
+                "spec": "여성A(168cm) · Midi포즈1(플랫 라운저·누워 양팔 스트레칭·midi_01 on/off 각도락) · 브라운티+그레이스웻(A_W_C_01 의상레퍼) · 네이비블루 #1D395D · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "darkgrey",
+            "name": "다크그레이",
+            "hex": "#353B3E",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_midi_darkgrey_d_m01.png?v=2",
+                "spec": "여성D(173cm) · Midi포즈1(플랫 라운저·누워 양팔 스트레칭·midi_01 on/off 각도락) · 그레이티+라이트배기진(D_W_C_01 의상레퍼) · 다크그레이 #353B3E · 125×70×45 실측비례 · 1회생성(미검수) · #f2f2f4 · v2 형태(낮은 롱 웨지)+포즈+얼굴 3중 잠금 재생성(2샘플 중 fix2)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_midi_darkgrey_d_p3.png?v=1",
+                "spec": "여성D(173cm) · 포즈3(업라이트 리클라이너·책읽기 ¾정면·소프트 빈백폼) · 그레이티+라이트배기진(D_W_C_01 의상레퍼) · 다크그레이 #353B3E · 네이비 여성A p3 컷 베이스 포토에딧(리컬러+얼굴/의상 교체·2샘플 중 a) · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_midi_darkgrey_ma_p2.png?v=2",
+                "spec": "남성A(180cm) · 포즈2(보트 리클라이너) · 그레이티+그레이와이드팬츠(A_M_C_01 의상레퍼) · 다크그레이 #353B3E(색보정 통일) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_midi_darkgrey_ma_t06.png?v=2",
+                "spec": "남성A(180cm) · test06 참고포즈(플랫 리클라인·뒤로 기대 눕기·타사포즈+우리제품 형태락) · 화이트티+블랙와이드(A_M_C_02 의상레퍼) · 다크그레이 #353B3E(색보정 통일) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_midi_darkgrey_ma_p3.png?v=2",
+                "spec": "남성A(180cm) · 포즈3(업라이트 리클라이너·소프트라운드) · 올리브후디+차콜와이드(A_M_C_03 의상레퍼) · 다크그레이 #353B3E(색보정 통일) · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "cherryred",
+            "name": "체리레드",
+            "hex": "#790619",
+            "el": true,
+            "rep": true,
+            "cuts": []
+          }
+        ]
+      },
+      {
+        "product": "Mini",
+        "emoji": "🔹",
+        "spec": "Max 동일 형태 · 85×70×45cm 3.2kg · 엉덩이 높이·1인 시트 · 눌림레퍼 공유",
+        "ratio": "1:1",
+        "sameLine": "Max",
+        "size": "h85 × w70 × d45 · 3.2kg",
+        "models": "아동A · 아동B · 여성B · 여성C · 남성A",
+        "refs": [
+          {
+            "key": "mini_p1",
+            "name": "Mini 사이드 리클라인 (포즈1)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_01_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_01_on.jpg",
+            "note": "실사·모델제거 · 성인 여성이 옆으로 기대 앉기(¾측면·다리 뻗기) · 차콜",
+            "tag": "실사"
+          },
+          {
+            "key": "mini_p2",
+            "name": "Mini 바닥 라운지·체스 (포즈2)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_02_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_02_on.jpg",
+            "note": "실사·모델제거 · 바닥에 앉아 Mini에 기대어 놀이/체스(¾측면) · 베이지",
+            "tag": "실사"
+          },
+          {
+            "key": "mini_p3",
+            "name": "Mini 아동 기대 책읽기 (포즈3)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_03_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_03_on.jpg",
+            "note": "실사·모델제거 · 아동이 Mini에 기대 앉아 책읽기(¾정면) · 그린",
+            "tag": "실사·아동"
+          },
+          {
+            "key": "mini_p4",
+            "name": "Mini 아동 2인 함께 (포즈4)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_04_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_04_on.jpg",
+            "note": "실사·모델제거 · 아동 두 명이 낮은 Mini에 함께 앉기(자매 연출) · 레드",
+            "tag": "실사·아동"
+          },
+          {
+            "key": "mini_p5",
+            "name": "Mini 앉아 공부·트레이 (포즈5)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_05_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_05_on.jpg",
+            "note": "실사·모델제거 · 남아가 Mini에 앉아 무릎 트레이로 공부/그리기(¾측면) · 모카",
+            "tag": "실사·아동"
+          },
+          {
+            "key": "mini_p6",
+            "name": "Mini 아동 앉아 책읽기 (포즈6)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_06_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_06_on.png",
+            "note": "실사·모델제거 · 아동이 Mini에 폭 안겨 앉아 책읽기(책장 앞·측면) · 브라운",
+            "tag": "실사·아동"
+          },
+          {
+            "key": "mini_p7",
+            "name": "Mini 아동 착석 독서 (포즈7)",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_07_off.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/mini/mini_07_on.png",
+            "note": "실사·모델제거 · 아동이 Mini에 앉아 무릎에 책 놓고 읽기(¾측면·방 연출) · 모카",
+            "tag": "실사·아동"
+          }
+        ],
+        "scale": "a compact bean bag about hip-height of a standing adult (85cm); a single seat where an adult sits with knees bent, child-friendly size",
+        "colors": [
+          {
+            "key": "chocobrown",
+            "name": "초코브라운",
+            "hex": "#583E30",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_mini_choco_ka_p5.png?v=1",
+                "spec": "아동A(~120cm) · 포즈5(앉아 공부·무릎 트레이·mini_05 on/off 각도락) · KID_A_01 고정의상(그레이 프린트티+크림 반바지) · 초코브라운 #583E30 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_mini_choco_ka_p7.png?v=2",
+                "spec": "아동A(~120cm) · 포즈7(착석 독서·무릎에 책·mini_07 on/off 각도락) · KID_A_01 고정의상 · 초코브라운 #583E30 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_mini_choco_duo_p4.png?v=1",
+                "spec": "아동A + 아동B 2인 · 포즈4(자매 함께 앉기·mini_04 on/off 각도락) · KID_A_01 / KID_B_01 고정의상 · 초코브라운 #583E30 · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "cherryred",
+            "name": "체리레드",
+            "hex": "#790619",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_mini_cherry_kb_p7.png?v=1",
+                "spec": "아동B(~150cm) · 포즈7(착석 독서·둥근 빈백폼) · KID_B_01 고정의상(아이보리 링거티+그레이 숏팬츠) · 체리레드 #790619 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_mini_cherry_kb_p6.png?v=1",
+                "spec": "아동B(~150cm) · 포즈6(티어드롭 Mini 안에 폭 앉아 태블릿·측면·mini_06 형태락+승인 p7 컷 비례/컬러 레퍼) · KID_B_01 고정의상 · 체리레드 #790619 · 85×70×45 실측비례 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_mini_cherry_kb_p1.png?v=1",
+                "spec": "아동B(~150cm) · 포즈1(사이드 리클라인·턱 괴기·¾측면·mini_01 on/off 각도락+승인 p7 컷 비례/컬러 레퍼) · KID_B_01 고정의상 · 체리레드 #790619 · 85×70×45 실측비례 · 2샘플 중 b(둥근 티어드롭) · 1회생성(미검수) · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "avocadogreen",
+            "name": "아보카도그린",
+            "hex": "#7AA991",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_mini_avo_c_p1.png?v=1",
+                "spec": "여성C(169cm) · 포즈1(사이드 리클라인·티어드롭 형태·실측 비례) · 화이트티+네이비 와이드(C_W_C_01 의상레퍼) · 아보카도그린 #7AA991 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_mini_avo_b_p2.png?v=1",
+                "spec": "여성B(172cm) · 포즈2(바닥 착석·Mini에 옆으로 기대기·¾측면·mini_02 on/off 각도락·소품 제거) · 크림 오버셔츠+와이드(B_W_C_02 의상레퍼) · 아보카도그린 #7AA991(승인 C p1 컷 컬러 레퍼) · 85×70×45 실측비례 · 1회생성(미검수) · #f2f2f4"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "product": "Drop",
+        "emoji": "💧",
+        "spec": "라운드 물방울형 · 75×85×85cm 3.7kg · 착석/랩탑 연출",
+        "ratio": "1:1",
+        "size": "h75 × w85 × d85 · 3.7kg",
+        "models": "아동A · 아동B · 여성B · 여성C · 남성A",
+        "scale": "a round droplet-shaped bean bag about the height of a seated adult shoulders (75cm); one adult sinks into it with knees bent",
+        "refs": [
+          {
+            "key": "dr_p1",
+            "name": "Drop 포즈1",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_01.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_01.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "dr_p2",
+            "name": "Drop 포즈2",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_02.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_02.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "dr_p3",
+            "name": "Drop 포즈3",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_03.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_03.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "dr_p4",
+            "name": "Drop 포즈4",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_04.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_04.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "dr_p5",
+            "name": "Drop 포즈5",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_05.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_05.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "dr_p6",
+            "name": "Drop 포즈6",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_06.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_06.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "dr_p7",
+            "name": "Drop 포즈7",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_07.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_07.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "dr_p8",
+            "name": "Drop 포즈8",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_off_08.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/drop/drop_on_08.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          }
+        ],
+        "colors": [
+          {
+            "key": "olive",
+            "name": "올리브그린",
+            "hex": "#668B01",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_olive_b_p1.png?v=1",
+                "spec": "B(172cm) · 포즈1(책상다리 착석·머그·¾정면) · 크림 오버셔츠+와이드(B_W_C_02) · 올리브그린 #668B01 · 75×85×85 실측비례 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_olive_b_p4.png?v=1",
+                "spec": "B(172cm) · 포즈4(뒤로 기대 스트레칭·측면) · 크림 오버셔츠+와이드(B_W_C_02) · 올리브그린 #668B01 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_olive_b_p5.png?v=1",
+                "spec": "B(172cm) · 포즈5(다리 접고 앉아 독서·¾측면) · 크림 오버셔츠+와이드(B_W_C_02) · 올리브그린 #668B01 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_olive_ka_p2.png?v=1",
+                "spec": "아동A(6~7세·120cm) · 포즈2(옆으로 기대 턱괴고 릴랙스·측면) · KID_A_01 고정의상 · 올리브그린 #668B01 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_olive_ka_p3.png?v=1",
+                "spec": "아동A(6~7세·120cm) · 포즈3(팔 올린 활기 릴랙스·¾측면) · KID_A_01 고정의상 · 올리브그린 #668B01 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_olive_ka_p4.png?v=1",
+                "spec": "아동A(6~7세·120cm) · 포즈4(뒤로 기대 스트레칭·측면) · KID_A_01 고정의상 · 올리브그린 #668B01 · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "livingcoral",
+            "name": "리빙코랄",
+            "hex": "#EA3D19",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_coral_c_p1.png?v=1",
+                "spec": "C(169cm) · 포즈1(책상다리 착석·머그·¾정면) · 화이트티+네이비 와이드(C_W_C_01) · 리빙코랄 #EA3D19 · 75×85×85 실측비례 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_coral_c_p3.png?v=1",
+                "spec": "C(169cm) · 포즈3(기대 릴랙스·팔 올린 활기 연출) · 화이트티+네이비 와이드(C_W_C_01) · 리빙코랄 #EA3D19 · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_coral_c_p5.png?v=1",
+                "spec": "C(169cm) · 포즈5(다리 접고 앉아 독서·¾측면) · 화이트티+네이비 와이드(C_W_C_01) · 리빙코랄 #EA3D19 · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "aqua",
+            "name": "아쿠아블루",
+            "hex": "#0075BD",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_aqua_kb_p2.png?v=2",
+                "spec": "아동B(12세·150cm) · 포즈2(옆으로 기대 턱괴고 릴랙스·측면) · KID_B_01 고정의상 · 아쿠아블루 #0075BD · 75×85×85 실측비례 · 좌하단 꽁지 제거(v2·원본=_orig) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_aqua_kb_p5.png?v=3",
+                "spec": "아동B(12세·150cm) · 포즈5(다리 접고 앉아 독서·¾측면) · KID_B_01 고정의상 · 아쿠아블루 #0075BD(얼굴 재생성) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_aqua_kb_p6.png?v=2",
+                "spec": "아동B(12세·150cm) · 포즈6(깊게 파묻혀 릴랙스·¾정면·얼굴/배경 재생성) · KID_B_01 고정의상 · 아쿠아블루 #0075BD · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_drop_aqua_ma_p8.png?v=2",
+                "spec": "남성A(180cm) · 포즈8(비스듬히 기대 다리 뻗고 독서·¾측면) · 화이트티+블랙와이드(A_M_C_02) · 아쿠아블루 #0075BD · 좌하단 꽁지 제거(v2·원본=_orig) · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "chocobrown",
+            "name": "초코브라운",
+            "hex": "#583E30",
+            "el": true,
+            "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_max_choco_c_pose.png?v=1",
+            "spec": "C모델 · 랩탑연출 · C_W_C_01 (실험컷, 매트릭스 외)"
+          }
+        ]
+      },
+      {
+        "product": "Lounger",
+        "emoji": "🏖️",
+        "spec": "낮은 라운지체어 · 60×65×80cm 4.4kg",
+        "ratio": "1:1",
+        "size": "h60 × w65 × d80 · 4.4kg",
+        "models": "아동A · 아동B · 여성B · 여성C · 남성A",
+        "scale": "a low lounge chair bean bag about knee-height of a standing adult (60cm); a one-person seat whose backrest reaches a seated adult mid-back",
+        "refs": [
+          {
+            "key": "lg_p1",
+            "name": "Lounger 포즈1",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_01.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_01.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "lg_p2",
+            "name": "Lounger 포즈2",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_02.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_02.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "lg_p3",
+            "name": "Lounger 포즈3",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_03.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_03.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "lg_p4",
+            "name": "Lounger 포즈4",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_04.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_04.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "lg_p5",
+            "name": "Lounger 포즈5",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_05.jpg",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_05.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "lg_p6",
+            "name": "Lounger 포즈6",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_06.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_06.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "lg_p7",
+            "name": "Lounger 포즈7",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_off_07.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/lounger/lounger_on_07.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          }
+        ],
+        "colors": [
+          {
+            "key": "pastelblue",
+            "name": "파스텔블루",
+            "hex": "#BEDDEF",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_lounger_pastelblue_c_p5.png?v=2",
+                "spec": "여성C(169cm) · Lounger 포즈5(무릎 안고 깊게 착석·¾정면·lounger_05 on/off 각도락) · 화이트티+네이비 슬랙스(C_W_C_01) · 파스텔블루 #BEDDEF · v2 검정 파이핑 라인(포즈6 레퍼 제품선) · 크기 보정 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_lounger_pastelblue_c_p2.png?v=4",
+                "spec": "여성C(169cm) · Lounger 포즈2(등받이에 팔꿈치·턱괴고 다리 교차 릴랙스·¾정면·lounger_02 on/off 각도락) · 화이트티+네이비 슬랙스(C_W_C_01) · 파스텔블루 #BEDDEF · 검정 파이핑 라인 · v5 얼굴+포즈+형태 3중 잠금 재생성 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_lounger_pastelblue_b_p1.png?v=2",
+                "spec": "B(172cm) · Lounger 포즈1(착석·머그·¾정면·lounger_01 on/off 각도락) · 그레이티+데님쇼츠(B_W_C_01) · 파스텔블루 #BEDDEF · 검정 파이핑 라인 · v2 소프트 형태 3중잠금 · 1회생성(미검수) · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "freshmint",
+            "name": "프레시민트",
+            "hex": "#B0EEE7",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_lounger_freshmint_b_p5.png?v=1",
+                "spec": "B(172cm) · Lounger 포즈5(무릎 안고 깊게 착석·¾정면·lounger_05 on/off 각도락) · 그레이티+데님쇼츠(B_W_C_01) · 프레시민트 #B0EEE7 · 검정 파이핑 라인 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_lounger_freshmint_b_p1.png?v=1",
+                "spec": "B(172cm) · Lounger 포즈1(착석·머그·¾정면·lounger_01 on/off 각도락) · 그레이티+데님쇼츠(B_W_C_01) · 프레시민트 #B0EEE7 · 검정 파이핑 라인 · 1회생성(미검수) · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "navy",
+            "name": "네이비블루",
+            "hex": "#1D395D",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_lounger_navy_ma_p2.png?v=1",
+                "spec": "남성A(180cm) · Lounger 포즈2(등받이에 팔꿈치·턱괴고 다리 교차 릴랙스·¾정면·lounger_02 on/off 각도락) · 화이트티+블랙슬랙스(A_M_C_02) · 네이비블루 #1D395D · 라이트그레이 파이핑 라인 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_lounger_navy_ma_p1.png?v=1",
+                "spec": "남성A(180cm) · Lounger 포즈1(착석·머그·¾정면·lounger_01 on/off 각도락) · 화이트티+블랙슬랙스(A_M_C_02) · 네이비블루 #1D395D · 라이트그레이 파이핑 라인 · 1회생성(미검수) · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "olive",
+            "name": "올리브그린",
+            "hex": "#668B01",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_lounger_olive_ka_p3.png?v=1",
+                "spec": "아동A(6~7세·120cm) · Lounger 포즈3(정면 착석·팔짱·다리 뻗기·lounger_03 on/off 각도락) · KID_A_01 고정의상 · 올리브그린 #668B01 · 검정 파이핑 라인 · 60×65×80 고정크기(아이 작게) · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_lounger_olive_ka_p7.png?v=2",
+                "spec": "아동A(6~7세·120cm) · Lounger 포즈7(착석·인형 들고 놀이·¾정면·lounger_07 on/off 각도락) · KID_A_01 고정의상 · 올리브그린 #668B01 · 검정 파이핑 라인 · v2 승인된 p3 컷과 동일 비례 잠금(사이즈 레퍼 첨부) · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_lounger_olive_ka_p4.png?v=2",
+                "spec": "아동A(6~7세·120cm) · Lounger 포즈4(업라이트 착석·화이트 게임패드·다리 뻗기·¾정면·lounger_04 on/off 각도락) · KID_A_01 고정의상 · 올리브그린 #668B01 · 검정 파이핑 라인 · v2 승인된 p3 컷과 동일 비례 잠금(사이즈 레퍼 첨부) · 1회생성(미검수) · #f2f2f4"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "product": "Pyramid",
+        "emoji": "🔺",
+        "spec": "삼각 플로어쿠션 · 66×75×75cm 2.2kg",
+        "ratio": "1:1",
+        "size": "h66 × w75 × d75 · 2.2kg",
+        "models": "아동A · 아동B · 여성B · 여성C · 남성A",
+        "scale": "a triangular floor cushion about knee-height of a standing adult (66cm); one adult sits against its slope, a child can climb onto it",
+        "refs": [
+          {
+            "key": "py_p1",
+            "name": "Pyramid 포즈1",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_01.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_01.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "py_p2",
+            "name": "Pyramid 포즈2",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_02.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_02.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "py_p3",
+            "name": "Pyramid 포즈3",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_03.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_03.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "py_p4",
+            "name": "Pyramid 포즈4",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_04.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_04.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "py_p5",
+            "name": "Pyramid 포즈5",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_05.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_05.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "py_p6",
+            "name": "Pyramid 포즈6",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_off_06.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pyramid/pyramid_on_06.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          }
+        ],
+        "colors": [
+          {
+            "key": "blossompink",
+            "name": "블라썸핑크",
+            "hex": "#E5B9C8",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_blossompink_b_p3.png?v=1",
+                "spec": "여성B(172cm) · Pyramid 포즈3(세운 피라미드 앞 바닥 착석·독서·정면·pyramid_03 on/off 각도락) · 그레이티+데님쇼츠(B_W_C_01 의상레퍼) · 블라썸핑크 #E5B9C8 · 66×75×75 고정크기 · 1차 과대 → SIZE+눌림 오버라이드 재생성(2샘플 중 fix2) · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_blossompink_b_jp5.png?v=2",
+                "spec": "여성B(172cm) · pyramid_05 모델 레퍼(Premium+) 원본 그대로(눕힌 피라미드 형태·랩탑·환호·흰 배경) + 텍스트 제거 + 블라썸핑크 리컬러 + 얼굴/헤어 B·의상 B_W_C_01 교체(포토 에딧) · 블라썸핑크 #E5B9C8 · 2샘플 중 a · 1회생성(미검수) · v2 오른쪽 헤어 뒤 핑크 얼룩 리터치(해당 영역만 합성)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_blossompink_b_jp7.png?v=1",
+                "spec": "여성B(172cm) · yogibo.jp 레퍼(prm_7) 원본 그대로(눕힌 피라미드 착석·다리 꼬기·흰 배경) + 블라썸핑크 리컬러 + 얼굴/헤어 B·의상 B_W_C_01 교체(포토 에딧) · 블라썸핑크 #E5B9C8 · 2샘플 중 b · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_blossompink_b_jp4.png?v=1",
+                "spec": "여성B(172cm) · Pyramid 포즈4 모델 레퍼(pyramid_on_04) 원본 그대로(방 배경·노란 테이블·랩탑·캡+헤드폰·눕힌 피라미드 착석) + 블라썸핑크 컬러 + 얼굴/헤어만 B 교체(포토 에딧) · 블라썸핑크 #E5B9C8 · 2샘플 중 a · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_blossompink_d_jp4.png?v=1",
+                "spec": "여성D(173cm) · Pyramid 포즈4 모델 레퍼(pyramid_on_04) 원본 그대로(방 배경·노란 테이블·랩탑·캡+헤드폰·눕힌 피라미드 착석) + 블라썸핑크 컬러 + 얼굴/헤어만 D 교체(포토 에딧) · 블라썸핑크 #E5B9C8 · 2샘플 중 a · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_blossompink_b_jp1.png?v=1",
+                "spec": "여성B(172cm) · Pyramid 포즈1 모델 레퍼(pyramid_on_01·Premium) 원본 그대로(세운 피라미드 기대 앉기·어깨너머 시선·블라썸핑크) + 배경 #f2f2f4 정리·텍스트 제거 + 얼굴/헤어 B·의상 B_W_C_01 교체(포토 에딧) · 블라썸핑크 #E5B9C8 · 2샘플 중 b · 1회생성(미검수)"
+              }
+            ]
+          },
+          {
+            "key": "pastelblue",
+            "name": "파스텔블루",
+            "hex": "#BEDDEF",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_pastelblue_ka_jp1.png?v=1",
+                "spec": "아동A(6~7세·120cm) · yogibo.jp 레퍼(pre-prm-rd) 원본 그대로(눕힌 피라미드 착석·핑크 돼지 인형·흰 배경) + 배지/텍스트/태그 제거 + 파스텔블루 리컬러 + 얼굴/헤어 아동A·의상 KID_A_01 교체(포토 에딧) · 파스텔블루 #BEDDEF · 2샘플 중 a · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_pastelblue_b_jp7.png?v=1",
+                "spec": "여성B(172cm) · yogibo.jp 레퍼(prm_7) 원본 그대로(눕힌 피라미드 착석·다리 꼬기·흰 배경) + 파스텔블루 리컬러 + 얼굴/헤어 B·의상 B_W_C_01 교체(포토 에딧) · 파스텔블루 #BEDDEF · 2샘플 중 a · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_pastelblue_b_jp4.png?v=1",
+                "spec": "여성B(172cm) · Pyramid 포즈4 모델 레퍼(pyramid_on_04) 원본 그대로(방 배경·노란 테이블·랩탑·캡+헤드폰·눕힌 피라미드 착석) + 파스텔블루 리컬러 + 얼굴/헤어만 B 교체(포토 에딧) · 파스텔블루 #BEDDEF · 2샘플 중 a · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_pastelblue_c_jp7.png?v=1",
+                "spec": "여성C(169cm) · yogibo.jp 레퍼(prm_7) 원본 그대로(눕힌 피라미드 착석·다리 꼬기·흰 배경) + 파스텔블루 리컬러 + 얼굴/헤어 C·의상 C_W_C_01 교체(포토 에딧) · 파스텔블루 #BEDDEF · 2샘플 중 b · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_pastelblue_c_jp5.png?v=1",
+                "spec": "여성C(169cm) · pyramid_05 모델 레퍼(Premium+) 원본 그대로(눕힌 피라미드·랩탑·환호·흰 배경) + 텍스트 제거 + 파스텔블루 리컬러 + 얼굴/헤어 C·의상 C_W_C_01 교체(포토 에딧) · 파스텔블루 #BEDDEF · 2샘플 중 a · 1회생성(미검수)"
+              }
+            ]
+          },
+          {
+            "key": "cherryred",
+            "name": "체리레드",
+            "hex": "#790619",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_cherry_kb_jp1.png?v=1",
+                "spec": "아동B(10~12세·150cm) · yogibo.jp 레퍼(pre-prm-rd) 원본 그대로(눕힌 피라미드 착석·핑크 돼지 인형·흰 배경) + PREMIUM 배지/텍스트/태그 제거 + 얼굴/헤어 아동B·의상 KID_B_01 교체(포토 에딧) · 체리레드 #790619 · 2샘플 중 a · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_cherry_kb_p3jp.png?v=2",
+                "spec": "아동B(10~12세·150cm) · Pyramid 포즈3 모델 레퍼(pyramid_on_03) 원본 그대로(세운 피라미드 앞 착석·원숭이 인형·흰 배경) + 체리레드 리컬러·태그 제거 + 얼굴/헤어 아동B·의상 KID_B_01 교체(포토 에딧) · 체리레드 #790619 · 2샘플 중 a · 1회생성(미검수) · v2 컬러를 기존 체리레드 컷(jp1)에 맞춰 보정(Lab 매칭)"
+              }
+            ]
+          },
+          {
+            "key": "lightgrey",
+            "name": "라이트그레이",
+            "hex": "#E5DED3",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_lightgrey_fa_jp7.png?v=1",
+                "spec": "여성A(168cm) · yogibo.jp 레퍼(prm_7) 원본 그대로(눕힌 피라미드 착석·다리 꼬기·그린 니트+카키팬츠+스니커즈·흰 배경) + 라이트그레이 리컬러 + 얼굴/헤어만 여성A 교체(포토 에딧) · 라이트그레이 #E5DED3 · 2샘플 중 a · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_lightgrey_ma_jp1.png?v=1",
+                "spec": "남성A(180cm) · Pyramid 포즈1 모델 레퍼(pyramid_on_01·Premium) 원본 그대로(세운 피라미드 기대 앉기·어깨너머 시선) + 라이트그레이 리컬러·배경 #f2f2f4 정리·텍스트 제거 + 인물 남성A(A_M_C_02 화이트티+블랙슬랙스) 교체(포토 에딧) · 라이트그레이 #E5DED3 · 2샘플 중 a · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_lightgrey_ma_jp7.png?v=2",
+                "spec": "남성A(180cm) · yogibo.jp 레퍼(prm_7) 원본 그대로(눕힌 피라미드 착석·다리 꼬기·그린 니트+카키팬츠+스니커즈·흰 배경) + 라이트그레이 리컬러 + 인물 남성A 교체·책 들기 추가(포토 에딧) · 라이트그레이 #E5DED3 · 2샘플 중 b · 1회생성(미검수) · v2 의상 A_M_C_02(화이트티+블랙슬랙스·맨발)로 교체 재생성(2샘플 중 b)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pyramid_duo_p9.png?v=1",
+                "spec": "여성A + 남성A 2인 · 게이밍(서로 보며 자연스러운 연출) · 그레이티+롱와이드데님 / 화이트티+블랙슬랙스 · 라이트그레이+리빙코랄 · #f2f2f4 · ⚠형태=체어형(Slim에서 이관, Pyramid 실형태 아님)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "product": "Pod",
+        "emoji": "🥚",
+        "spec": "라운드 에그형 · 95×85×85cm 4.7kg",
+        "ratio": "1:1",
+        "size": "h95 × w85 × d85 · 4.7kg",
+        "models": "아동A · 아동B · 여성B · 여성C · 남성A",
+        "scale": "a round egg-shaped bean bag about waist-height of a standing adult (95cm), as wide as an adult shoulder span; one person sinks deeply into it",
+        "refs": [
+          {
+            "key": "pd_p1",
+            "name": "Pod 포즈1",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_01.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_01.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "pd_p2",
+            "name": "Pod 포즈2",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_02.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_02.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "pd_p3",
+            "name": "Pod 포즈3",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_03.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_03.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "pd_p4",
+            "name": "Pod 포즈4",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_04.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_04.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "pd_p5",
+            "name": "Pod 포즈5",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_05.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_05.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "pd_p6",
+            "name": "Pod 포즈6",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_off_06.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/pod/pod_on_06.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          }
+        ],
+        "colors": [
+          {
+            "key": "freshmint",
+            "name": "프레시민트",
+            "hex": "#B0EEE7",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pod_freshmint_b_p2.png?v=1",
+                "spec": "B(172cm) · Pod 포즈2(옆으로 기대 태블릿·¾측면·pod_02 on/off 각도락) · 그레이티+데님쇼츠(B_W_C_01) · 프레시민트 #B0EEE7 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pod_freshmint_b_p5.png?v=1",
+                "spec": "B(172cm) · Pod 포즈5(기대어 독서·¾측면·pod_05 on/off 각도락) · 그레이티+데님쇼츠(B_W_C_01) · 프레시민트 #B0EEE7 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pod_freshmint_kb_p4.png?v=1",
+                "spec": "아동B(10~12세·150cm) · Pod 포즈4(착석·손가락 포인팅·밝은미소·¾정면·pod_04 on/off 각도락) · KID_B_01 고정의상 · 프레시민트 #B0EEE7 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pod_freshmint_kb_p6.png?v=1",
+                "spec": "아동B(10~12세·150cm) · Pod 포즈6(옆모습 기대 게임패드·다리 뻗기·pod_06 on/off 각도락) · KID_B_01 고정의상 · 프레시민트 #B0EEE7 · 1회생성(미검수) · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "darkgrey",
+            "name": "다크그레이",
+            "hex": "#353B3E",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pod_darkgrey_c_p6.png?v=1",
+                "spec": "여성C(169cm) · Pod 포즈6(옆모습 기대 게임패드·다리 뻗기·pod_06 on/off 각도락) · 화이트티+네이비 슬랙스(C_W_C_01) · 다크그레이 #353B3E · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pod_darkgrey_ma_p6.png?v=1",
+                "spec": "남성A(180cm) · Pod 포즈6(옆모습 기대 게임패드·다리 뻗기·pod_06 on/off 각도락) · 화이트티+블랙슬랙스(A_M_C_02) · 다크그레이 #353B3E · 1회생성(미검수) · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "pastelblue",
+            "name": "파스텔블루",
+            "hex": "#BEDDEF",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pod_pastelblue_ka_p2.png?v=1",
+                "spec": "아동A(6~7세·120cm) · Pod 포즈2(옆으로 기대 태블릿·¾측면·pod_02 on/off 각도락) · KID_A_01 고정의상 · 파스텔블루 #BEDDEF · 95×85×85 고정크기(승인 p3 컷 비례 레퍼) · 넓은 돔 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pod_pastelblue_ka_p5.png?v=1",
+                "spec": "아동A(6~7세·120cm) · Pod 포즈5(기대어 독서·¾측면·pod_05 on/off 각도락) · KID_A_01 고정의상 · 파스텔블루 #BEDDEF · 95×85×85 고정크기(승인 p3 컷 비례 레퍼) · 넓은 돔 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pod_pastelblue_c_p1.png?v=1",
+                "spec": "여성C(169cm) · Pod 포즈1(착석·랩탑·¾정면·pod_01 on/off 각도락) · 화이트티+네이비 슬랙스(C_W_C_01 의상레퍼) · 파스텔블루 #BEDDEF · 95×85×85 고정크기 · 넓은 돔 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pod_pastelblue_c_p2.png?v=1",
+                "spec": "여성C(169cm) · Pod 포즈2(옆으로 기대 태블릿·¾측면·pod_02 on/off 각도락) · 화이트티+네이비 슬랙스(C_W_C_01 의상레퍼) · 파스텔블루 #BEDDEF · 95×85×85 고정크기 · 넓은 돔 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_pod_pastelblue_c_p4.png?v=1",
+                "spec": "여성C(169cm) · Pod 포즈4(착석·손가락 포인팅·밝은 미소·¾정면·pod_04 on/off 각도락) · 화이트티+네이비 슬랙스(C_W_C_01 의상레퍼) · 파스텔블루 #BEDDEF · 95×85×85 고정크기 · 넓은 돔 · 1회생성(미검수) · #f2f2f4"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "product": "Double",
+        "emoji": "🛏️",
+        "spec": "초대형 2인 · 170×120×45cm 13.2kg · Max 2배 폭",
+        "ratio": "1:1",
+        "size": "h170 × w120 × d45 · 13.2kg",
+        "models": "여성B + 남성A (함께)",
+        "scale": "an extra-large bean bag sofa as long as an adult is tall (170cm) and nearly twice the width of a single-person bean bag; two adults can lie or sit side by side",
+        "refs": [
+          {
+            "key": "db_p1",
+            "name": "Double 포즈1",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_off_01.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_on_01.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "db_p2",
+            "name": "Double 포즈2",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_off_02.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_on_02.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "db_p3",
+            "name": "Double 포즈3",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_off_03.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/double/double_on_03.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          }
+        ],
+        "colors": [
+          {
+            "key": "olive",
+            "name": "올리브그린",
+            "hex": "#668B01",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_double_olive_bma_p1.png?v=4",
+                "spec": "여성B(172) + 남성A(180) 2인 · Double 포즈1(눕혀 나란히 기대기·double_01 on/off 각도락) · 그레이티+데님쇼츠(B_W_C_01) / 화이트티+블랙슬랙스(A_M_C_02) · 올리브그린 #668B01 · 170×120×45 실측비례 · 이전 버전(v2) 채택 · 1회생성(미검수) · #f2f2f4 · v4 얼굴/헤어만 여성B·남성A로 재교체(생성본 베이스 포토에딧·2샘플 중 a)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_double_olive_bma_p2.png?v=1",
+                "spec": "여성B(172) + 남성A(180) 2인 · Double 포즈2(눕혀 나란히 환호·double_02 on/off 각도락) · 그레이티+데님쇼츠(B_W_C_01) / 화이트티+블랙슬랙스(A_M_C_02) · 올리브그린 #668B01 · 170×120×45 실측비례 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_double_olive_bma_p3.png?v=3",
+                "spec": "여성B(172) + 남성A(180) 2인 · Double 포즈3(세워 소파형·나란히 착석·double_03 on/off 각도락) · 그레이티+데님쇼츠(B_W_C_01) / 화이트티+블랙슬랙스(A_M_C_02) · 올리브그린 #668B01 · v4(크기 유지 + 남성A 헤어 고정) · 1회생성(미검수) · #f2f2f4"
+              }
+            ]
+          },
+          {
+            "key": "lightgrey",
+            "name": "라이트그레이",
+            "hex": "#E5DED3",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_double_lightgrey_fad_p3.png?v=3",
+                "spec": "여성A(168) + 여성D(173) 2인 · Double 포즈3(등부분 세워 앉기·나란히 담소·double_03 on/off 각도락) · 브라운티+그레이스웻(A_W_C_01) / 그레이티+라이트배기진(D_W_C_01) · 라이트그레이 #E5DED3 · 170×120×45(Max 2개 합친 빈백) · v2 소파 구조 금지·Max 질감 레퍼 앵커로 푹신한 빈백 덩어리 표현 · 2샘플 중 선택 · 1회생성(미검수) · #f2f2f4 · v3 올리브 B+남성A p3 컷(앵글 확정) 베이스 포토에딧 → 라이트그레이 리컬러+여성A/D 교체(2샘플 중 b)"
+              }
+            ]
+          },
+          {
+            "key": "darkgrey",
+            "name": "다크그레이",
+            "hex": "#353B3E",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_double_darkgrey_duo_p2.png?v=1",
+                "spec": "남성A(180cm) + 여성A(168cm) 2인 · Double 포즈2(바닥에 눕힌 더블 위에 나란히 누워 환호·double_02 on/off 각도락) · 화이트티+블랙슬랙스(A_M_C_02) / 브라운티+그레이스웻(A_W_C_01) · 다크그레이 #353B3E · 170×120×45 실측비례 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_double_darkgrey_duo_p3.png?v=1",
+                "spec": "남성A(180cm) + 여성A(168cm) 2인 · Double 포즈3(세워 소파형·나란히 앉아 기대기·double_03 on/off 각도락) · 화이트티+블랙슬랙스(A_M_C_02) / 브라운티+그레이스웻(A_W_C_01) · 다크그레이 #353B3E · 1회생성(미검수) · #f2f2f4"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "product": "Support",
+        "emoji": "🌙",
+        "spec": "U형 등받이 쿠션 · 94×76×30cm 1.7kg",
+        "ratio": "1:1",
+        "size": "h94 × w76 × d30 · 1.7kg",
+        "models": "여성B · 남성A",
+        "scale": "a U-shaped armrest cushion that wraps around an adult lower back, armrests about hip-height when seated",
+        "refs": [
+          {
+            "key": "sp_p1",
+            "name": "Support 포즈1",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/support/support_off_01.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/support/support_on_01.png",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          },
+          {
+            "key": "sp_p2",
+            "name": "Support 포즈2",
+            "url": "https://yogibo.openhost.cafe24.com/web/img/none/support/support_off_02.png",
+            "orig": "https://yogibo.openhost.cafe24.com/web/img/none/support/support_on_02.jpg",
+            "note": "실사 · 모델포함=자세/각도 · 모델제거=형태",
+            "tag": "실사"
+          }
+        ],
+        "colors": [
+          {
+            "key": "navy",
+            "name": "네이비블루",
+            "hex": "#1D395D",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_navy_b_p1_max.png?v=5",
+                "spec": "B(172cm) · Support 포즈1(support_01 레퍼 구도: 정면·낮은 앵글·Support 화면 중심 + 모델 포함·태블릿) · 그레이티+데님쇼츠(B_W_C_01) · Support 네이비블루 #1D395D + 하단 Yogibo Max 라이트그레이 #E5DED3 · 94×76×30 · v4 타이트 크롭(정사각 1:1·1840px) · 1회생성(미검수) · #f2f2f4 · v5 더 타이트한 정사각 크롭(빈백 일부 잘림)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_navy_b_ref1.png?v=1",
+                "spec": "B(172cm) · yogibo.kr 레퍼 재현(측면 근접·무릎 안고 웃음·Support 등 감싸기) — 얼굴/헤어만 모델B로 교체, 의상은 레퍼 유지(네이비 탱크+블랙 쇼츠) · Support 네이비블루 #1D395D + 하단 Max 라이트그레이 · 2샘플 중 선택 · 1회생성(미검수) · #f2f2f4"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_navy_b_jp1.png?v=1",
+                "spec": "B(172cm) · yogibo.jp 레퍼 원본 그대로(구도·네이비 Support·블루 빈백·화이트티+청바지·팔 머리 뒤 포즈·방 배경 유지) + 얼굴/헤어만 모델B 교체(포토 에딧) · 2샘플 중 시선 일치 안 선택 · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_navy_ma_jp3.png?v=1",
+                "spec": "남성A(180cm) · yogibo.jp 레퍼 원본 그대로(침대·우드 헤드보드·블루 Support에 기대 앉기·화이트 헨리티+그레이 스웻·방 배경 유지) + 얼굴/헤어만 남성A 교체(포토 에딧) · 2샘플 중 선택 · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_navy_b_jp2.png?v=1",
+                "spec": "B(172cm) · yogibo.jp 레퍼(jp2) 코랄 B 컷(크림 오버셔츠+와이드) 베이스 → Support 컬러만 네이비블루로 자연 리컬러(포토 에딧) · 네이비블루 #1D395D · 2샘플 중 b · 1회생성(미검수)"
+              }
+            ]
+          },
+          {
+            "key": "lightgrey",
+            "name": "라이트그레이",
+            "hex": "#E5DED3",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_lightgrey_b_ref2.png?v=2",
+                "spec": "B(172cm) · yogibo.kr 레퍼 원본 그대로(구도·Support 크기·의상·방 배경 유지) + 얼굴/헤어만 모델B로 교체(포토 에딧) · Support 라이트그레이(레퍼 톤) · v2 · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_lightgrey_ma_ref2.png?v=1",
+                "spec": "남성A(180cm) · yogibo.kr 레퍼 원본 그대로(구도·Support 크기·방 배경·눈 감은 릴랙스 포즈 유지) + 인물을 남성A로 교체 + 상의만 흰 반팔티(청바지 유지)(포토 에딧) · Support 라이트그레이(레퍼 톤) · 2샘플 중 선택 · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_lightgrey_b_jp2.png?v=1",
+                "spec": "B(172cm) · yogibo.jp 레퍼(jp2) 코랄 B 컷(크림 오버셔츠+와이드) 베이스 → Support 컬러만 라이트그레이로 자연 리컬러(포토 에딧) · 라이트그레이 #E5DED3 · 2샘플 중 b · 1회생성(미검수)"
+              }
+            ]
+          },
+          {
+            "key": "livingcoral",
+            "name": "리빙코랄",
+            "hex": "#EA3D19",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_sweetorange_b_jp2.png?v=2",
+                "spec": "B(172cm) · yogibo.jp 레퍼 원본 그대로(측면 프로필·턱 괴기·코랄 Support·그레이 빈백·플로럴 톱·방 배경 유지) + 얼굴/헤어만 모델B 교체(포토 에딧) · 컬러명 코랄로 등록 · 2샘플 중 선택 · 1회생성(미검수) · v2 의상 크림 오버셔츠+와이드(B_W_C_02)로 교체(포토 에딧)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_coral_ma_jp2.png?v=1",
+                "spec": "남성A(180cm) · yogibo.jp 레퍼 원본 그대로(측면 프로필·턱 괴기·코랄 Support·그레이 빈백·방 배경 유지) + 인물을 남성A로 교체 + 흰 반팔티·청바지(포토 에딧) · 2샘플 중 선택 · 1회생성(미검수)"
+              }
+            ]
+          },
+          {
+            "key": "sweetorange",
+            "name": "스위트오렌지",
+            "hex": "#EE780C",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_sweetorange_b_ref3.png?v=2",
+                "spec": "B(172cm) · yogibo.kr 레퍼3 원본 그대로(구도·Support 크기·틸 롱슬리브+청바지·네이비 빈백·태블릿 포즈 유지) + 얼굴/헤어만 모델B 교체 + Support만 스위트오렌지 #EE780C 자연 리컬러(원본 음영·주름 유지, v2) + Premium+ 텍스트·태그 제거 · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_support_orange_b_jp2.png?v=1",
+                "spec": "B(172cm) · yogibo.jp 레퍼(jp2) 코랄 B 컷(크림 오버셔츠+와이드) 베이스 → Support 컬러만 스위트오렌지로 자연 리컬러(포토 에딧) · 스위트오렌지 #EE780C · 2샘플 중 a · 1회생성(미검수)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "product": "Etc",
+        "emoji": "🗂️",
+        "spec": "기타 썸네일 · 실촬영본 모델 교체(포토에딧) · 원본 픽셀 사이즈 유지",
+        "ratio": "원본 비율",
+        "size": "sumUp_01 1536×1309 · sumUp_02 1536×1024 · zoola/매장/lux · modju 2400×1792",
+        "models": "여성A · 여성B · 여성C · 여성D · 남성A · 아동A · 아동B",
+        "scale": "existing studio photograph — replace only the model identity/outfit, keep set, product, pose and grading identical",
+        "colors": [
+          {
+            "key": "sumup01",
+            "name": "sumUp_01 (1536×1309)",
+            "hex": "#8d8377",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_sumup01_b.png?v=1",
+                "spec": "B(172cm) · 실촬영본 sumUp_01 원본 그대로(룸·Support U쿠션·블랙 Double·핑크 립탑+청바지·릴랙스 포즈 유지) + 얼굴/헤어만 모델B 교체(포토에딧) · 원본 1536×1309 픽셀 맞춤 · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_sumup01_d.png?v=1",
+                "spec": "D(173cm) · 실촬영본 sumUp_01 원본 그대로 + 얼굴/헤어만 모델D(동아시아계 롱 블랙 스트레이트) 교체(포토에딧) · 원본 1536×1309 픽셀 맞춤 · 1회생성(미검수)"
+              }
+            ]
+          },
+          {
+            "key": "sumup02",
+            "name": "sumUp_02 (1536×1024)",
+            "hex": "#8d8377",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_sumup02_a.png?v=1",
+                "spec": "A(168cm) · 실촬영본 sumUp_02 원본 그대로(타이트 크롭 유지) + 얼굴/헤어만 모델A(다크 텍스처 보브) 교체 · 원본 롱 블론드 → 숏보브 · 원본 1536×1024 픽셀 맞춤 · 1회생성(미검수)"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_sumup02_b.png?v=1",
+                "spec": "B(172cm) · 실촬영본 sumUp_02 원본 그대로 + 얼굴/헤어 모델B 교체 + 의상 크림 오버셔츠+와이드(B_W_C_02)로 교체(포토에딧) · 원본 1536×1024 픽셀 맞춤 · 1회생성(미검수)"
+              }
+            ]
+          },
+          {
+            "key": "zoola",
+            "name": "zoola 풀사이드 4인 (1536×1024)",
+            "hex": "#2a6fd4",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_zoola_4p.png?v=3",
+                "spec": "4인 · 완성형 — 인물삭제본(zoola_none.png) 베이스에 모델 신규 배치 + 검증된 5원칙 적용(얼굴시트 최우선 배치·인물 크기 수치지시·몸까지 통째 생성·의상 garment only·1세대 생성) · 좌→우 여성B(화이트/블랙 투톤 수영복 zoola_B·선글라스) · 남성A(그레이 슬리브리스+네이비 반바지 zoola_M) · 여성C(네이비 원피스+크림 커버업) · 여성A(다크 숏보브·블랙 래시가드 zoola_A) · 전원 미소 · 빈백 눌림/햇빛 그림자 통합 · 1536×1024"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_zoola_4p_d.png?v=1",
+                "spec": "4인 · 완성형(모델D 버전·캔디드 포즈) — 인물삭제본 베이스 + 5원칙 적용 · 좌→우 여성B(엎드려 팔괴고 웃기·화이트/블랙 수영복·선글라스 머리 위) · 남성A(앞으로 기대 물잔 들고 대화·그레이 탱크+네이비) · 여성D(동아시아계 롱 블랙 스트레이트·다리 접고 웃기·네이비+크림 커버업, 기존 여성C에서 변경) · 여성A(팔 머리 뒤 선탠 스트레치·블랙 래시가드) · 정적 나열 → 실제 대화하는 캔디드 무드로 포즈 전면 변경 · 전원 미소 · 1536×1024"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_zoola_4p_d2.png?v=1",
+                "spec": "4인 · 완성형(모델D 버전·포즈 변화 2) — 인물삭제본 베이스 + 5원칙 적용 · 동일 구성(B·남A·여D·여A)에 포즈만 전면 변경: 여성B(다리 접고 앉아 턱괴고 활짝 웃기·선글라스 스트랩) · 남성A(옆으로 기대 누워 팔베개·다리 뻗기) · 여성D(팔 머리 뒤·햇살 향해 눈감고 블리스풀) · 여성A(무릎 감싸안고 어깨너머 카메라 응시) · 4명 포즈 전부 상이 · 전원 미소 · 1536×1024"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_zoola_4p_e.png?v=1",
+                "spec": "★★★줄라 확정본 — 시트 감사 후 생성 + 여성A 헤어 국소 교정 · 인물삭제본 베이스에 RULE ZERO 세트락(빈백 4점 색/위치·라탄 테이블 소품·난간·야자수·산·풀 원본 유지) · ☆의상 레퍼 3장을 얼굴 제거 크롭으로 재제작(기존 zoola_M/A/B는 모델 얼굴 포함 → 오염원) · 1차 생성에서 여성A만 롱헤어로 나옴 — 원인은 zoola_a 크롭에 남아 있던 어깨 위 머리카락 → 2차에 A 시트 첨부해 근흑색 턱선 보브로 국소 편집(픽셀 차이 맵으로 우측 인물에만 변경 국한 확인) · 좌→우 여성B(블루 웨지·화이트 밴도+블랙 하이웨이스트·선글라스 머리 위·물잔 들고 웃음) / 남성A(스트라이프 웨지·그레이 슬리브리스+네이비 쇼츠·옆으로 기대 팔로 머리 받침 — 커튼 웨이브 헤어 시트 최고 일치) / 여성D(아쿠아·네이비+크림 스트라이프 커버업·무릎 세우고 산 쪽) / 여성A(오렌지·블랙 래시가드 원피스·엎드려 팔꿈치 받치고 카메라 응시) · 얼굴 4인 크롭 대조 · 직사광 그림자 통일 · 워터마크 없음 · 원본 1536×1024 맞춤"
+              }
+            ]
+          },
+          {
+            "key": "lux",
+            "name": "Lux 럭셔리 거실 3인 (1195×896)",
+            "hex": "#8a8378",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_lux_3p.png?v=4",
+                "spec": "3인 · 인물 없는 촬영본(lux.png) 베이스에 모델 신규 배치 + 5원칙 적용 · 모던 럭셔리 거실(계단·펜던트·식물·정원 전망·러그·월넛 테이블)과 Yogibo Lux 3점(라운지체어/로우소파/에그) 원본 그대로 · 왼쪽 여성A(차콜 트위드 셋업 lux_A) · 중앙 남성A(차콜 오버사이즈 수트 lux_M_a) · 오른쪽 여성B(차콜 블레이저+하늘색 셔츠+부츠 lux_B) · v4에서 남성A 얼굴 골격을 구체 규정(길고 마른 얼굴·움푹한 볼·날카로운 광대·깊은 눈매·둥글거나 앳된 얼굴 금지)해 교정 · 전원 은은한 미소 · 공간이 주인공인 와이드 샷 · 우하단 AI 워터마크 로컬 제거(0원) · 1195×896"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_lux_3p_b.png?v=2",
+                "spec": "3인 · 최종본(얼굴 오염 해결) — lux.png 베이스 + 5원칙 · ★핵심: 의상 레퍼를 얼굴 잘라낸 버전(lux_a/lux_b/lux_c)으로 교체하니 3명 얼굴이 한 번에 정확해짐(기존엔 의상레퍼 속 모델 얼굴이 결과에 섞여 남성A는 앳된 얼굴·여성B는 다크헤어로 오염) · 왼쪽 여성A(다크 숏보브·트위드 셋업) · 중앙 남성A(길쭉한 얼굴·차콜 수트) · 오른쪽 여성B(체스트넛 롱웨이브·블레이저+스트라이프셔츠) · 대화 중 캔디드 포즈(경청/손짓/웃음) · 워터마크 로컬 제거 · 1195×896"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_lux_3p_c.png?v=1",
+                "spec": "3인 · 포즈 변화(조용한 오후) — 얼굴 없는 의상레퍼(lux_a/lux_b/lux_c) 사용 · 왼쪽 여성A(다리 접고 책 읽다 고개 들기) · 중앙 남성A(느슨히 기대 정원 쪽 바라보기) · 오른쪽 여성B(에그체어에 어깨 기대고 웃기) · 각자 다른 행동을 하는 캔디드 무드 · 인테리어/Lux 3점/크기 원본 유지 · ⚠여성B 헤어가 체스트넛이 아닌 다크로 나옴 · 워터마크 로컬 제거 · 1195×896"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_lux_3p_d.png?v=1",
+                "spec": "3인 · ★얼굴 일치도 최고본 — 얼굴 턴어라운드 시트 + 표정 시트를 모델별로 쌍(2장)으로 투입해 다각도 정체성 락(총 레퍼 10장) · 왼쪽 여성A(다크 숏보브·볼에 손 괴고 다리 뻗음) · 중앙 남성A(소파 앞쪽에 앉아 머그 양손·경청) · 오른쪽 여성B(에그체어에 다리 접고 손짓하며 이야기) · 전원 ¾ 측면으로 얼굴이 또렷하게 읽히도록 각도 지정 · 여성B 헤어 웜 체스트넛 정상 복원 · 얼굴 없는 의상레퍼(lux_a/lux_b/lux_c) · 워터마크 로컬 제거 · 1195×896"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_lux_3p_f.png?v=1",
+                "spec": "★★★Lux 확정본 — 시트 감사 후 생성(얼굴 3인 크롭 대조 전원 일치) · ☆남성A 서술을 시트에 맞춰 정정: 다크브라운 미디엄 웨이브·센터파트 커튼 스타일(앞머리가 이마 양옆으로 관자놀이까지 내려옴)·귀 노출·귓불 길이 — 이전 컷들의 \"이마에서 넘긴 짧은 머리\" 서술이 오류라 실제보다 정돈된 인상으로 나왔었음 · 여성A=근흑색 보브·센터파트·앞머리 없음 / 여성B=라이트~미디엄 웜브라운 소프트 웨이브·앞머리 없음·옅은 주근깨 · 포즈(느긋한 주말 오후): 왼쪽 여성A(라운지체어에 다리 꼬고 앉아 양손 머그·경청) / 중앙 남성A(소파에 파묻혀 한 팔 등받이·한 손 이야기 제스처·발목 무릎 위) / 오른쪽 여성B(에그체어에 다리 접어 옆으로 웅크리고 턱 괴고 웃음) · 인테리어/Lux 3점/크기(머리≈1/10) 원본 유지 · 합성감 저감: 한 번에 통째 생성·빈백 눌림/콘택트 섀도·정원 채광 통일·그레인 균일 · 얼굴 없는 의상레퍼(lux_a/lux_b/lux_c) · 워터마크 로컬 제거 · 1195×896"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_lux_3p_g.png?v=1",
+                "spec": "★Lux 얼굴 합성 버전 — 확정본(3p_f)을 베이스로 모듀 원본 교체에서 검증된 기법 적용: 몸·포즈·의상·Lux 3점·인테리어·크기를 픽셀 그대로 두고 머리+목만 교체(머리를 목과 함께 생성해 피부톤/조명/그레인 일치, 칼라 이음새 없음) · 좌→우 여성A(근흑색 숏보브·센터파트·트위드 셋업·머그) / 남성A(커튼 웨이브·차콜 수트·이야기 제스처) / 여성B(라이트~미디엄 웜브라운 소프트 웨이브·주근깨·블레이저·턱 괴고 웃음) · 얼굴 3인 크롭 대조 전원 시트 일치 · 워터마크 로컬 제거(마크가 커서 패치 박스 확대·같은 높이 좌측 마루를 소스로 사용) · 1195×896"
+              }
+            ]
+          },
+          {
+            "key": "modju",
+            "name": "modju 4인 누움 (2400×1792)",
+            "hex": "#c8102e",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_4p.png?v=1",
+                "spec": "4인(성인2+아동2) · 인물삭제본(modju_none.png) 베이스에 전속모델 신규 배치 · 탑다운(수직 부감) 앵글·정사각 모듈쿠션 3×3 그리드·볼스터/스퀘어쿠션·화이트 브릭·원목마루 원본 그대로 · ★신체비율 수치락: 쿠션 1칸=이미지 폭 26%, 여성B(172)=2.40칸 / 여성A(168)=2.35칸 / 아동B(150)=2.10칸 / 아동A(120)=1.67칸, 머리:몸 = 성인 1:7.5 · 아동B 1:6.5 · 아동A 1:6(아동은 축소성인이 아니라 머리가 상대적으로 큼) · 위→아래 아동A(멜빵·머리 왼쪽)·여성B(머리 오른쪽)·여성A(머리 왼쪽)·아동B(머리 오른쪽) 지그재그 배치 · 의상 흰티+청바지 통일, 아동A만 청 데님 멜빵 · 얼굴 턴어라운드+표정 시트 쌍 4인분 투입(레퍼 9장) · 워터마크 없음 · 2400×1792"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_4p_b.png?v=1",
+                "spec": "4인(성인2+아동2) · ★배게/볼스터 위치 락 버전(권장) — 1차본에서 AI가 소품을 베개로 끌어다 재배치한 문제를 교정 · 원본 소품 6개 좌표를 %로 명시 고정(그레이볼스터① 32-40%/0-24% · 올리브볼스터 74-92%/0-13% · 올리브스퀘어 22-45%/30-58% · 그레이볼스터② 74-95%/37-63% · 레드스퀘어 11-29%/58-83% · 퍼플스퀘어 66-84%/62-89%) · 머리는 이미 그 자리에 있는 소품 위에만 놓고, 올리브볼스터·퍼플스퀘어는 아무도 안 쓰고 제자리 유지 · 밴드별 배치 아동A(머리 좌36%)→여성B(좌33%)→여성A(우85%)→아동B(좌20%) · 신체비율 수치락 동일 적용 · 여성A 숏보브 정확 재현 · 워터마크 없음 · 2400×1792"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_3w.png?v=1",
+                "spec": "★성인 여성 3인 버전(여성A 168 · 여성B 172 · 여성C 169) — 아동 제외 · 키가 거의 같아 비율 지시가 단순해지고, 인물이 하나 줄어 세트 재해석 압박이 사라짐(4인 캔디드에서 세트가 무너지던 문제 해결) · 소품 6개 좌표 락 전부 성공(그레이볼스터① 상단·올리브볼스터 우상단·올리브스퀘어 중앙좌측 미사용·그레이볼스터② 우측·레드스퀘어 좌하단·퍼플스퀘어 우하단) · 리넨 텍스처/쿠션 색배치/화이트브릭/마루 원본 그대로 · 밴드별 상단 여성C(블론드 롭+커튼뱅·머리 좌36%)→중앙 여성B(체스트넛 롱웨이브·머리 우85%)→하단 여성A(다크 숏보브·머리 좌20%) 좌우 교차 · 의상 흰티+슬림 스트레이트 청바지 통일·맨발 · 인물 사이 여백에 제품이 넓게 노출 · 얼굴 시트+표정 시트 쌍 3인분(레퍼 7장) · 워터마크 없음 · 2400×1792"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_3w_b.png?v=1",
+                "spec": "★성인 여성 3인 · 겹침 배치 최종본(권장) — 나란한 평행 밴드가 도해처럼 딱딱해 보이는 문제를 교정 · 머리는 소품 위 앵커에 그대로 고정한 채 몸통 각도만 제각각 기울이고 다리를 옆 사람 영역으로 넘김: 여성C(블론드·좌36%/12% 볼스터①) 몸 우하향 15° 발 92%/32% → 여성B(체스트넛·우85%/50% 볼스터②) 무릎 세워 정강이가 여성C 종아리와 교차, 발 25%/33% → 여성A(숏보브·좌20%/75% 레드스퀘어) 몸 우상향 10°, 다리가 여성B 허벅지 아래로 지나 발 82%/62% · 겹치는 부위에 소프트 콘택트 섀도로 레이어 표현 · 소품 6개 좌표 락 유지·리넨 텍스처/색배치 원본 그대로 · 의상 흰티+슬림 스트레이트 청바지·맨발 · 워터마크 없음 · 2400×1792"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_3w_d.png?v=1",
+                "spec": "성인 여성 3인 · 모델C→D 교체 + 의상 차별화 — 합성티 제거 목적 · 여성A(다크 숏보브·화이트 크루넥 티+미드블루 슬림진·옆으로 살짝 돌아누워 팔베개) · 여성B(체스트넛 컬리 롱·화이트 민소매 리브탱크+라이트워시 와이드 데님·한 팔 머리 뒤) · 여성D(동아시아계 롱 블랙 스트레이트+시스루뱅·화이트 오버사이즈 셔츠 소매 롤업+다크워시 진·양팔 머리 위 스트레치) · 세 명 의상 실루엣/소매길이/데님 워시를 전부 다르게, 팔 포즈도 전원 상이(배에 손 얹기 금지) · 다리 3인 교차 · 콘택트 섀도/원단 눌림 강화 · ⚠쿠션 색배치·소품 위치가 원본과 다르게 재해석됨(틸 쿠션 소실·프레이밍 확대) — 인물/의상/합성감은 최고지만 실촬영 세트 재현은 3w_b가 정확 · 2400×1792"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_3w_e.png?v=1",
+                "spec": "★모듀 최종 권장본 — 세트 락과 의상 차별화를 동시에 성립시킨 컷 · ☆핵심 기법: 세트 락 블록을 프롬프트 최상단(RULE ZERO)으로 올리고 3×3 쿠션 색배치를 칸별로 명시(상 올리브|차콜|틸 / 중 레드|틸|올리브 / 하 그레이|차콜|레드, 틸 2칸 필수)해 \"원본대로\"라는 추상 지시를 수치 지시로 대체 → 앞 버전에서 틸 쿠션이 소실되고 프레이밍이 확대되던 문제 해결. 대신 포즈·그림자 지시는 압축해 총 요구량을 낮춤 · 소품 6개 좌표 락 유지 · 여성D(동아시아계 롱 블랙+시스루뱅·화이트 오버사이즈 셔츠+다크워시 진·양팔 스트레치) / 여성B(오번 롱웨이브·화이트 민소매 리브탱크+라이트워시 와이드 데님·한 팔 머리 뒤) / 여성A(다크 숏보브·화이트 크루넥 티+미드블루 슬림진·팔베개) · 3인 의상 실루엣·소매·데님워시 전부 상이 → 복붙 느낌 제거 · 다리 교차·콘택트 섀도 양호 · 워터마크 없음 · 2400×1792"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_3w_f.png?v=1",
+                "spec": "★★모듀 최종본 — 얼굴 교정 + 3w_d 포즈 이식 · ☆근본원인: 프롬프트의 얼굴 텍스트 서술이 시트와 어긋나 있었고, 텍스트가 시트를 이겨 얼굴이 계속 다른 사람으로 나옴(여성A는 시트에 웨이스피 앞머리가 있는데 \"centre part\"라 써서 앞머리 삭제 / 여성B는 시트가 미디엄 브라운인데 \"auburn·reddish·coppery\" 강조해 진저 곱슬로 / 여성D는 시트가 두꺼운 풀 프린지인데 \"see-through fringe\"라 써서 얇은 뱅으로) → 시트를 실제로 열어보고 서술을 전부 정정 · ☆기법: 마음에 든 3w_d 컷의 얼굴 3곳만 로컬 가우시안 블러로 지운 포즈 레퍼(modju_pose_ref.png, 0원)를 만들어 투입 → 포즈/의상/다리교차는 이식하고 얼굴 오염은 차단(의상레퍼 얼굴 크롭과 동일 원리) · 세트는 RULE ZERO(3×3 색배치 칸별 명시)로 별도 락 · 여성A(다크 보브+앞머리·화이트 크루넥 티+미드블루 슬림진) / 여성B(미디엄브라운 웨이브·화이트 민소매 리브탱크+라이트워시 와이드데님) / 여성D(동아시아계 롱 블랙+풀뱅·화이트 오버사이즈 셔츠+다크워시 진) · 3인 얼굴 전원 시트 일치 확인(크롭 대조) · 워터마크 없음 · 2400×1792"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_3w_g.png?v=1",
+                "spec": "★★★모듀 확정본 — 시트 감사 후 생성(얼굴 3인 크롭 대조 전원 일치) · ☆시트 감사 워크플로(모델별 독립 판독+검증 8에이전트)로 서술을 시트에 맞춤: 여성A=근흑색 턱선 보브·센터파트·앞머리 없음(이전 \"앞머리 있음\" 서술이 오류) / 여성B=라이트~미디엄 웜브라운·앞머리 없음·귀 아래부터 소프트 웨이브·옅은 주근깨 / 여성D=제트블랙 스트레이트·얇은 시스루뱅(이전 \"두꺼운 풀뱅\" 서술이 오류)·모노리드 · RULE ZERO 세트락(3×3 색배치 칸별 명시·소품 6개 % 좌표) 전부 성립 — 틸 2칸·올리브스퀘어·퍼플스퀘어·볼스터 2개 제자리 · 새 포즈: 여성D(볼스터① 머리·한쪽 무릎 세우고 가슴에 손 모음) / 여성B(볼스터② 머리·무릎 접어 옆으로 눕히고 양팔 활짝·웃음) / 여성A(레드스퀘어 머리·피겨4 다리·양손 머리 뒤) · 다리 교차·의상 3종 상이(크루넥/리브탱크/오버셔츠) · 콘택트 섀도 양호 · 워터마크 없음 · 2400×1792"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_3w_h.png?v=1",
+                "spec": "★★★모듀 확정본(의상 수정) — 3w_g 베이스에 여성B 상의만 민소매 리브탱크 → 화이트 박시 오버핏 반팔 티로 국소 편집(픽셀 차이 맵으로 변경 범위가 여성B 상체에만 국한됨을 확인) · 여성A의 슬림 크루넥과 핏을 다르게 해 의상 동일화 방지 · 얼굴/헤어/포즈/세트/소품 3w_g와 동일 · 워터마크 없음 · 2400×1792"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_3w_i.png?v=1",
+                "spec": "★★★모듀 확정본(다리 펴기) — 3w_h 베이스에 여성B 다리만 국소 편집: 무릎 접어 옆으로 눕힌 자세 → 다리를 왼쪽으로 쭉 뻗어 발이 올리브 스퀘어 쿠션까지 닿도록(172cm 기준 몸길이 쿠션 2.5칸, 프레임 내 최장) · 픽셀 차이 맵으로 변경 범위가 여성B 하체·교차부에 국한됨 확인 · 얼굴/헤어/반팔 티/양팔/세트/소품 동일 · 워터마크 없음 · 2400×1792"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_4p_c.png?v=1",
+                "spec": "4인(여성A·여성D + 아동A·아동B) · 시트 감사 후 생성(아동 2명 시트도 판독+검증 워크플로 통과) · RULE ZERO 세트락 — 3×3 색배치·리넨 유지 · ✅아동A(라이트 골든브라운 땋은머리·오른쪽 파란 핀·멜빵·120cm 소체구·유치 미소) ✅여성D(제트블랙 직모·시스루뱅·오버사이즈 셔츠+다크진) ✅아동B(오번 직모·주근깨·프리틴) · ⚠여성A가 동아시아계 얼굴로 나옴(여성D 서술이 같은 다크 숏보브인 A로 번짐 — \"European, NOT East Asian\" 누락) · ⚠레이아웃 드리프트: 여성A 머리가 우측 볼스터②가 아닌 좌측, 볼스터②는 우측 가장자리로 이동 · 워터마크 없음 · 2400×1792 · 여성A 1인 통째 재생성(2cr) 대기"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_modju_orig_swap.png?v=1",
+                "spec": "★원본 촬영본 얼굴 교체 테스트(성공) — 인물 제거본이 아니라 모델 4명이 찍힌 원본(modju.jpg 2400px)을 베이스로, 원본 인물의 몸·포즈·의상·위치를 그대로 두고 정체성만 교체 · 상단 남성(그레이 티+카키)→남성A / 중앙 여성(흰 티+청바지)→여성B / 핑크 니트 여성→여성A(롱헤어→숏보브) : 머리+목만 교체 · 하단 남성(블루 티, 흑인)→여성D 인물 통째 교체(같은 포즈·위치, 화이트 오버셔츠+다크진) · 세트·조명·포즈가 100% 실사라 지금까지 모듀 컷 중 가장 자연스러움 · 얼굴 4인 크롭 대조 전원 시트 일치(남성A 커튼 웨이브 포함) · 워터마크 없음 · 2528×1696(원본 3:2)"
+              }
+            ]
+          },
+          {
+            "key": "store",
+            "name": "매장 상담 2인 (3840×1360)",
+            "hex": "#d8b48a",
+            "el": true,
+            "rep": true,
+            "cuts": [
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_store_fullbody.png?v=7",
+                "spec": "2인 · 최종본(완성) — 실촬영본 매장.png 구도·의상(틸 셔츠 / 모브 블라우스)·배경·소품 유지 + 인물 몸까지 통째 재생성 + 인물 크기 수치지시(머리=프레임 높이 12%·카메라 원거리)로 원본 스케일 복원 + 두 모델 얼굴 시트를 1·2순위로 배치해 동시 반영 · 왼쪽 여성B(롱 웨이브 체스트넛·주근깨) · 오른쪽 여성A(다크 숏보브) · 둘 다 미소 · 서로 마주보는 상담 시선 · 1세대 생성(합성티 없음) · 3840×1360"
+              },
+              {
+                "url": "https://yogibo.openhost.cafe24.com/web/img/api/modal/cand_etc_store_outfit.png?v=2",
+                "spec": "2인 · 완성형(의상 변경) — 위 완성형과 동일 조건(구도·배경·소품·인물 크기 원본 스케일·몸까지 통째 재생성)에 의상만 교체: 왼쪽 여성B 블루 셔츠+화이트 와이드(2.png) · 오른쪽 여성A 그레이 니트 폴로+화이트 팬츠(1.png) · v2에서 여성A 얼굴시트 1순위 배치로 다크 숏보브·유럽계 정확 반영 · 둘 다 미소 · 서로 마주보는 상담 시선 · 1세대 생성(합성티 없음) · 3840×1360"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "models": {
+    "SHEETS": [
+      {
+        "key": "face",
+        "label": "① 페이스 턴어라운드",
+        "layout": "16:9 · 5패널",
+        "panels": "정면 · 좌 3/4 · 좌 측면 · 우 3/4 · 우 측면",
+        "goal": "얼굴 정체성·각도 고정 — 얼굴형/이목구비 크기·간격/피부/귀/헤어라인/머리 길이 동일 유지"
+      },
+      {
+        "key": "expr",
+        "label": "② 페이셜 익스프레션",
+        "layout": "16:9 · 2×4 (8컷)",
+        "panels": "무표정 · 옅은 미소 · 밝은 미소 · 놀람 · 슬픔 · 화남 · 집중 · 쑥스러움",
+        "goal": "표정만 변경, 얼굴 방향/이목구비/헤어 고정 — 감정은 눈·눈썹·입·볼 근육의 자연스러운 변화로만"
+      },
+      {
+        "key": "body",
+        "label": "③ 바디 턴어라운드",
+        "layout": "16:9 · 5패널",
+        "panels": "정면 · 좌 3/4 · 좌 측면 · 후면 · 우 3/4 (전신)",
+        "goal": "체형·비율 고정 — 키/어깨너비/목 길이/몸통/허리선/골반/팔다리 비율 동일 유지"
+      },
+      {
+        "key": "pose",
+        "label": "④ 제품 착석 연출",
+        "layout": "16:9 · 2×2 (4컷) · Max",
+        "panels": "깊게 앉기 · 리클라인(독서) · 책상다리 · 사이드 라운지",
+        "goal": "요기보 Max(제품 락·컬러 선택: A·B=네이비·C·D=올리브그린)에 앉은 연출 — 자세·눌림 물리 + 제품컷 프리뷰, 동일 얼굴/헤어/비율 유지"
+      }
+    ],
+    "IDENTITY_FIELDS": [
+      "피부",
+      "얼굴형·턱선",
+      "눈",
+      "눈썹",
+      "코",
+      "입술",
+      "볼 혈색",
+      "헤어",
+      "체형",
+      "신체 사이즈(키)"
+    ],
+    "CATEGORIES": [
+      {
+        "cat": "여성",
+        "emoji": "👩",
+        "spec": "성인 외국인 여성 · 20~30대 · 세련·따뜻 · 캐주얼/라운지 · 키 맥스(170) 기준 ±",
+        "models": [
+          {
+            "code": "A",
+            "name": "유럽계 · 브라운 중단발 · 차분/미니멀",
+            "size": "키 168cm · 슬림 (Max 170 기준 살짝 작게)",
+            "identity": "유럽계 성인 여성 20대 후반 · 갸름한 타원형 · 짙은 초콜릿 브라운 중단발 웨이브 · 차분·미니멀 · 자연 피부질감",
+            "ref": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_A_rep.jpg?v=smile",
+            "sheets": {
+              "face": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_A_face.png?v=hairB2",
+              "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_A_expr.png?v=hair",
+              "body": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_A_body.png?v=hair",
+              "pose": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_A_pose.png?v=v2"
+            },
+            "soulId": null,
+            "status": "얼굴 시트 ✅ · 표정/바디/포즈 대기"
+          },
+          {
+            "code": "B",
+            "name": "유럽계 · 롱 체스트넛 웨이브 · 청순/내추럴(주근깨)",
+            "size": "키 172cm · 슬림 롱라인 (Max 170 기준 살짝 크게)",
+            "identity": "유럽계 성인 여성 20대 초반 · 부드러운 타원형 · 밝은 체스트넛 브라운 롱 웨이브 · 옅은 주근깨 · 청순·내추럴 · 라이트 톤 차분한 눈",
+            "ref": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_B_rep.jpg?v=e2",
+            "sheets": {
+              "face": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_B_face.png?v=v2",
+              "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_B_expr.png?v=v2",
+              "body": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_B_body.png?v=v1",
+              "pose": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_B_pose.png?v=v1r"
+            },
+            "video": "/api/video/models/B_vidtest_kling.jpg",
+            "videoPoster": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_vidtest_kling_poster.jpg",
+            "videoNote": "영상 테스트 · Kling 3.0 · 5초 (착석 미세 모션·표정 연출)",
+            "soulId": null,
+            "status": "얼굴 시트 ✅ · 표정/바디/포즈 대기"
+          },
+          {
+            "code": "C",
+            "name": "유럽계 · 애쉬 숏보브 · 쿨/미니멀",
+            "size": "키 169cm · 슬림 (Max 170 기준 살짝 작게)",
+            "identity": "유럽계 성인 여성 20대 중후반 · 슬림 타원형 · 애쉬 브라운 숏 보브(턱선) · 쿨·미니멀·앤드로지너스 · 자연 피부질감",
+            "ref": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_C_rep.jpg?v=smile",
+            "sheets": {
+              "face": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_C_face.png?v=hairC2",
+              "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_C_expr.png?v=hair",
+              "body": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_C_body.png?v=hair",
+              "pose": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_C_pose.png?v=v3"
+            },
+            "soulId": null,
+            "status": "얼굴 시트 ✅ · 표정/바디/포즈 대기"
+          },
+          {
+            "code": "D",
+            "name": "동아시아계 · 롱 블랙 스트레이트 · 쿨/에디토리얼",
+            "size": "키 173cm · 슬림 장신 (Max 170 기준 살짝 크게)",
+            "identity": "동아시아계 성인 여성 20대 초중반 · 슬림 타원형 · 롱 블랙 스트레이트(중앙 가르마) · 쿨·에디토리얼 · 자연 피부질감",
+            "ref": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_D_rep.jpg?v=smile2",
+            "sheets": {
+              "face": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_D_face.png?v=hairD3",
+              "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_D_expr.png?v=hair",
+              "body": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_D_body.png?v=hair",
+              "pose": "https://yogibo.openhost.cafe24.com/web/img/api/modal/B_D_pose.png?v=v3"
+            },
+            "soulId": null,
+            "status": "얼굴 시트 ✅ · 표정/바디/포즈 대기"
+          }
+        ]
+      },
+      {
+        "cat": "남성",
+        "emoji": "👨",
+        "spec": "성인 외국인 남성 · 30대 전후 · 편안·친근 · 캐주얼 · 키 Max(170) 이상",
+        "models": [
+          {
+            "code": "A",
+            "name": "유럽계 · 짧은 다크브라운 · 클린컷/캐주얼",
+            "size": "키 180cm · 슬림 애슬레틱 (Max 170 이상)",
+            "identity": "유럽계 성인 남성 20대 후반~30대 · 클린컷 · 짧은 다크브라운 · 정돈된 캐주얼 · 자연 피부질감",
+            "ref": "https://yogibo.openhost.cafe24.com/web/img/api/modal/M_A_rep.jpg?v=smile",
+            "sheets": {
+              "face": "https://yogibo.openhost.cafe24.com/web/img/api/modal/M_A_face.png?v=hairMA2",
+              "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/M_A_expr.png?v=hair",
+              "body": "https://yogibo.openhost.cafe24.com/web/img/api/modal/M_A_body.png?v=hair",
+              "pose": "https://yogibo.openhost.cafe24.com/web/img/api/modal/M_A_pose.png?v=v2"
+            },
+            "soulId": null,
+            "status": "4종 완성 ✅ (착석=네이비 Max)"
+          }
+        ]
+      },
+      {
+        "cat": "아동",
+        "emoji": "🧒",
+        "spec": "외국인 아동 · 밝고 친근 · 편안한 홈웨어 · 키는 아동 비례",
+        "models": [
+          {
+            "code": "A",
+            "name": "유럽계 여아 · 라이트브라운 양갈래 땋은머리 · 밝음",
+            "size": "키 약 120cm · 유아~저학년 (아동 비례)",
+            "identity": "유럽계 여아 6~7세 · 라이트브라운 양갈래 땋은 머리(센터파트·헤어핀) · 둥근 볼 · 밝고 명랑 · 자연 피부",
+            "ref": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_A_rep.jpg?v=40",
+            "sheets": {
+              "face": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_A_face.png?v=braid",
+              "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_A_expr.png?v=braid",
+              "body": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_A_body.png?v=v1",
+              "pose": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_A_pose.png?v=v4"
+            },
+            "soulId": null,
+            "status": "①얼굴 ②표정 헤어변경 완료(양갈래·라이트브라운) ✅ · ③바디 ④포즈는 구헤어 → 재생성 필요"
+          },
+          {
+            "code": "B",
+            "name": "유럽계 여아 · 레디시브라운 롱 생머리(센터파트) · 청순(주근깨)",
+            "size": "키 약 150cm · 초등 고학년/틴 (아동 비례)",
+            "identity": "유럽계 여아 10~12세 · 레디시브라운 롱 스트레이트(센터파트) · 옅은 주근깨 · 따뜻한 미소 · 자연 피부",
+            "ref": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_B_rep.jpg?v=40",
+            "sheets": {
+              "face": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_B_face.png?v=straight",
+              "expr": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_B_expr.png?v=straight",
+              "body": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_B_body.png?v=v1",
+              "pose": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_B_pose.png?v=v1"
+            },
+            "video": "/api/video/models/K_B_vidtest_kling.jpg",
+            "videoPoster": "https://yogibo.openhost.cafe24.com/web/img/api/modal/K_B_vidtest_kling_poster.jpg",
+            "videoNote": "영상 테스트 · Kling 3.0 · 5초 (올리브 Max 착석·미세 모션)",
+            "soulId": null,
+            "status": "①얼굴 ②표정 헤어변경 완료(롱 생머리·센터파트, 컬러유지) ✅ · ③바디 ④포즈는 구헤어 → 재생성 필요"
+          }
+        ]
+      }
+    ],
+    "PIPE": [
+      {
+        "s": "STAGE 0 · 브리프",
+        "st": "✅",
+        "note": "외국인 남/여/아동 3종 · 라이프스타일 톤 · 얼굴 고정형 베이스 · 모델 A/B/C"
+      },
+      {
+        "s": "STAGE 1 · 레퍼런스",
+        "st": "🟡",
+        "note": "사용자가 유형별 레퍼런스 제공 → 인상/분위기 참고(복제 X)"
+      },
+      {
+        "s": "STAGE 2 · 아이덴티티 서술",
+        "st": "⬜",
+        "note": "레퍼런스 기반 \"고정 아이덴티티 서술\"(피부·얼굴·눈·헤어·체형…) 확정"
+      },
+      {
+        "s": "STAGE 3 · 레퍼런스 시트 4종",
+        "st": "⬜",
+        "note": "얼굴 턴어라운드 · 표정 · 바디 턴어라운드 · 포즈 생성 → 얼굴·체형·브랜드 적합성 확인"
+      },
+      {
+        "s": "STAGE 4 · 선정 & 락",
+        "st": "⬜",
+        "note": "유형별 최종 확정 → Soul 학습(또는 시트를 레퍼런스로) → soul_id 고정"
+      },
+      {
+        "s": "STAGE 5 · 제품컷",
+        "st": "⬜",
+        "note": "모델 A/B/C 지정 → 요기보 제품·공간 스틸 컷 반복(통일성)"
+      }
+    ]
+  }
+}

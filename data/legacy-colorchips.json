@@ -1,0 +1,152 @@
+[
+  {
+    "id": "cherry_red",
+    "name": "체리레드",
+    "hex": "#980224",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #D80C1E"
+  },
+  {
+    "id": "wine_burgundy",
+    "name": "와인버건디",
+    "hex": "#7A031F",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #A22327"
+  },
+  {
+    "id": "sweet_orange",
+    "name": "스위트오렌지",
+    "hex": "#EE780C",
+    "note": "스탠다드 · 실측 대기"
+  },
+  {
+    "id": "rose_pink",
+    "name": "로즈핑크",
+    "hex": "#EF0066",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #E61A67"
+  },
+  {
+    "id": "olive_green",
+    "name": "올리브그린",
+    "hex": "#668B01",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #79A02F"
+  },
+  {
+    "id": "aqua_blue",
+    "name": "아쿠아블루",
+    "hex": "#0075BD",
+    "note": "스탠다드 · Max 10주년 · 실측(사이트 360) 적용 · 구 CSS #0081CC"
+  },
+  {
+    "id": "navy_blue",
+    "name": "네이비블루",
+    "hex": "#1D395D",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #10376C"
+  },
+  {
+    "id": "bright_purple",
+    "name": "브라이트퍼플",
+    "hex": "#644D9A",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #754095"
+  },
+  {
+    "id": "deep_purple",
+    "name": "딥퍼플",
+    "hex": "#5F2A38",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #87234B"
+  },
+  {
+    "id": "choco_brown",
+    "name": "초코브라운",
+    "hex": "#5D4131",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #745334"
+  },
+  {
+    "id": "light_gray",
+    "name": "라이트그레이",
+    "hex": "#E5DED3",
+    "note": "스탠다드"
+  },
+  {
+    "id": "dark_gray",
+    "name": "다크그레이",
+    "hex": "#615F5F",
+    "note": "스탠다드"
+  },
+  {
+    "id": "living_coral",
+    "name": "리빙코랄",
+    "hex": "#EA3D19",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #FF6633"
+  },
+  {
+    "id": "blossom_pink",
+    "name": "블라썸핑크",
+    "hex": "#E2A8BE",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #FFD3C5"
+  },
+  {
+    "id": "bright_yellow",
+    "name": "브라이트옐로우",
+    "hex": "#EBCD00",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #FFE100"
+  },
+  {
+    "id": "lavender_purple",
+    "name": "라벤더퍼플",
+    "hex": "#CDA7DB",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #E6C8CE"
+  },
+  {
+    "id": "fresh_mint",
+    "name": "프레시민트",
+    "hex": "#B0EEE7",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #CCEFC2"
+  },
+  {
+    "id": "pastel_blue",
+    "name": "파스텔블루",
+    "hex": "#BEDDEF",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #D6E0EC"
+  },
+  {
+    "id": "avocado_green",
+    "name": "아보카도그린",
+    "hex": "#88BCA4",
+    "note": "스탠다드 · 실측(사이트 360) 적용 · 구 CSS #C6D59B"
+  },
+  {
+    "id": "stone",
+    "name": "스톤",
+    "hex": "#98ABB6",
+    "note": "줄라(아웃도어)"
+  },
+  {
+    "id": "sky",
+    "name": "스카이",
+    "hex": "#2BB3E2",
+    "note": "줄라(아웃도어)"
+  },
+  {
+    "id": "grass",
+    "name": "그래스",
+    "hex": "#BED12B",
+    "note": "줄라(아웃도어)"
+  },
+  {
+    "id": "citrus",
+    "name": "시트러스",
+    "hex": "#FB6D21",
+    "note": "줄라(아웃도어)"
+  },
+  {
+    "id": "ocean",
+    "name": "오션",
+    "hex": "#164690",
+    "note": "줄라(아웃도어)"
+  },
+  {
+    "id": "onyx",
+    "name": "오닉스",
+    "hex": "#3A5657",
+    "note": "줄라(아웃도어)"
+  }
+]
