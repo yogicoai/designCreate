@@ -130,7 +130,7 @@ export async function POST(req: Request) {
         slot: String(t.slot),
         identityEn: String(t.identityEn || t.thumbDesc || t.identity || ''),
         sizeEn: String(t.sizeEn || t.size || ''),
-        ...(t.sheets?.face ? { faceSheet: String(t.sheets.face) } : {}),
+        ...(t.rep ? { repShot: String(t.rep) } : {}),
         ...(t.exprSheet ? { exprSheet: String(t.exprSheet) } : {}),
         ...(expr ? { expression: { kr: String(expr.kr), en: String(expr.en) } } : {}),
         ...(outfit

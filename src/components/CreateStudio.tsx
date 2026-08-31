@@ -390,8 +390,7 @@ export default function CreateStudio(p: Props) {
                           <Zoomable
                             src={r.url}
                             alt={r.title}
-                            caption={`${r.title}${used ? '
-(이미 이번 작업에 들어가 있음)' : ''}`}
+                            caption={`${r.title}${used ? ' — 이미 이번 작업에 들어가 있음' : ''}`}
                             action={{ label: used ? '이미 추가됨' : '＋ 이번 작업에 추가', onClick: () => addFromLibrary(r), disabled: used }}
                             className="w-full aspect-square object-cover rounded-md border"
                             style={{ borderColor: used ? 'var(--accent)' : 'var(--line)' }}

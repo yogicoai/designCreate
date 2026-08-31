@@ -73,8 +73,12 @@ export interface TalentSpec {
   identityEn: string;
   /** 영문 체형 서술 (제품 대비 상대 크기 포함) */
   sizeEn: string;
-  /** ① 얼굴 턴어라운드 시트 (5패널) — 아이덴티티 락의 1순위 앵커 */
-  faceSheet?: string;
+  /**
+   * 대표컷 — 자연스러운 미소의 단일 대형 초상 (승인본).
+   * 무표정 턴어라운드 시트는 참조로 넣지 않는다: 표정 없는 다각도 시트가 들어가면
+   * 결과 얼굴이 굳거나 흔들린다 (기존 팀 규칙 + 실사용 피드백).
+   */
+  repShot?: string;
   exprSheet?: string;
   /** 사용할 표정 패널 */
   expression?: { kr: string; en: string };
@@ -197,9 +201,9 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
     const who = multi ? `PERSON ${i + 1} (counting people from the LEFT of the base image)` : 'the model';
     const ident: { url?: string; title: string; role: string }[] = [
       {
-        url: t.faceSheet,
-        title: `얼굴 시트 ${multi ? `${i + 1} ` : ''}· ${t.category} ${t.slot}`,
-        role: `the PRIMARY identity reference for ${who} — a face turnaround of ONE model in 5 angles; treat it as ground truth for face construction, eye/nose/lip shape, skin tone, hairline and hairstyle`,
+        url: t.repShot,
+        title: `대표컷 ${multi ? `${i + 1} ` : ''}· ${t.category} ${t.slot}`,
+        role: `the PRIMARY identity reference for ${who} — an approved portrait of ONE model with her natural expression; treat it as ground truth for face construction, eye/nose/lip shape, skin tone, hairline and hairstyle`,
       },
       {
         url: t.exprSheet,
