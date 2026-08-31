@@ -151,6 +151,17 @@ export default function CreateStudio(p: Props) {
     });
   }
 
+  /** 선택된 모델의 순서 변경 — 순서가 곧 "사진 왼쪽부터" 배정이라 자리 바꿈이 필요하다 */
+  function movePick(i: number, dir: -1 | 1) {
+    setPicks((cur) => {
+      const j = i + dir;
+      if (j < 0 || j >= cur.length) return cur;
+      const next = [...cur];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
+
   /** 보관함에서 현재 작업으로 가져오기 (중복 제외) */
   function addFromLibrary(r: ReferenceDoc) {
     setUploads((cur) => (cur.some((u) => u.url === r.url) ? cur : [...cur, { url: r.url, title: r.title, role: 'style' }]));
@@ -516,9 +527,22 @@ export default function CreateStudio(p: Props) {
                 )}
                 {picks.map((pick, i) => {
                   const t = p.talents.find((x) => x.code === pick.code)!;
+                  const arrow = (dir: -1 | 1, on: boolean, label: string) => (
+                    <button onClick={() => movePick(i, dir)} disabled={!on} aria-label={label}
+                            className="w-[18px] h-[15px] leading-none text-[10px] rounded"
+                            style={{ background: 'none', border: 'none', cursor: on ? 'pointer' : 'default',
+                                     color: on ? 'var(--text-dim)' : 'var(--line-strong)', padding: 0 }}>
+                      {dir === -1 ? '▲' : '▼'}
+                    </button>
+                  );
                   return (
                     <div key={pick.code} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
                       <span className="text-[13px] font-bold w-5 text-center" style={{ color: 'var(--accent)' }}>{ORD[i]}</span>
+                      {/* 순서 변경 — ①이 사진 맨 왼쪽 사람 */}
+                      <span className="flex flex-col shrink-0">
+                        {arrow(-1, i > 0, '왼쪽으로')}
+                        {arrow(1, i < picks.length - 1, '오른쪽으로')}
+                      </span>
                       <span className="text-[11.5px] font-semibold w-[52px] shrink-0">{t.category}{t.slot}</span>
                       <select className="input flex-1" value={pick.expression}
                               onChange={(e) => setPicks((c) => c.map((x, j) => j === i ? { ...x, expression: e.target.value } : x))}>
@@ -529,6 +553,11 @@ export default function CreateStudio(p: Props) {
                         <option value="">의상 자동</option>
                         {t.outfits.map((o) => <option key={o.code} value={o.code}>{o.desc}</option>)}
                       </select>
+                      <button onClick={() => setPicks((c) => c.filter((_, j) => j !== i))} aria-label="빼기"
+                              className="text-[12px] shrink-0"
+                              style={{ color: 'var(--text-mute)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                        ✕
+                      </button>
                     </div>
                   );
                 })}
