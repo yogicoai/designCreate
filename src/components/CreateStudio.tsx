@@ -3,6 +3,7 @@
 import { useMemo, useState, useRef } from 'react';
 import type { ProductDoc, TalentDoc, PoseRefDoc, ExpressionDoc } from '@/lib/types';
 import type { SizePresetDoc, VariationDoc, PreservationDoc } from '@/lib/queries';
+import { shrinkForUpload, formatBytes } from '@/lib/client-image';
 
 type WithId<T> = T & { id: string };
 
@@ -21,14 +22,37 @@ interface Props {
   baseCuts: BaseCut[];
 }
 
-interface UploadedRef { url: string; title: string }
+type RefRole = 'style' | 'base' | 'background';
+interface UploadedRef { url: string; title: string; role: RefRole }
+
+/** 선택된 모델 1명 — 순서가 곧 "사진 왼쪽부터" 배정 순서다 */
+interface TalentPick { code: string; expression: string; outfitCode: string }
+
+type EditTarget = 'face' | 'person' | 'outfit' | 'product-color' | 'background' | 'text-removal';
+
+const EDIT_TARGETS: { value: EditTarget; label: string; desc: string }[] = [
+  { value: 'face', label: '얼굴만 교체', desc: '몸·포즈·의상·배경 유지, 얼굴+헤어만 우리 모델로' },
+  { value: 'person', label: '인물 전체 교체', desc: '포즈는 유지하고 사람을 통째로 우리 모델로' },
+  { value: 'product-color', label: '제품 리컬러', desc: '제품 색만 공식 컬러로' },
+  { value: 'outfit', label: '의상만 교체', desc: '얼굴·포즈 유지, 옷만' },
+  { value: 'background', label: '배경만 교체', desc: '인물·제품 유지, 공간만' },
+  { value: 'text-removal', label: '텍스트 제거', desc: '박힌 글자·배지·로고 지우기' },
+];
+
+const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
+  { value: 'style', label: '분위기 참고', desc: '조명·색감·무드만 따라가고 장면은 새로' },
+  { value: 'base', label: '이 사진을 편집', desc: '사진은 그대로 두고 지정한 것만 바꿈 (합성·교체)' },
+  { value: 'background', label: '배경으로 사용', desc: '공간만 가져오고 인물·제품은 우리 자산으로' },
+];
+
+/** 장당 단가 — Pro 2K 기준 (₩1,400/$ 환산) */
+const WON_PER_IMAGE = 188;
+const ORD = ['①', '②', '③', '④'];
 
 interface DryRunResult {
   prompt: string;
   promptMode: string;
   refs: { kind: string; title: string; url?: string; swatchHex?: string }[];
-  aspect: string;
-  target: { width: number; height: number };
 }
 
 interface GenResult {
@@ -36,9 +60,6 @@ interface GenResult {
   deltaE?: number | null; measuredHex?: string | null; elapsedMs?: number;
   error?: string; blockReason?: string | null;
 }
-
-/** 장당 단가 — Pro 2K 기준 (₩1,400/$ 환산) */
-const WON_PER_IMAGE = 188;
 
 function Section({ n, title, hint, children, right }: {
   n: string; title: string; hint?: string; children: React.ReactNode; right?: React.ReactNode;
@@ -64,22 +85,25 @@ function Section({ n, title, hint, children, right }: {
 export default function CreateStudio(p: Props) {
   const [mode, setMode] = useState<'thumbnail' | 'banner'>('thumbnail');
   const [sizeValue, setSizeValue] = useState(p.sizes.find((s) => s.value === '1000x1000')?.value ?? p.sizes[0]?.value ?? '');
+  const [customW, setCustomW] = useState('1200');
+  const [customH, setCustomH] = useState('800');
   const [line, setLine] = useState('');
   const [colorKey, setColorKey] = useState('');
-  const [talentCode, setTalentCode] = useState('');
-  const [expression, setExpression] = useState('soft_smile');
-  const [outfitCode, setOutfitCode] = useState('');
+  /** 선택 순서 유지 — ①②③④ = 사진 왼쪽부터 */
+  const [picks, setPicks] = useState<TalentPick[]>([]);
   const [baseTab, setBaseTab] = useState<'none' | 'cut' | 'pose'>('none');
   const [baseCutUrl, setBaseCutUrl] = useState('');
   const [poseRefKey, setPoseRefKey] = useState('');
   const [shapeRefKey, setShapeRefKey] = useState('');
   const [uploads, setUploads] = useState<UploadedRef[]>([]);
   const [preservation, setPreservation] = useState('similar');
+  const [editTargets, setEditTargets] = useState<EditTarget[]>([]);
   const [variationIds, setVariationIds] = useState<Record<string, string>>({});
   const [direction, setDirection] = useState('');
   const [samples, setSamples] = useState(1);
   const [showStaging, setShowStaging] = useState(false);
 
+  const [uploadNote, setUploadNote] = useState('');
   const [uploading, setUploading] = useState(false);
   const [dry, setDry] = useState<DryRunResult | null>(null);
   const [busy, setBusy] = useState<'dry' | 'gen' | null>(null);
@@ -88,10 +112,9 @@ export default function CreateStudio(p: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const product = p.products.find((x) => x.line === line);
-  const color = product?.colors.find((c) => c.key === colorKey);
-  const talent = p.talents.find((t) => t.code === talentCode);
   const size = p.sizes.find((s) => s.value === sizeValue);
   const linePoses = p.poses.filter((x) => x.line === line);
+  const hasBaseUpload = uploads.some((u) => u.role === 'base');
   const lineCuts = useMemo(
     () => p.baseCuts.filter((c) => (!line || c.line === line) && (!colorKey || c.colorKey === colorKey)).slice(0, 60),
     [p.baseCuts, line, colorKey],
@@ -109,20 +132,31 @@ export default function CreateStudio(p: Props) {
     return [...m.entries()];
   }, [p.variations]);
 
+  function togglePick(code: string) {
+    setPicks((cur) => {
+      const i = cur.findIndex((x) => x.code === code);
+      if (i >= 0) return cur.filter((x) => x.code !== code);
+      if (cur.length >= 4) return cur; // 최대 4명
+      const t = p.talents.find((x) => x.code === code);
+      return [...cur, { code, expression: 'soft_smile', outfitCode: t?.outfits[0]?.code ?? '' }];
+    });
+  }
+
   function payload(dryRun: boolean) {
     return {
-      mode, sizeValue, dryRun,
+      mode, dryRun, samples,
+      sizeValue,
+      ...(sizeValue === 'custom' ? { customSize: { width: Number(customW), height: Number(customH) } } : {}),
       ...(line ? { line } : {}),
       ...(colorKey ? { colorKey } : {}),
-      ...(talentCode ? { talentCode, expression } : {}),
-      ...(outfitCode ? { outfitCode } : {}),
+      ...(picks.length ? { talents: picks } : {}),
       ...(baseTab === 'cut' && baseCutUrl ? { baseCutId: baseCutUrl } : {}),
       ...(baseTab === 'pose' && poseRefKey ? { poseRefKey } : {}),
       ...(baseTab === 'pose' && shapeRefKey ? { shapeRefKey } : {}),
       ...(uploads.length ? { uploadedRefs: uploads, preservation } : {}),
+      ...(hasBaseUpload && editTargets.length ? { editTargets } : {}),
       variationIds: Object.values(variationIds).filter((v) => v && !v.endsWith(':auto')),
       ...(direction.trim() ? { direction: direction.trim() } : {}),
-      samples,
     };
   }
 
@@ -140,7 +174,7 @@ export default function CreateStudio(p: Props) {
       if (dryRun) setDry(json);
       else {
         setResults(json.results ?? []);
-        if (json.prompt) setDry({ prompt: json.prompt, promptMode: json.promptMode, refs: json.refs, aspect: json.aspect ?? '', target: { width: 0, height: 0 } });
+        if (json.prompt) setDry({ prompt: json.prompt, promptMode: json.promptMode, refs: json.refs });
         if (!json.ok) setErr(json.results?.find((r: GenResult) => r.error)?.error || '생성 실패');
       }
     } catch (e) {
@@ -152,15 +186,20 @@ export default function CreateStudio(p: Props) {
 
   async function onFiles(files: FileList | null) {
     if (!files?.length) return;
-    setUploading(true); setErr('');
+    setUploading(true); setErr(''); setUploadNote('');
     try {
       for (const f of Array.from(files).slice(0, 3)) {
+        // Vercel 4.5MB 본문 한도 — 브라우저에서 먼저 줄인다 (11MB 사진도 여기서 3MB 이하로)
+        const shrunk = await shrinkForUpload(f);
+        if (shrunk.bytes !== shrunk.originalBytes) {
+          setUploadNote(`${f.name}: ${formatBytes(shrunk.originalBytes)} → ${formatBytes(shrunk.bytes)} 로 줄여서 업로드`);
+        }
         const fd = new FormData();
-        fd.append('file', f);
+        fd.append('file', shrunk.file);
         fd.append('title', f.name);
         const res = await fetch('/api/upload', { method: 'POST', body: fd });
         const json = await res.json();
-        if (json.ok) setUploads((u) => [...u, { url: json.url, title: json.title }]);
+        if (json.ok) setUploads((u) => [...u, { url: json.url, title: json.title, role: 'style' }]);
         else setErr(json.error || '업로드 실패');
       }
     } finally {
@@ -170,6 +209,11 @@ export default function CreateStudio(p: Props) {
   }
 
   const cost = samples * WON_PER_IMAGE;
+  const sizeInfo = sizeValue === 'custom'
+    ? null
+    : size && (size.retention < 1 || size.variableHeight)
+      ? size
+      : size;
 
   return (
     <div className="flex h-full">
@@ -184,7 +228,7 @@ export default function CreateStudio(p: Props) {
 
         <div className="flex flex-col gap-3 max-w-[680px]">
           {/* ① 용도 · 규격 */}
-          <Section n="1" title="용도와 규격" hint="등록된 사이즈에서 고르면 생성 비율과 크롭까지 자동 계산됩니다.">
+          <Section n="1" title="용도와 규격" hint="프리셋에서 고르거나 픽셀을 직접 지정합니다.">
             <div className="flex gap-1.5 mb-3">
               {([['thumbnail', '상품 썸네일'], ['banner', '이벤트 배너 · SNS']] as const).map(([v, l]) => (
                 <button key={v} onClick={() => setMode(v)} className="btn"
@@ -199,17 +243,30 @@ export default function CreateStudio(p: Props) {
                   {list.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </optgroup>
               ))}
+              <optgroup label="직접 지정">
+                <option value="custom">📐 규격 직접 입력…</option>
+              </optgroup>
             </select>
-            {size && (
+            {sizeValue === 'custom' && (
+              <div className="flex items-center gap-2 mt-2">
+                <input className="input w-[110px]" type="number" min={64} max={8192} value={customW}
+                       onChange={(e) => setCustomW(e.target.value)} placeholder="가로 px" />
+                <span style={{ color: 'var(--text-mute)' }}>×</span>
+                <input className="input w-[110px]" type="number" min={64} max={8192} value={customH}
+                       onChange={(e) => setCustomH(e.target.value)} placeholder="세로 px" />
+                <span className="text-[11px]" style={{ color: 'var(--text-mute)' }}>px</span>
+              </div>
+            )}
+            {sizeValue !== 'custom' && sizeInfo && (
               <div className="text-[11px] mt-2 flex gap-3 flex-wrap" style={{ color: 'var(--text-mute)' }}>
-                <span>생성 비율 <b style={{ color: 'var(--text-dim)' }}>{size.genAspect}</b></span>
-                {size.retention < 1 && (
-                  <span style={{ color: size.retention < 0.7 ? 'var(--warn)' : 'var(--text-mute)' }}>
-                    {size.cropAxis === 'vertical' ? '세로' : '가로'} {Math.round((1 - size.retention) * 100)}% 크롭
-                    {size.retention < 0.7 && ' — 손실이 큽니다'}
+                <span>생성 비율 <b style={{ color: 'var(--text-dim)' }}>{sizeInfo.genAspect}</b></span>
+                {sizeInfo.retention < 1 && (
+                  <span style={{ color: sizeInfo.retention < 0.7 ? 'var(--warn)' : 'var(--text-mute)' }}>
+                    {sizeInfo.cropAxis === 'vertical' ? '세로' : '가로'} {Math.round((1 - sizeInfo.retention) * 100)}% 크롭
+                    {sizeInfo.retention < 0.7 && ' — 손실이 큽니다'}
                   </span>
                 )}
-                {size.variableHeight && <span>세로 가변</span>}
+                {sizeInfo.variableHeight && <span>세로 가변</span>}
               </div>
             )}
           </Section>
@@ -235,48 +292,143 @@ export default function CreateStudio(p: Props) {
             )}
           </Section>
 
-          {/* ③ 모델 */}
-          <Section n="3" title="모델" hint="표정 시트가 아이덴티티 앵커로 함께 들어가 얼굴이 흔들리지 않습니다.">
+          {/* ③ 모델 — 다중 선택, 클릭 순서 = 사진 왼쪽부터 */}
+          <Section n="3" title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다. 다시 클릭하면 빠집니다.">
             <div className="flex flex-wrap gap-2 mb-3">
-              <button onClick={() => { setTalentCode(''); setOutfitCode(''); }}
-                      className="rounded-lg border px-2.5 py-2 text-[11px]"
-                      style={{ borderColor: !talentCode ? 'var(--accent)' : 'var(--line)', color: !talentCode ? 'var(--accent)' : 'var(--text-mute)' }}>
-                제품만<br />(인물 없음)
-              </button>
-              {p.talents.map((t) => (
-                <button key={t.code} onClick={() => { setTalentCode(t.code); setOutfitCode(t.outfits[0]?.code ?? ''); }}
-                        className="rounded-lg border overflow-hidden text-left"
-                        style={{ borderColor: t.code === talentCode ? 'var(--accent)' : 'var(--line)', width: 68 }}>
-                  {t.rep
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    ? <img src={t.rep} alt={t.code} className="w-full object-cover" style={{ aspectRatio: '3/4' }} />
-                    : <div style={{ aspectRatio: '3/4', background: 'var(--surface-2)' }} />}
-                  <div className="text-[10px] text-center py-1" style={{ color: t.code === talentCode ? 'var(--accent)' : 'var(--text-mute)' }}>
-                    {t.category}{t.slot}
-                  </div>
-                </button>
-              ))}
+              {p.talents.map((t) => {
+                const idx = picks.findIndex((x) => x.code === t.code);
+                const on = idx >= 0;
+                return (
+                  <button key={t.code} onClick={() => togglePick(t.code)}
+                          className="relative rounded-lg border overflow-hidden text-left"
+                          style={{ borderColor: on ? 'var(--accent)' : 'var(--line)', borderWidth: on ? 2 : 1, width: 68 }}>
+                    {on && (
+                      <span className="absolute top-1 left-1 z-10 w-[18px] h-[18px] rounded-full text-[11px] font-bold flex items-center justify-center"
+                            style={{ background: 'var(--accent)', color: '#fff' }}>{ORD[idx]}</span>
+                    )}
+                    {t.rep
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      ? <img src={t.rep} alt={t.code} className="w-full object-cover" style={{ aspectRatio: '3/4' }} />
+                      : <div style={{ aspectRatio: '3/4', background: 'var(--surface-2)' }} />}
+                    <div className="text-[10px] text-center py-1" style={{ color: on ? 'var(--accent)' : 'var(--text-mute)' }}>
+                      {t.category}{t.slot}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-            {talent && (
-              <div className="grid sm:grid-cols-2 gap-2">
-                <div>
-                  <div className="label mb-1">표정</div>
-                  <select className="input" value={expression} onChange={(e) => setExpression(e.target.value)}>
-                    {p.expressions.map((e) => <option key={e.id} value={e.id}>{e.kr}</option>)}
-                  </select>
+
+            {picks.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {picks.length > 1 && (
+                  <div className="text-[11px] px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--accent-soft)', color: 'var(--text-dim)' }}>
+                    사진 <b style={{ color: 'var(--accent)' }}>왼쪽부터</b> ① → ④ 순서로 배정됩니다.
+                  </div>
+                )}
+                {picks.map((pick, i) => {
+                  const t = p.talents.find((x) => x.code === pick.code)!;
+                  return (
+                    <div key={pick.code} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                      <span className="text-[13px] font-bold w-5 text-center" style={{ color: 'var(--accent)' }}>{ORD[i]}</span>
+                      <span className="text-[11.5px] font-semibold w-[52px] shrink-0">{t.category}{t.slot}</span>
+                      <select className="input flex-1" value={pick.expression}
+                              onChange={(e) => setPicks((c) => c.map((x, j) => j === i ? { ...x, expression: e.target.value } : x))}>
+                        {p.expressions.map((ex) => <option key={ex.id} value={ex.id}>{ex.kr}</option>)}
+                      </select>
+                      <select className="input flex-1" value={pick.outfitCode}
+                              onChange={(e) => setPicks((c) => c.map((x, j) => j === i ? { ...x, outfitCode: e.target.value } : x))}>
+                        <option value="">의상 자동</option>
+                        {t.outfits.map((o) => <option key={o.code} value={o.code}>{o.desc}</option>)}
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
+
+          {/* ④ 레퍼런스 업로드 — 역할 지정 */}
+          <Section n="4" title="레퍼런스 업로드"
+                   hint="큰 사진도 괜찮습니다 — 브라우저에서 자동으로 줄여서 올립니다. 올린 뒤 역할을 정하세요.">
+            <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} />
+            <div className="flex gap-2 flex-wrap items-start mb-1">
+              <button className="btn" onClick={() => fileInput.current?.click()} disabled={uploading}>
+                {uploading ? '업로드 중…' : '＋ 이미지 추가'}
+              </button>
+            </div>
+            {uploadNote && <div className="text-[10.5px] mb-2" style={{ color: 'var(--ok)' }}>{uploadNote}</div>}
+
+            {uploads.map((u, i) => (
+              <div key={u.url} className="flex gap-2.5 p-2 rounded-lg mb-2" style={{ background: 'var(--surface-2)' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={u.url} alt={u.title} className="w-[76px] h-[76px] object-cover rounded-lg shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] truncate" style={{ color: 'var(--text-dim)' }}>{u.title}</div>
+                    <button onClick={() => setUploads((a) => a.filter((_, j) => j !== i))}
+                            className="text-[11px] shrink-0" style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                      삭제
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                    {ROLE_META.map((r) => (
+                      <button key={r.value} title={r.desc}
+                              onClick={() => setUploads((a) => a.map((x, j) => j === i ? { ...x, role: r.value } : x))}
+                              className="chip"
+                              style={u.role === r.value ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[10px] mt-1" style={{ color: 'var(--text-mute)' }}>
+                    {ROLE_META.find((r) => r.value === u.role)?.desc}
+                  </div>
                 </div>
-                <div>
-                  <div className="label mb-1">의상</div>
-                  <select className="input" value={outfitCode} onChange={(e) => setOutfitCode(e.target.value)}>
-                    {talent.outfits.map((o) => <option key={o.code} value={o.code}>{o.code} · {o.desc}</option>)}
-                  </select>
+              </div>
+            ))}
+
+            {/* base 역할이 있으면: 무엇을 바꿀지 */}
+            {hasBaseUpload && (
+              <div className="mt-2 p-2.5 rounded-lg" style={{ background: 'var(--accent-soft)' }}>
+                <div className="label mb-1.5">이 사진에서 무엇을 바꿀까요 (복수 선택)</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {EDIT_TARGETS.map((t) => {
+                    const on = editTargets.includes(t.value);
+                    return (
+                      <button key={t.value} title={t.desc}
+                              onClick={() => setEditTargets((c) => on ? c.filter((x) => x !== t.value) : [...c, t.value])}
+                              className="chip"
+                              style={on ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--surface)' } : {}}>
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {editTargets.includes('face') || editTargets.includes('person') ? (
+                  <div className="text-[10.5px] mt-2" style={{ color: 'var(--text-dim)' }}>
+                    교체할 모델을 위 ③에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {uploads.some((u) => u.role !== 'base') && (
+              <div className="mt-2">
+                <div className="label mb-1">분위기 참고를 얼마나 살릴까요</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {p.preservations.map((m) => (
+                    <button key={m.value} onClick={() => setPreservation(m.value)} className="chip"
+                            style={m.value === preservation ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                      {m.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
           </Section>
 
-          {/* ④ 베이스 */}
-          <Section n="4" title="베이스" hint="확정된 컷을 베이스로 쓰면 각도·형태가 그대로 유지됩니다. 가장 정확한 방법입니다.">
+          {/* ⑤ 베이스 (자산) */}
+          <Section n="5" title="베이스 (기존 자산)" hint="확정된 컷이나 실사 포즈 레퍼를 앵커로 씁니다. 레퍼런스를 '이 사진을 편집'으로 쓸 땐 비워두세요.">
             <div className="flex gap-1.5 mb-3">
               {([['none', '없음'], ['cut', '기존 컷'], ['pose', '포즈 레퍼']] as const).map(([v, l]) => (
                 <button key={v} onClick={() => setBaseTab(v)} className="btn"
@@ -300,59 +452,33 @@ export default function CreateStudio(p: Props) {
             )}
             {baseTab === 'pose' && (
               linePoses.length ? (
-                <div className="grid grid-cols-4 gap-2 max-h-[240px] overflow-y-auto pr-1">
-                  {linePoses.map((r) => (
-                    <div key={r.key} className="text-center">
-                      <div className="flex gap-1">
-                        {([['off', r.offUrl, shapeRefKey], ['on', r.onUrl, poseRefKey]] as const).map(([kind, url, sel]) => (
-                          <button key={kind} onClick={() => kind === 'off'
-                                    ? setShapeRefKey(shapeRefKey === r.key ? '' : r.key)
-                                    : setPoseRefKey(poseRefKey === r.key ? '' : r.key)}
-                                  className="flex-1" title={`${r.name} · ${kind === 'off' ? '형태' : '포즈각도'}`}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={url} alt={r.name} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
-                                 style={{ borderColor: sel === r.key ? 'var(--accent)' : 'var(--line)', borderWidth: sel === r.key ? 2 : 1 }} />
-                            <div className="text-[9px] mt-0.5" style={{ color: 'var(--text-mute)' }}>{kind === 'off' ? '형태' : '포즈'}</div>
-                          </button>
-                        ))}
+                <>
+                  <div className="text-[10.5px] mb-2" style={{ color: 'var(--text-mute)' }}>
+                    <b style={{ color: 'var(--accent)' }}>형태</b>(사람 지운 눌림)와 <b style={{ color: 'var(--info)' }}>포즈</b>(각도·자세)를
+                    <b> 둘 다</b> 고르는 게 가장 정확합니다.
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 max-h-[240px] overflow-y-auto pr-1">
+                    {linePoses.map((r) => (
+                      <div key={r.key} className="text-center">
+                        <div className="flex gap-1">
+                          {([['off', r.offUrl, shapeRefKey], ['on', r.onUrl, poseRefKey]] as const).map(([kind, url, sel]) => (
+                            <button key={kind} onClick={() => kind === 'off'
+                                      ? setShapeRefKey(shapeRefKey === r.key ? '' : r.key)
+                                      : setPoseRefKey(poseRefKey === r.key ? '' : r.key)}
+                                    className="flex-1" title={`${r.name} · ${kind === 'off' ? '형태' : '포즈각도'}`}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={url} alt={r.name} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
+                                   style={{ borderColor: sel === r.key ? 'var(--accent)' : 'var(--line)', borderWidth: sel === r.key ? 2 : 1 }} />
+                              <div className="text-[9px] mt-0.5" style={{ color: 'var(--text-mute)' }}>{kind === 'off' ? '형태' : '포즈'}</div>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="text-[9.5px] mt-0.5 leading-tight" style={{ color: 'var(--text-mute)' }}>{r.name.replace(/^\S+\s/, '')}</div>
                       </div>
-                      <div className="text-[9.5px] mt-0.5 leading-tight" style={{ color: 'var(--text-mute)' }}>{r.name.replace(/^\S+\s/, '')}</div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </>
               ) : <p className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>제품을 먼저 고르면 그 제품의 실사 포즈 레퍼가 나옵니다.</p>
-            )}
-          </Section>
-
-          {/* ⑤ 레퍼런스 업로드 */}
-          <Section n="5" title="레퍼런스 업로드" hint="원하는 분위기의 이미지를 올리면 조명·색감·구도를 따라갑니다.">
-            <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} />
-            <div className="flex gap-2 flex-wrap items-start">
-              <button className="btn" onClick={() => fileInput.current?.click()} disabled={uploading}>
-                {uploading ? '업로드 중…' : '＋ 이미지 추가'}
-              </button>
-              {uploads.map((u, i) => (
-                <div key={u.url} className="relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={u.url} alt={u.title} className="w-[62px] h-[62px] object-cover rounded-lg border" style={{ borderColor: 'var(--line-strong)' }} />
-                  <button onClick={() => setUploads((a) => a.filter((_, j) => j !== i))}
-                          className="absolute -top-1.5 -right-1.5 w-[18px] h-[18px] rounded-full text-[11px] leading-none"
-                          style={{ background: 'var(--danger)', color: '#fff', border: 'none', cursor: 'pointer' }}>×</button>
-                </div>
-              ))}
-            </div>
-            {uploads.length > 0 && (
-              <div className="mt-3">
-                <div className="label mb-1">올린 레퍼런스를 얼마나 살릴까요</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {p.preservations.map((m) => (
-                    <button key={m.value} onClick={() => setPreservation(m.value)} className="chip"
-                            style={m.value === preservation ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
             )}
           </Section>
 
@@ -389,8 +515,8 @@ export default function CreateStudio(p: Props) {
           <div className="flex flex-col gap-1.5 mb-4">
             {dry.refs.map((r, i) => (
               <div key={i} className="flex items-center gap-2 p-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
-                <span className="text-[9.5px] w-[38px] shrink-0 font-bold" style={{ color: 'var(--accent)' }}>
-                  {['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH'][i]}
+                <span className="text-[9.5px] w-[46px] shrink-0 font-bold" style={{ color: 'var(--accent)' }}>
+                  {['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'SIXTH', 'SEVENTH', 'EIGHTH'][i]}
                 </span>
                 {r.swatchHex
                   ? <span className="w-8 h-8 rounded shrink-0" style={{ background: r.swatchHex, border: '1px solid rgba(255,255,255,.15)' }} />
@@ -420,7 +546,7 @@ export default function CreateStudio(p: Props) {
             </button>
           </div>
           <div className="text-[10.5px] text-center" style={{ color: 'var(--text-mute)' }}>
-            예상 비용 약 <b style={{ color: 'var(--text-dim)' }}>₩{cost.toLocaleString()}</b> · 25~30초/장
+            예상 비용 약 <b style={{ color: 'var(--text-dim)' }}>₩{cost.toLocaleString()}</b> · 25~35초/장
           </div>
         </div>
 
