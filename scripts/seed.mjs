@@ -192,6 +192,8 @@ for (const [line, key] of POSE_SOURCES) {
 //    models/page.js (아이덴티티·시트 4종) + thumbnails/page.js (의상·표정시트) 병합
 // ─────────────────────────────────────────────────────────────────
 const CAT_PREFIX = { 여성: 'W', 남성: 'M', 아동: 'K' };
+/** MD 가 정해둔 의상 컨셉 레퍼 이미지 — 제품컷에서 모델에게 이 옷을 입힌다 */
+const CLOTHES_BASE = 'https://yogibo.openhost.cafe24.com/web/img/none/clothes';
 
 /** thumbnails 의 THUMB_MODELS 를 code 로 색인 — 아동은 이미 'K_A' 형태 */
 const thumbModelIndex = new Map();
@@ -219,10 +221,17 @@ for (const cat of A.models.CATEGORIES || []) {
       // 썸네일 페이지 쪽 설명이 더 최신(헤어 업데이트 반영)이면 같이 보관
       thumbDesc: tm?.desc || '',
       rep: tm?.rep || m.ref || '',
-      sheets: m.sheets || {},
+      // ④ 제품 착석 연출 시트(pose)는 쓰지 않는다 — 착석 연출은 pose_refs(실사 레퍼)가 담당하고,
+      //    모델 쪽은 얼굴·표정·체형 락만 맡는다. 역할이 겹치면 참조가 서로 싸운다.
+      sheets: { face: m.sheets?.face || '', expr: m.sheets?.expr || '', body: m.sheets?.body || '' },
       // 표정 시트는 얼굴 드리프트 방지의 핵심 — 썸네일 쪽 최신 버전을 우선
       exprSheet: tm?.expr || m.sheets?.expr || '',
-      outfits: (tm?.outfits || []).map((o) => ({ code: o.f, desc: o.t })),
+      // 의상 컨셉 — 코드뿐 아니라 실제 레퍼 이미지까지 (생성 시 참조로 투입 가능)
+      outfits: (tm?.outfits || []).map((o) => ({
+        code: o.f,
+        desc: o.t,
+        imageUrl: `${CLOTHES_BASE}/${o.f}.jpg`,
+      })),
       status: m.status || '',
       order: tOrder++,
       active: true,

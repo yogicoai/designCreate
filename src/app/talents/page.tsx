@@ -5,12 +5,15 @@ import { getTalents, getCuts } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
-/** 아이덴티티 락 시트 4종 — models/page.js 의 SHEETS 체계 */
+/**
+ * 아이덴티티 락 시트 3종.
+ * ④ 제품 착석 연출 시트는 쓰지 않는다 — 착석 연출은 포즈 레퍼런스(실사)가 담당하고,
+ * 모델 시트는 얼굴·표정·체형 락만 맡는다.
+ */
 const SHEETS = [
   { key: 'face' as const, label: '① 페이스 턴어라운드', layout: '5패널', goal: '얼굴 정체성·각도 고정' },
   { key: 'expr' as const, label: '② 페이셜 익스프레션', layout: '2×4 · 8컷', goal: '표정만 변경, 얼굴 고정 — 생성 시 항상 동반 투입' },
   { key: 'body' as const, label: '③ 바디 턴어라운드', layout: '5패널', goal: '체형·비율 고정' },
-  { key: 'pose' as const, label: '④ 제품 착석 연출', layout: '2×2 · 4컷', goal: '자세·눌림 물리' },
 ];
 
 export default async function TalentsPage() {
@@ -121,12 +124,20 @@ export default async function TalentsPage() {
 
                   {t.outfits.length > 0 && (
                     <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--line)' }}>
-                      <div className="label mb-1.5">의상 매핑 — 다른 모델 의상을 쓰면 안 됩니다</div>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="label mb-2">의상 컨셉 — 다른 모델 의상을 쓰면 안 됩니다</div>
+                      <div className="flex flex-wrap gap-2.5">
                         {t.outfits.map((o) => (
-                          <span key={o.code} className="chip">
-                            <b className="font-mono" style={{ color: 'var(--text)' }}>{o.code}</b> {o.desc}
-                          </span>
+                          <div key={o.code} className="text-center">
+                            <Zoomable
+                              src={o.imageUrl}
+                              alt={o.desc}
+                              caption={`${cat} ${t.slot} · ${o.code} — ${o.desc}`}
+                              className="w-[92px] rounded-lg border object-cover"
+                              style={{ aspectRatio: '3/4', borderColor: 'var(--line-strong)', background: 'var(--surface-2)' }}
+                            />
+                            <div className="text-[9.5px] mt-1 font-mono" style={{ color: 'var(--accent)' }}>{o.code}</div>
+                            <div className="text-[9.5px] w-[92px] leading-tight" style={{ color: 'var(--text-mute)' }}>{o.desc}</div>
+                          </div>
                         ))}
                       </div>
                     </div>

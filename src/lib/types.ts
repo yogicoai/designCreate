@@ -82,7 +82,11 @@ export interface PoseRefDoc {
   active: boolean;
 }
 
-/** 전속 모델 아이덴티티 시트 4종 */
+/**
+ * 전속 모델 아이덴티티 시트.
+ * 원본에는 ④ 제품 착석 연출 시트도 있었지만 쓰지 않는다 — 착석 연출은 pose_refs(실사 레퍼)가
+ * 맡고, 모델 시트는 얼굴·표정·체형 락만 담당한다. 역할이 겹치면 참조끼리 싸운다.
+ */
 export interface TalentSheets {
   /** 얼굴 턴어라운드 (5패널) */
   face?: string;
@@ -90,8 +94,14 @@ export interface TalentSheets {
   expr?: string;
   /** 바디 턴어라운드 (5패널) */
   body?: string;
-  /** 제품 착석 연출 (2x2) */
-  pose?: string;
+}
+
+/** MD 가 지정한 의상 컨셉 — 코드 + 설명 + 레퍼 이미지 */
+export interface Outfit {
+  code: string;
+  desc: string;
+  /** web/img/none/clothes/<code>.jpg */
+  imageUrl: string;
 }
 
 export interface TalentDoc {
@@ -113,8 +123,8 @@ export interface TalentDoc {
   sheets: TalentSheets;
   /** 표정 시트 (썸네일 쪽 최신 버전). sheets.expr 보다 이걸 우선 쓴다. */
   exprSheet: string;
-  /** MD 지정 의상 컨셉 */
-  outfits: { code: string; desc: string }[];
+  /** MD 지정 의상 컨셉 (레퍼 이미지 포함) */
+  outfits: Outfit[];
   status: string;
   order: number;
   active: boolean;
