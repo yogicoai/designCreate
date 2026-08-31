@@ -50,6 +50,8 @@ export interface ProductDoc {
   spec: string;
   /** 실측 치수 */
   dims: { w?: number; d?: number; h?: number; weight?: number };
+  /** 화면 표시용 원문 치수 문자열 ('h170 × w70 × d45 · 6.6kg') */
+  sizeText: string;
   /** 인체 대비 스케일 앵커 — 모델은 cm 를 못 읽는다 */
   scalePrompt: string;
   geometry: ProductGeometry;
@@ -104,9 +106,13 @@ export interface TalentDoc {
   identity: string;
   /** 키·체형 — 제품 비례 연출에 필수 */
   size: string;
+  /** 썸네일 페이지 쪽 설명 — 헤어 업데이트가 반영된 최신본이라 identity 보다 우선 표시 */
+  thumbDesc: string;
   /** 대표 컷 */
   rep?: string;
   sheets: TalentSheets;
+  /** 표정 시트 (썸네일 쪽 최신 버전). sheets.expr 보다 이걸 우선 쓴다. */
+  exprSheet: string;
   /** MD 지정 의상 컨셉 */
   outfits: { code: string; desc: string }[];
   status: string;

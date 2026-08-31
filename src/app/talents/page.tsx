@@ -1,0 +1,142 @@
+import Link from 'next/link';
+import PageHeader from '@/components/PageHeader';
+import Zoomable from '@/components/Zoomable';
+import { getTalents, getCuts } from '@/lib/queries';
+
+export const dynamic = 'force-dynamic';
+
+/** 아이덴티티 락 시트 4종 — models/page.js 의 SHEETS 체계 */
+const SHEETS = [
+  { key: 'face' as const, label: '① 페이스 턴어라운드', layout: '5패널', goal: '얼굴 정체성·각도 고정' },
+  { key: 'expr' as const, label: '② 페이셜 익스프레션', layout: '2×4 · 8컷', goal: '표정만 변경, 얼굴 고정 — 생성 시 항상 동반 투입' },
+  { key: 'body' as const, label: '③ 바디 턴어라운드', layout: '5패널', goal: '체형·비율 고정' },
+  { key: 'pose' as const, label: '④ 제품 착석 연출', layout: '2×2 · 4컷', goal: '자세·눌림 물리' },
+];
+
+export default async function TalentsPage() {
+  const [talents, cuts] = await Promise.all([getTalents(), getCuts({ limit: 2000 })]);
+
+  const cutCount = new Map<string, number>();
+  for (const c of cuts) for (const t of c.recipe?.talentCodes ?? []) cutCount.set(t, (cutCount.get(t) ?? 0) + 1);
+
+  const byCat = new Map<string, typeof talents>();
+  for (const t of talents) {
+    if (!byCat.has(t.category)) byCat.set(t.category, []);
+    byCat.get(t.category)!.push(t);
+  }
+  const EMOJI: Record<string, string> = { 여성: '👩', 남성: '👨', 아동: '🧒' };
+
+  return (
+    <div className="p-7 max-w-[1180px]">
+      <PageHeader
+        title="전속 모델"
+        desc="포즈·의상·공간이 바뀌어도 동일 인물로 인식되는 얼굴 아이덴티티 고정 모델. 실존인물 복제가 아니라 레퍼런스의 인상만 참고합니다."
+      />
+
+      <div className="card p-4 mb-5" style={{ background: 'var(--accent-soft)', borderColor: 'var(--accent-dim)' }}>
+        <div className="text-[12.5px] font-bold mb-1">★ 얼굴 드리프트 방지 규칙</div>
+        <div className="text-[12px] leading-relaxed" style={{ color: 'var(--text-dim)' }}>
+          생성할 때 <b>표정 시트(②)를 아이덴티티 앵커로 함께 투입</b>하고 원하는 패널(옅은미소/밝은미소 등)을 지정해야 합니다.
+          얼굴 턴어라운드만 넣고 프롬프트에 &ldquo;smile&rdquo; 이라고만 쓰면 얼굴이 흔들립니다.
+        </div>
+      </div>
+
+      {[...byCat.entries()].map(([cat, list]) => (
+        <section key={cat} className="mb-7">
+          <h2 className="h-section mb-3">
+            {EMOJI[cat] ?? ''} {cat} <span className="text-[12px] font-normal" style={{ color: 'var(--text-mute)' }}>{list.length}명</span>
+          </h2>
+
+          <div className="flex flex-col gap-3">
+            {list.map((t) => {
+              const n = cutCount.get(t.code) ?? 0;
+              const sheetCount = SHEETS.filter((s) => t.sheets?.[s.key]).length;
+              return (
+                <div key={t.id} className="card p-4">
+                  <div className="flex items-start justify-between gap-3 flex-wrap mb-2.5">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span
+                        className="text-[12.5px] font-extrabold px-2.5 py-0.5 rounded-lg"
+                        style={{ background: 'var(--accent)', color: '#fff' }}
+                      >
+                        {cat} {t.slot}
+                      </span>
+                      <span className="text-[12.5px]" style={{ color: 'var(--text-dim)' }}>{t.name}</span>
+                      <span className="chip" style={{ color: 'var(--info)' }}>{t.size}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="chip" style={{ color: sheetCount === 4 ? 'var(--ok)' : 'var(--warn)' }}>
+                        시트 {sheetCount}/4
+                      </span>
+                      <Link href={`/cuts?talent=${t.code}`} className="chip" style={{ color: 'var(--accent)' }}>
+                        {n}컷 →
+                      </Link>
+                    </div>
+                  </div>
+
+                  <p className="text-[11.5px] leading-relaxed mb-3" style={{ color: 'var(--text-dim)' }}>
+                    {t.thumbDesc || t.identity}
+                  </p>
+
+                  <div className="flex gap-2.5 flex-wrap items-start">
+                    {t.rep && (
+                      <div className="text-center">
+                        <Zoomable
+                          src={t.rep}
+                          alt={`${t.code} 대표컷`}
+                          caption={`${cat} ${t.slot} · 대표 컷`}
+                          className="w-[104px] rounded-lg border object-cover"
+                          style={{ aspectRatio: '3/4', borderColor: 'var(--line-strong)' }}
+                        />
+                        <div className="text-[10px] mt-1" style={{ color: 'var(--text-mute)' }}>대표 컷</div>
+                      </div>
+                    )}
+                    {SHEETS.map((s) => {
+                      const url = t.sheets?.[s.key];
+                      return (
+                        <div key={s.key} className="text-center">
+                          {url ? (
+                            <Zoomable
+                              src={url}
+                              alt={s.label}
+                              caption={`${cat} ${t.slot} · ${s.label} (${s.layout}) — ${s.goal}`}
+                              className="w-[138px] rounded-lg border object-cover"
+                              style={{ aspectRatio: '16/9', borderColor: 'var(--accent-dim)' }}
+                            />
+                          ) : (
+                            <div
+                              className="w-[138px] rounded-lg border border-dashed flex items-center justify-center text-[10px] px-2 text-center"
+                              style={{ aspectRatio: '16/9', borderColor: 'var(--line-strong)', color: 'var(--text-mute)' }}
+                            >
+                              {s.label.replace(/^[①②③④]\s/, '')}
+                            </div>
+                          )}
+                          <div className="text-[10px] mt-1" style={{ color: s.key === 'expr' ? 'var(--accent)' : 'var(--text-mute)' }}>
+                            {s.label.slice(0, 2)}{s.key === 'expr' ? ' ★' : ''}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {t.outfits.length > 0 && (
+                    <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--line)' }}>
+                      <div className="label mb-1.5">의상 매핑 — 다른 모델 의상을 쓰면 안 됩니다</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {t.outfits.map((o) => (
+                          <span key={o.code} className="chip">
+                            <b className="font-mono" style={{ color: 'var(--text)' }}>{o.code}</b> {o.desc}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}

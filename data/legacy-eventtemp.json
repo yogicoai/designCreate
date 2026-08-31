@@ -1,0 +1,487 @@
+{
+  "ASPECT_RATIOS": [
+    {
+      "value": "1920x680",
+      "label": "🏠 자사몰 웹 메인 (1920×680)",
+      "group": "자사몰",
+      "width": 1920,
+      "height": 680,
+      "referenceCategory": "web-banner",
+      "designCodeKey": "web-banner-wide"
+    },
+    {
+      "value": "800x907",
+      "label": "📱 자사몰 모바일 메인 (800×907)",
+      "group": "자사몰",
+      "width": 800,
+      "height": 907,
+      "referenceCategory": "mobile",
+      "designCodeKey": "mobile-hero"
+    },
+    {
+      "value": "800x-",
+      "label": "📄 자사몰 이벤트 페이지 (800×가변)",
+      "group": "자사몰",
+      "width": 800,
+      "height": 0,
+      "referenceCategory": "mobile",
+      "designCodeKey": "mobile-long"
+    },
+    {
+      "value": "1920x400",
+      "label": "🛒 스마트스토어 PC 메인 (1920×400)",
+      "group": "스마트스토어",
+      "width": 1920,
+      "height": 400,
+      "referenceCategory": "web-banner",
+      "designCodeKey": "web-banner-slim"
+    },
+    {
+      "value": "750x600",
+      "label": "📱 스마트스토어 모바일 메인 (750×600)",
+      "group": "스마트스토어",
+      "width": 750,
+      "height": 600,
+      "referenceCategory": "mobile",
+      "designCodeKey": "mobile-hero"
+    },
+    {
+      "value": "1280x200",
+      "label": "🎟️ 스마트스토어 PC 쿠폰/홍보 (1280×200)",
+      "group": "스마트스토어",
+      "width": 1280,
+      "height": 200,
+      "referenceCategory": "web-banner",
+      "designCodeKey": "web-banner-thin"
+    },
+    {
+      "value": "750x240",
+      "label": "🎟️ 스마트스토어 모바일 쿠폰/홍보 (750×240)",
+      "group": "스마트스토어",
+      "width": 750,
+      "height": 240,
+      "referenceCategory": "mobile",
+      "designCodeKey": "mobile-thin"
+    },
+    {
+      "value": "1300x1300",
+      "label": "🖼️ 스마트스토어 대표이미지 (1300×1300, 1:1)",
+      "group": "스마트스토어",
+      "width": 1300,
+      "height": 1300,
+      "referenceCategory": "thumbnail",
+      "designCodeKey": "thumbnail-square"
+    },
+    {
+      "value": "860x-",
+      "label": "📄 스마트스토어 상세페이지 (860×가변)",
+      "group": "스마트스토어",
+      "width": 860,
+      "height": 0,
+      "referenceCategory": "mobile",
+      "designCodeKey": "mobile-long"
+    },
+    {
+      "value": "1080x1080",
+      "label": "📷 인스타그램 정사각 (1080×1080)",
+      "group": "SNS",
+      "width": 1080,
+      "height": 1080,
+      "referenceCategory": "sns",
+      "designCodeKey": "sns-square"
+    },
+    {
+      "value": "1080x1350",
+      "label": "📷 인스타그램 세로형 (1080×1350)",
+      "group": "SNS",
+      "width": 1080,
+      "height": 1350,
+      "referenceCategory": "sns",
+      "designCodeKey": "sns-portrait"
+    }
+  ],
+  "DESIGN_CODES": {
+    "web-banner-wide": {
+      "key": "web-banner-wide",
+      "label": "와이드 가로 배너",
+      "ratio": "약 2.8:1",
+      "instruction": "DESIGN CODE: WIDE WEB BANNER (e.g., 1920×680)\nLayout — split left/right composition:\n  - One side (typically left or right): main product/model photograph\n  - Other side: text hierarchy — header label, headline, sub-copy, CTA\nMultiple text levels are EXPECTED and ENCOURAGED:\n  • Top: small label/ribbon (예: \"어버이날 기념\")\n  • Middle: large headline (예: \"어버이날 감사 세일\")\n  • Below: sub-copy or discount badge (예: \"30% OFF\")\n  • Bottom-right: CTA button + event period\n  • Footer: small disclaimer\nUse the full horizontal width — empty side space looks wasteful.\nDecorative elements (flowers, ribbons, confetti) can fill negative space.\nDesktop-first viewing — text can be moderate size (12-72px equivalent)."
+    },
+    "web-banner-slim": {
+      "key": "web-banner-slim",
+      "label": "슬림 가로 배너",
+      "ratio": "약 4.8:1",
+      "instruction": "DESIGN CODE: SLIM WEB BANNER (e.g., 1920×400)\nVery wide and short — tight vertical space.\nLayout — left/right split with simplified text:\n  - Product or visual on one side (compact)\n  - Text on other side: 1 headline + 1 small CTA\nSkip sub-copy and disclaimers — too tight.\nHeadline must be punchy and short (5-12 chars).\nSingle dominant message — no text hierarchy crowding."
+    },
+    "web-banner-thin": {
+      "key": "web-banner-thin",
+      "label": "얇은 띠 배너",
+      "ratio": "약 6.4:1",
+      "instruction": "DESIGN CODE: THIN STRIP BANNER (e.g., 1280×200)\nExtremely thin — like a coupon strip or top-bar promotion.\nSingle horizontal text line + small CTA button is typical.\nNo imagery beyond brand color blocks or small icon.\nKeep total content under 1 line (예: \"전 상품 20% OFF · 5.1~5.11 · 지금 보기 →\").\nBold, high-contrast typography for readability at small heights."
+    },
+    "mobile-hero": {
+      "key": "mobile-hero",
+      "label": "모바일 히어로 배너",
+      "ratio": "약 1:1.1 ~ 5:4",
+      "instruction": "DESIGN CODE: MOBILE HERO BANNER (e.g., 800×907 or 750×600)\nMobile-first viewing — text must be LARGER than desktop equivalent.\nVertical-leaning composition — product can take top half, text bottom (or reverse).\nSingle message dominance — no horizontal text/image split.\nTouch-friendly CTA button (large, clearly tappable).\nReduce text density — split into 1 headline + 1 sub + CTA at most.\nKorean text rendering must be clearly legible at thumbnail size."
+    },
+    "mobile-long": {
+      "key": "mobile-long",
+      "label": "모바일 롱 페이지",
+      "ratio": "가변 (긴 세로)",
+      "instruction": "DESIGN CODE: MOBILE LONG PAGE (e.g., 800×variable, 860×variable)\nLong scrolling event/detail page composition.\nMultiple sections stacked vertically — main visual on top, then content blocks.\nEach section ~600-800px tall, with clear visual breaks.\nTop section: hero banner with main message + CTA.\nMiddle sections: product details, features, testimonials.\nBottom section: final CTA + disclaimer + secondary links.\nKorean typography optimized for mobile reading flow."
+    },
+    "mobile-thin": {
+      "key": "mobile-thin",
+      "label": "모바일 얇은 띠",
+      "ratio": "약 3:1",
+      "instruction": "DESIGN CODE: MOBILE THIN STRIP (e.g., 750×240)\nCompact promotional strip for mobile.\nSingle line of text + small CTA — like a tap-to-action banner.\nHigh contrast, bold typography.\nBrand color background, no complex imagery."
+    },
+    "sns-square": {
+      "key": "sns-square",
+      "label": "SNS 정사각 (인스타 피드)",
+      "ratio": "1:1",
+      "instruction": "DESIGN CODE: SNS SQUARE (1080×1080, Instagram feed)\nSquare format optimized for social media feed scrolling.\n\n⭐ MOBILE-FIRST READABILITY — text must be LARGE and clear at thumbnail size.\n⭐ THUMB-STOPPING IMPACT — high visual contrast, vibrant colors, bold typography.\n⭐ SINGLE DOMINANT MESSAGE — no information overload.\n\nLayout patterns (pick ONE):\n  A. Centered headline with product photo above/below\n  B. Diagonal split — text on one corner, product opposite\n  C. Full product image with text overlaid on neutral area\n  D. Bold typography taking 50%+ of canvas with product as accent\n\nAvoid:\n  ✗ Multiple competing text blocks\n  ✗ Long disclaimers (move to caption instead)\n  ✗ Tiny CTA — caption-driven action is preferred on Instagram\n  ✗ Generic e-commerce layout (split left/right with multiple texts)\n\nKorean text guidance:\n  - Headline: 5-12 characters, very large\n  - Sub-copy: 1 short line max (or skip)\n  - Brand name visible (hashtag-like or small logo)\n  - Avoid English mixing unless intentional aesthetic\n\nColor/Style:\n  - Vibrant, saturated palette (Instagram aesthetic)\n  - Modern sans-serif typography (예: Pretendard, SUIT, Spoqa)\n  - High contrast between text and background\n  - Decorative elements minimal — focus on hero element"
+    },
+    "sns-portrait": {
+      "key": "sns-portrait",
+      "label": "SNS 세로형 (인스타 4:5)",
+      "ratio": "4:5",
+      "instruction": "DESIGN CODE: SNS PORTRAIT (1080×1350, Instagram 4:5 portrait)\nSlightly taller than square — Instagram's preferred post ratio for max screen real estate.\nSame principles as square format but with extra vertical room:\n  - Top 1/3: header label or accent\n  - Center: main visual + headline (largest area)\n  - Bottom 1/3: sub-copy + small CTA reference\n\nVertical reading flow — top to bottom hierarchy.\nMobile-first text sizing."
+    },
+    "sns-story": {
+      "key": "sns-story",
+      "label": "SNS 세로 풀스크린 (스토리/릴스)",
+      "ratio": "9:16",
+      "instruction": "DESIGN CODE: SNS STORY/REELS (1080×1920, Instagram Stories / Reels)\nFull-screen vertical mobile format.\n\n⭐ SAFE ZONES — top and bottom 250px each are reserved for:\n  - TOP: profile handle, sticker overlays\n  - BOTTOM: swipe-up area, message/reaction bar\n  → Keep MAIN content in CENTER 1/2 of canvas (rough vertical 480-1440 zone)\n\nLayout pattern:\n  - Top zone (0-250px): leave clear or use brand color\n  - Center 1: visual hook (large product image, large headline)\n  - Center 2: main message (1 headline + 1 sub-copy)\n  - Bottom zone (1670-1920px): leave clear for swipe-up\n\nVertical reading flow — top to bottom storytelling.\nKorean text MUST be very large (24-72pt equivalent for headline).\nSingle message focus — viewer scrolls past in 3-5 seconds.\n\nStyle:\n  - Trendy, dynamic, Gen-Z friendly\n  - Bold gradient backgrounds welcome\n  - Optional: subtle motion-implying elements (lines, stars)\n  - High saturation"
+    },
+    "thumbnail-square": {
+      "key": "thumbnail-square",
+      "label": "대표 이미지 (정사각)",
+      "ratio": "1:1",
+      "instruction": "DESIGN CODE: SQUARE THUMBNAIL (e.g., 1300×1300, 스마트스토어 대표)\nProduct-focused square image — first impression of the product on listing pages.\nLayout:\n  - Product is the HERO — fills 60-80% of canvas\n  - Text minimal — usually just product name/brand or 1 promo phrase\n  - Clean, neutral or branded background\n  - No long copy, no CTA button (clicking the thumbnail itself = CTA)\n\nStyle:\n  - High product clarity (sharp focus, good lighting)\n  - Brand-consistent background color\n  - Optional small accent: badge (\"BEST\", \"신상\", \"할인\") in corner\n  - Text overlay (if any) = brand color, single line\n\nAvoid:\n  ✗ Multiple text levels\n  ✗ Decorative elements competing with product\n  ✗ Lifestyle scenes (this is product-focused, not lifestyle)"
+    }
+  },
+  "CAMERA_ANGLES": [
+    {
+      "value": "auto",
+      "emoji": "🎯",
+      "label": "자동 (원본대로)",
+      "hint": ""
+    },
+    {
+      "value": "front",
+      "emoji": "👤",
+      "label": "정면",
+      "hint": "shot from a front-facing camera angle, eye level"
+    },
+    {
+      "value": "45deg",
+      "emoji": "↗️",
+      "label": "45도 측면",
+      "hint": "shot from a 45-degree angled side view, dynamic perspective"
+    },
+    {
+      "value": "side",
+      "emoji": "➡️",
+      "label": "완전 측면",
+      "hint": "shot from a strict side profile view (90 degrees)"
+    },
+    {
+      "value": "top",
+      "emoji": "⬇️",
+      "label": "위에서 내려다본",
+      "hint": "shot from a top-down birds-eye view, looking down at the scene"
+    },
+    {
+      "value": "low",
+      "emoji": "⬆️",
+      "label": "낮은 각도",
+      "hint": "shot from a low angle looking up, dramatic perspective"
+    }
+  ],
+  "MODEL_POSES": [
+    {
+      "value": "auto",
+      "emoji": "🎯",
+      "label": "자동",
+      "hint": ""
+    },
+    {
+      "value": "sitting",
+      "emoji": "🪑",
+      "label": "앉아있는",
+      "hint": "model sitting upright on/in the product"
+    },
+    {
+      "value": "reclining",
+      "emoji": "🛌",
+      "label": "비스듬히 누운",
+      "hint": "model reclining at a relaxed angle, partially lying down"
+    },
+    {
+      "value": "lying",
+      "emoji": "😴",
+      "label": "완전히 누운",
+      "hint": "model lying flat with relaxed expression"
+    },
+    {
+      "value": "hugging",
+      "emoji": "🤗",
+      "label": "껴안고 있는",
+      "hint": "model hugging or embracing the product warmly"
+    },
+    {
+      "value": "standing",
+      "emoji": "🧍",
+      "label": "서서 옆에",
+      "hint": "model standing beside the product, presenting it"
+    }
+  ],
+  "PEOPLE_COMPOSITION": [
+    {
+      "value": "auto",
+      "emoji": "🎯",
+      "label": "자동",
+      "hint": ""
+    },
+    {
+      "value": "solo",
+      "emoji": "👤",
+      "label": "1인",
+      "hint": "a single person interacting with the product"
+    },
+    {
+      "value": "couple",
+      "emoji": "👫",
+      "label": "2인 (커플)",
+      "hint": "a couple sharing the product, intimate atmosphere"
+    },
+    {
+      "value": "family",
+      "emoji": "👨‍👩‍👧",
+      "label": "가족",
+      "hint": "a family (parents and children) gathered around the product"
+    },
+    {
+      "value": "kids",
+      "emoji": "🧒",
+      "label": "아이들",
+      "hint": "children playing with or using the product"
+    },
+    {
+      "value": "no-people",
+      "emoji": "🪑",
+      "label": "제품만 (인물 X)",
+      "hint": "product-only shot, no people in frame, clean studio or interior setting"
+    }
+  ],
+  "LIGHTING_TIME": [
+    {
+      "value": "auto",
+      "emoji": "🎯",
+      "label": "자동",
+      "hint": ""
+    },
+    {
+      "value": "morning",
+      "emoji": "🌅",
+      "label": "아침 햇살",
+      "hint": "soft morning sunlight, fresh and energetic atmosphere"
+    },
+    {
+      "value": "daylight",
+      "emoji": "☀️",
+      "label": "한낮",
+      "hint": "bright midday natural daylight, clear and cheerful"
+    },
+    {
+      "value": "golden",
+      "emoji": "🌇",
+      "label": "골든아워",
+      "hint": "warm golden hour lighting (sunset), nostalgic mood"
+    },
+    {
+      "value": "evening",
+      "emoji": "🌆",
+      "label": "저녁",
+      "hint": "soft evening indoor lighting, cozy and warm"
+    },
+    {
+      "value": "night",
+      "emoji": "🌙",
+      "label": "밤 (인공조명)",
+      "hint": "nighttime with warm indoor lamps, intimate and quiet"
+    }
+  ],
+  "PRESERVATION_MODES": [
+    {
+      "value": "free",
+      "emoji": "🎨",
+      "label": "자유롭게 재해석",
+      "description": "참고용으로만 사용 — AI가 자유롭게 재창조",
+      "instruction": "IMAGE PRESERVATION LEVEL: LOOSE\nUse the source image only as visual inspiration for mood and color.\nThe AI may freely reinterpret subjects, composition, and lighting.\nThe final result does not need to closely resemble the source."
+    },
+    {
+      "value": "similar",
+      "emoji": "🎯",
+      "label": "대부분 비슷하게",
+      "description": "분위기 + 구도 유지, 일부 재해석 허용",
+      "instruction": "IMAGE PRESERVATION LEVEL: MODERATE\nMaintain the overall composition, color palette, and lighting mood\nof the source image. The main subject's general pose and placement\nshould be similar, but allow some artistic reinterpretation in details\n(textures, background elements, etc.)."
+    },
+    {
+      "value": "strict",
+      "emoji": "🔒",
+      "label": "원본 최대한 살리기",
+      "description": "주요 요소 보존, 최소한의 변경만 (img2img 권장)",
+      "instruction": "IMAGE PRESERVATION LEVEL: STRICT (PRESERVE ORIGINAL)\nPRESERVE the source image as much as possible.\nKeep the EXACT subject, pose, facial expression, lighting, and composition.\nDo NOT change the person/product/scene fundamentally.\nOnly modify or add minimal elements as specifically instructed below.\nFor tools that support img2img mode (Flux, ChatGPT image edit), use this image\nas the input/init image with low denoising strength (0.3-0.5)."
+    },
+    {
+      "value": "overlay-only",
+      "emoji": "✏️",
+      "label": "원본 그대로 (텍스트만 추가)",
+      "description": "이미지는 건드리지 말고 텍스트/타이포그래피만 오버레이",
+      "instruction": "IMAGE PRESERVATION LEVEL: TEXT-OVERLAY ONLY\nUse the source image AS-IS without ANY modification to its visual content.\nDO NOT regenerate, alter, or restyle the image itself.\nONLY add the specified Korean text/typography as an overlay on top of the image.\nThis is essentially a typography composition over a fixed background image.\nFor best results, use ChatGPT's image-edit mode or Photoshop-style overlay tools\nrather than full image generation."
+    }
+  ],
+  "USAGE_SCENES": [
+    {
+      "value": "living-room",
+      "label": "거실",
+      "en": "modern living room with natural light, family relaxing"
+    },
+    {
+      "value": "bedroom",
+      "label": "침실",
+      "en": "cozy bedroom interior, intimate evening lighting"
+    },
+    {
+      "value": "kids-room",
+      "label": "키즈룸",
+      "en": "colorful kids room with toys and playful decor"
+    },
+    {
+      "value": "home-office",
+      "label": "홈오피스",
+      "en": "home office workspace, productivity-focused"
+    },
+    {
+      "value": "outdoor",
+      "label": "야외/캠핑",
+      "en": "outdoor terrace or camping setting, leisure mood"
+    },
+    {
+      "value": "studio",
+      "label": "스튜디오",
+      "en": "clean studio background, product-focused photography"
+    },
+    {
+      "value": "lifestyle",
+      "label": "라이프스타일",
+      "en": "casual lifestyle scene, candid moment"
+    }
+  ],
+  "TOOL_USAGE_GUIDES": {
+    "chatgpt": {
+      "withImage": {
+        "title": "ChatGPT 사용법 — 이미지 업로드 + 편집",
+        "steps": [
+          "⬇️ 위 \"대표 이미지 다운로드\" 링크를 클릭해 이미지를 PC에 저장합니다.",
+          "ChatGPT (https://chat.openai.com) 에 접속해 새 채팅을 엽니다. (GPT-4o 이상 권장)",
+          "입력창의 📎 (클립) 아이콘 클릭 → 방금 다운로드한 이미지 업로드.",
+          "⚠️ 입력창에 이미지 미리보기가 표시되는 것을 확인 (이게 핵심 — 이미지가 첨부되어야 동작).",
+          "아래 프롬프트를 그대로 복사해 같은 입력창에 붙여넣고 전송.",
+          "결과 이미지가 원본과 너무 다르면 \"원본 이미지를 더 살려줘\" 또는 \"Use the attached image as the base, do not regenerate the product\" 추가 요청."
+        ],
+        "tip": "⚠️ 이미지를 첨부하지 않고 프롬프트만 보내면 ChatGPT가 새 이미지를 처음부터 생성합니다. 반드시 4번 단계(이미지 미리보기 확인)를 거치세요. GPT-4o 이상에서 image edit 기능 사용 — 무료 플랜은 제한적이니 Plus 권장."
+      },
+      "withoutImage": {
+        "title": "ChatGPT 사용법 — 새 이미지 생성",
+        "steps": [
+          "ChatGPT (https://chat.openai.com) 에 접속해 새 채팅을 엽니다.",
+          "아래 프롬프트를 복사해 입력창에 붙여넣고 전송.",
+          "결과 이미지를 받으면 마음에 들 때까지 \"더 ~하게 다시\" 등으로 수정 요청."
+        ],
+        "tip": "DALL-E 3 가 자동 호출됩니다. 한 번에 1장 생성되며, 변형이 필요하면 \"다른 버전으로\" 요청."
+      }
+    },
+    "midjourney": {
+      "withImage": {
+        "title": "Midjourney 사용법 — 이미지 URL 참고",
+        "steps": [
+          "Discord 의 Midjourney 서버 또는 DM 으로 이동.",
+          "아래 프롬프트를 그대로 복사 (이미 /imagine 명령어 + 이미지 URL 포함됨).",
+          "입력창에 붙여넣고 Enter.",
+          "4개 변형 중 마음에 드는 것 → U1~U4 로 업스케일."
+        ],
+        "tip": "이미지 URL 의 \"이미지 weight\" 가 기본 0.5~1.0. 더 강하게 따라하려면 프롬프트 끝에 --iw 2 추가."
+      },
+      "withoutImage": {
+        "title": "Midjourney 사용법 — 새 이미지 생성",
+        "steps": [
+          "Discord 의 Midjourney 서버 또는 DM 으로 이동.",
+          "아래 프롬프트를 복사해 입력창에 붙여넣고 Enter (이미 /imagine 포함됨).",
+          "4개 변형 중 선택해 업스케일."
+        ],
+        "tip": "한국어 텍스트는 Midjourney 가 정확히 못 그릴 수 있음. 텍스트는 후작업(포토샵)으로 추가 권장."
+      }
+    },
+    "gemini": {
+      "withImage": {
+        "title": "Gemini 사용법 — 이미지 업로드",
+        "steps": [
+          "⬇️ 위 \"대표 이미지 다운로드\" 링크 클릭해 PC에 저장.",
+          "Gemini (https://gemini.google.com) 접속 후 새 채팅.",
+          "입력창의 📎 또는 + 아이콘으로 다운로드한 이미지 업로드.",
+          "⚠️ 입력창에 이미지 미리보기가 보이는지 확인.",
+          "아래 프롬프트를 복사해 같은 입력창에 붙여넣고 전송."
+        ],
+        "tip": "⚠️ 반드시 4번 단계(이미지 미리보기 확인) 거쳐야 첨부 이미지가 인식됩니다. Gemini 의 이미지 생성은 Imagen 모델 기반 — 한국어 텍스트 렌더링은 ChatGPT 가 더 우수."
+      },
+      "withoutImage": {
+        "title": "Gemini 사용법 — 새 이미지 생성",
+        "steps": [
+          "Gemini 접속 후 새 채팅.",
+          "아래 프롬프트 입력 → 전송."
+        ]
+      }
+    },
+    "fal": {
+      "withImage": {
+        "title": "fal.ai 사용법 — img2img 모드",
+        "steps": [
+          "fal.ai (https://fal.ai/models/fal-ai/flux-pro/v1.1) 접속.",
+          "\"Image-to-Image\" 또는 \"Flux Redux\" 모델 선택.",
+          "\"Image URL\" 필드에 대표 이미지 URL 붙여넣기.",
+          "\"Prompt\" 필드에 아래 프롬프트 본문 붙여넣기.",
+          "\"Strength\" 또는 \"Image strength\" 를 0.3~0.5 로 설정 (낮을수록 원본 보존).",
+          "Run 버튼 클릭."
+        ],
+        "tip": "Strength 가 0.5 이상이면 원본이 많이 변형됨. \"원본 최대한 살리기\" 모드 선택 시 0.3 권장."
+      },
+      "withoutImage": {
+        "title": "fal.ai 사용법 — Text-to-Image",
+        "steps": [
+          "fal.ai (https://fal.ai/models/fal-ai/flux-pro) 접속.",
+          "\"Prompt\" 필드에 아래 프롬프트 본문 붙여넣기.",
+          "Aspect Ratio 설정 후 Run."
+        ]
+      }
+    },
+    "nanobanana": {
+      "withImage": {
+        "title": "NanoBanana 사용법",
+        "steps": [
+          "NanoBanana (https://nanobanana.ai) 접속.",
+          "이미지 업로드 → 아래 프롬프트 본문 입력 → 생성."
+        ]
+      },
+      "withoutImage": {
+        "title": "NanoBanana 사용법",
+        "steps": [
+          "NanoBanana 접속 → 아래 프롬프트 입력 → 생성."
+        ]
+      }
+    }
+  }
+}
