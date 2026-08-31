@@ -1,69 +1,125 @@
-import Image from "next/image";
+import Link from 'next/link';
+import { getOverview, getCuts } from '@/lib/queries';
 
-export default function Home() {
+export const dynamic = 'force-dynamic';
+
+const TALENT_LABEL: Record<string, string> = {
+  W_A: '여성 A', W_B: '여성 B', W_C: '여성 C', W_D: '여성 D',
+  M_A: '남성 A', K_A: '아동 A', K_B: '아동 B',
+};
+
+function Stat({ value, label, sub, accent }: { value: number | string; label: string; sub?: string; accent?: boolean }) {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="card p-4">
+      <div className="text-[26px] font-extrabold leading-none" style={{ color: accent ? 'var(--accent)' : 'var(--text)' }}>
+        {value}
+      </div>
+      <div className="text-[12.5px] mt-1.5 font-semibold" style={{ color: 'var(--text-dim)' }}>{label}</div>
+      {sub && <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-mute)' }}>{sub}</div>}
+    </div>
+  );
+}
+
+export default async function DashboardPage() {
+  const o = await getOverview();
+  const recent = await getCuts({ limit: 12 });
+  const coverage = o.counts.colorSlots ? Math.round((o.counts.coveredSlots / o.counts.colorSlots) * 100) : 0;
+
+  return (
+    <div className="p-7 max-w-[1180px]">
+      <header className="mb-6">
+        <h1 className="text-[22px] font-extrabold tracking-tight">대시보드</h1>
+        <p className="text-[13px] mt-1" style={{ color: 'var(--text-dim)' }}>
+          전속 모델과 제품 레퍼런스를 조합해 자사몰 이미지를 생성합니다.
+        </p>
+      </header>
+
+      {/* 자산 현황 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <Stat value={o.counts.cuts} label="보유 컷" sub={`이 앱 생성 ${o.counts.generated}컷`} accent />
+        <Stat value={`${coverage}%`} label="컬러 슬롯 커버리지" sub={`${o.counts.coveredSlots} / ${o.counts.colorSlots} 슬롯`} />
+        <Stat value={o.counts.poses} label="실사 포즈 레퍼" sub={`제품 ${o.counts.lines}라인`} />
+        <Stat value={o.counts.talents} label="전속 모델" sub="아이덴티티 시트 4종" />
+      </div>
+
+      {/* 시작하기 */}
+      <div className="card p-5 mb-6 flex items-center justify-between gap-4 flex-wrap"
+           style={{ background: 'var(--accent-soft)', borderColor: 'var(--accent-dim)' }}>
+        <div>
+          <div className="text-[14.5px] font-bold">모델을 고르고 방향만 적으면 생성됩니다</div>
+          <div className="text-[12px] mt-1" style={{ color: 'var(--text-dim)' }}>
+            승인된 컷을 베이스로 컬러·모델·배경만 바꾸는 방식이 가장 정확합니다.
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        <Link href="/create" className="btn btn-primary">이미지 생성 →</Link>
+      </div>
+
+      <div className="grid lg:grid-cols-[1fr_300px] gap-5">
+        {/* 최근 컷 */}
+        <section>
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="h-section">최근 컷</h2>
+            <Link href="/cuts" className="text-[12px]" style={{ color: 'var(--text-mute)' }}>전체 보기 →</Link>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+            {recent.map((c) => (
+              <Link key={c.id} href={`/cuts?line=${c.line}&color=${c.colorKey}`} className="group">
+                {/* 원본이 cafe24 외부 호스트라 next/image 최적화 대신 img 를 쓴다 (URL 이 이미 최적 크기) */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={c.url}
+                  alt={c.spec}
+                  loading="lazy"
+                  className="w-full aspect-square object-cover rounded-lg border transition-colors"
+                  style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
+                />
+                <div className="mt-1.5 text-[11px] truncate" style={{ color: 'var(--text-dim)' }}>
+                  {c.line} · {c.colorName}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        <aside className="flex flex-col gap-4">
+          {/* 모델별 컷 */}
+          <section>
+            <h2 className="h-section mb-3">모델별 보유 컷</h2>
+            <div className="card p-3.5 flex flex-col gap-2">
+              {o.byTalent.map((b) => {
+                const max = o.byTalent[0]?.n || 1;
+                return (
+                  <div key={b.code} className="flex items-center gap-2.5">
+                    <div className="w-[52px] text-[11.5px] font-semibold shrink-0" style={{ color: 'var(--text-dim)' }}>
+                      {TALENT_LABEL[b.code] ?? b.code}
+                    </div>
+                    <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: 'var(--surface-3)' }}>
+                      <div className="h-full rounded-full" style={{ width: `${(b.n / max) * 100}%`, background: 'var(--accent)' }} />
+                    </div>
+                    <div className="w-[26px] text-right text-[11.5px] tabular-nums" style={{ color: 'var(--text-mute)' }}>{b.n}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* 점검 필요 */}
+          {o.unverifiedGeometry.length > 0 && (
+            <section>
+              <h2 className="h-section mb-3">점검 필요</h2>
+              <div className="card p-3.5">
+                <div className="text-[12px] font-semibold" style={{ color: 'var(--warn)' }}>
+                  기하 서술 미검증 {o.unverifiedGeometry.length}라인
+                </div>
+                <div className="text-[11.5px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-dim)' }}>
+                  {o.unverifiedGeometry.join(' · ')} — 12차 실측을 거치지 않은 서술입니다.
+                  생성 결과를 보고 <Link href="/products" style={{ color: 'var(--accent)' }}>제품 관리</Link>에서 다듬어주세요.
+                </div>
+              </div>
+            </section>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }

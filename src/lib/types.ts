@@ -35,6 +35,11 @@ export interface ProductGeometry {
   negative: string;
   /** 사용 자세 / 모드 */
   modes: string;
+  /**
+   * 12차 실측(productPrompt.js GEOMETRY)으로 검증된 서술인지.
+   * false 면 시드에서 새로 작성한 것 — 생성 결과를 보고 다듬어야 한다.
+   */
+  verified: boolean;
 }
 
 export interface ProductDoc {
