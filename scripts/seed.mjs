@@ -309,6 +309,92 @@ for (const p of A.thumbs.PRODUCTS) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// 4.5) product_items — products.json 의 제품 문서 70건 원본.
+//
+// products(11 라인)는 "프롬프트 조립용 기하/치수" 단위이고,
+// product_items 는 "실제 판매 제품 카탈로그" 단위다. 둘은 다르다:
+//   - 11 라인에 안 잡히는 제품이 많다 (메이트 인형·스퀴지보·럭스·롤메이트·문필로우 등)
+//   - 연출컷(usage)·notes·usedIn 은 제품 문서에만 있다
+// 라인에 매칭되는 것은 line/colorKey 를 채워 서로 연결한다.
+// ─────────────────────────────────────────────────────────────────
+
+/** 라인 컬러 슬롯을 (라인, 컬러명) 으로 역색인 — 제품 문서에서 라인을 찾기 위해 */
+const slotIndex = new Map();
+for (const p of products) {
+  for (const c of p.colors) slotIndex.set(`${p.line}|${c.name}`, c.key);
+}
+
+const productItems = LEGACY_PRODUCTS.map((p) => {
+  const name = (p.name || '').trim();
+  let line = null;
+  let colorKey = null;
+  for (const [ln, kr] of Object.entries(LINE_KR)) {
+    if (!name.startsWith(kr)) continue;
+    const cname = ((p.colors || [])[0]?.color || name.slice(kr.length)).trim().replace(/^[_\s]+/, '');
+    if (slotIndex.has(`${ln}|${cname}`)) { line = ln; colorKey = slotIndex.get(`${ln}|${cname}`); }
+    else line = ln; // 라인은 맞지만 썸네일 슬롯에 없는 색
+    break;
+  }
+  return {
+    _id: p.id,
+    itemId: p.id,
+    name,
+    category: p.category || '',
+    /** 매칭되는 제품 라인 (없으면 null — 11 라인 밖의 제품) */
+    line,
+    colorKey,
+    colors: p.colors || [],
+    spec: p.spec || {},
+    scalePrompt: p.scalePrompt || '',
+    notes: p.notes || '',
+    usedIn: p.usedIn || [],
+    usage: p.usage || {},
+    active: true,
+  };
+});
+
+// ─────────────────────────────────────────────────────────────────
+// 4.6) usage_shots — 연출컷 116장을 개별 문서로.
+//
+// productPrompt.js 는 생성 시 "카메라 각도에 맞는 뷰 + 자세용 연출컷"을 함께 붙이라고 한다.
+// 개별 문서로 쪼개야 생성 화면에서 픽커로 고를 수 있다.
+// ─────────────────────────────────────────────────────────────────
+const USAGE_META = {
+  sitting_recliner: { kr: '리클라이너 착석', en: 'sitting in recliner mode', usableAsRef: true },
+  sitting_on_top: { kr: '눕힌 위 착석', en: 'sitting on it laid flat', usableAsRef: true },
+  modes4: { kr: '4가지 사용 모드', en: 'the four usage modes (chair / sofa / recliner / bed)', usableAsRef: true },
+  sleeping: { kr: '누워 수면', en: 'lying down asleep on it', usableAsRef: true },
+  on_max: { kr: '맥스 위에', en: 'placed on top of a Yogibo Max', usableAsRef: true },
+  sitting: { kr: '착석', en: 'a person sitting on it', usableAsRef: true },
+  // ↓ 아래 둘은 참조로 쓰면 안 된다. cover_gif 는 GIF(물성 설명), howto 는 텍스트가 박힌 가이드 시트다.
+  cover_gif: { kr: '커버 신축 (GIF)', en: 'cover stretch physics', usableAsRef: false },
+  howto: { kr: '사용 가이드 시트', en: 'usage guide sheet', usableAsRef: false },
+};
+
+const usageShots = [];
+for (const item of productItems) {
+  for (const [kind, url] of Object.entries(item.usage || {})) {
+    if (!url) continue;
+    const meta = USAGE_META[kind] || { kr: kind, en: kind, usableAsRef: true };
+    usageShots.push({
+      _id: `${item.itemId}:${kind}`,
+      itemId: item.itemId,
+      itemName: item.name,
+      line: item.line,
+      colorKey: item.colorKey,
+      kind,
+      kindKr: meta.kr,
+      /** 프롬프트에 이 컷의 역할을 설명할 때 쓰는 영문 */
+      kindEn: meta.en,
+      /** 생성 참조로 투입해도 되는 컷인지 (텍스트 박힌 가이드·GIF 는 금지) */
+      usableAsRef: meta.usableAsRef,
+      url,
+      active: true,
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
 // 5) house_rules — 구 CAUTIONS 10개. 한글 원문 + 프롬프트용 영문.
 // ─────────────────────────────────────────────────────────────────
 const RULE_EN = [
@@ -342,6 +428,8 @@ const colorChips = CHIPS.map((c) => ({ _id: c.id, ...c }));
 // ─────────────────────────────────────────────────────────────────
 const SETS = [
   ['products', products],
+  ['product_items', productItems],
+  ['usage_shots', usageShots],
   ['pose_refs', poseRefs],
   ['talents', talents],
   ['cuts', cuts],
@@ -367,6 +455,23 @@ if (noTalent.length) {
 
 const unverified = products.filter((p) => !p.geometry.verified).map((p) => p.line);
 console.log(`\n⚠️ 기하 서술 미검증 라인: ${unverified.join(', ')} — 생성 결과 보고 다듬을 것`);
+
+// 제품 카탈로그 / 연출컷 리포트
+const orphans = productItems.filter((p) => !p.line);
+console.log('\n── 제품 카탈로그 ──');
+console.log(`  라인 매칭    ${productItems.length - orphans.length}/${productItems.length}`);
+console.log(`  컬러슬롯까지 ${productItems.filter((p) => p.colorKey).length}건`);
+console.log(`  라인 밖 제품 ${orphans.length}건: ${orphans.slice(0, 12).map((p) => p.name).join(' · ')}${orphans.length > 12 ? ' …' : ''}`);
+
+const refShots = usageShots.filter((s) => s.usableAsRef);
+console.log('\n── 연출컷 ──');
+console.log(`  총 ${usageShots.length}장 · 생성 참조 가능 ${refShots.length}장 (가이드시트·GIF 제외)`);
+const byKind = {};
+for (const s of usageShots) byKind[s.kindKr] = (byKind[s.kindKr] || 0) + 1;
+console.log(`  종류별: ${Object.entries(byKind).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
+const hosts = {};
+for (const s of usageShots) { try { const h = new URL(s.url).host; hosts[h] = (hosts[h] || 0) + 1; } catch { /* 무시 */ } }
+console.log(`  호스트: ${Object.entries(hosts).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
 
 if (DRY) { console.log('\n(--dry: DB 미기록)'); process.exit(0); }
 
