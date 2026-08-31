@@ -73,6 +73,8 @@ export interface TalentSpec {
   identityEn: string;
   /** 영문 체형 서술 (제품 대비 상대 크기 포함) */
   sizeEn: string;
+  /** ① 얼굴 턴어라운드 시트 (5패널) — 아이덴티티 락의 1순위 앵커 */
+  faceSheet?: string;
   exprSheet?: string;
   /** 사용할 표정 패널 */
   expression?: { kr: string; en: string };
@@ -183,6 +185,36 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
     });
   }
 
+  /*
+   * 모델 아이덴티티 참조 — 검증된 5원칙 "얼굴시트 최우선 배치".
+   * 얼굴 턴어라운드(5패널, 얼굴 큼)가 1순위, 표정 시트가 2순위.
+   * 1~2인이면 인당 2장, 3인 이상이면 슬롯 예산상 인당 1장(얼굴 시트 우선).
+   */
+  const talents = spec.talents ?? [];
+  const perTalent = talents.length <= 2 ? 2 : 1;
+  talents.forEach((t, i) => {
+    const multi = talents.length > 1;
+    const who = multi ? `PERSON ${i + 1} (counting people from the LEFT of the base image)` : 'the model';
+    const ident: { url?: string; title: string; role: string }[] = [
+      {
+        url: t.faceSheet,
+        title: `얼굴 시트 ${multi ? `${i + 1} ` : ''}· ${t.category} ${t.slot}`,
+        role: `the PRIMARY identity reference for ${who} — a face turnaround of ONE model in 5 angles; treat it as ground truth for face construction, eye/nose/lip shape, skin tone, hairline and hairstyle`,
+      },
+      {
+        url: t.exprSheet,
+        title: `표정 시트 ${multi ? `${i + 1} ` : ''}· ${t.category} ${t.slot}`,
+        role: `the expression reference for ${who} — the SAME model in 8 expressions; pick the requested expression panel while keeping the identity identical`,
+      },
+    ];
+    let used = 0;
+    for (const r of ident) {
+      if (!r.url || used >= perTalent) continue;
+      slots.push({ kind: 'talent', title: r.title, url: r.url, personIndex: i + 1, role: r.role });
+      used++;
+    }
+  });
+
   // 베이스가 이미 있으면 형태·포즈 레퍼는 중복이라 넣지 않는다 (참조 과다는 오히려 흐려진다)
   const hasBase = !!spec.baseCut || bases.length > 0;
   if (!hasBase) {
@@ -225,20 +257,6 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
     }
   }
 
-  const talents = spec.talents ?? [];
-  talents.forEach((t, i) => {
-    if (!t.exprSheet) return;
-    slots.push({
-      kind: 'talent',
-      title: `모델 시트 ${talents.length > 1 ? `${i + 1} ` : ''}· ${t.category} ${t.slot}`,
-      url: t.exprSheet,
-      personIndex: i + 1,
-      role:
-        talents.length > 1
-          ? `the identity reference for PERSON ${i + 1} (counting people from the LEFT of the base image) — a sheet of ONE model in 8 expressions; use that exact face construction, features, skin tone and hairstyle`
-          : 'a reference sheet of ONE model in 8 expressions — use that exact face construction, features, skin tone and hairstyle',
-    });
-  });
 
   // 의상 크롭 (얼굴 제거본) — 자리가 남을 때만. 원본(imageUrl)은 절대 넣지 않는다:
   // 레퍼 속 모델 얼굴이 결과에 섞이는 사고가 실측으로 확인돼 있다.
@@ -343,8 +361,12 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
   talents.forEach((t, i) => {
     const head = multi ? `PERSON ${i + 1} (${i === 0 ? 'leftmost' : `${ORDINALS[i].toLowerCase()} from left`})` : 'MODEL';
     // 이 인물의 시트가 몇 번째 참조인지 명시한다 — 다인에서 얼굴이 섞이는 걸 막는 핵심
-    const slotIdx = refs.findIndex((r) => r.kind === 'talent' && r.personIndex === i + 1);
-    const sheetRef = slotIdx >= 0 ? ` — identity from the ${ORDINALS[slotIdx]} image` : '';
+    const slotIdxs = refs
+      .map((r, idx) => (r.kind === 'talent' && r.personIndex === i + 1 ? idx : -1))
+      .filter((idx) => idx >= 0);
+    const sheetRef = slotIdxs.length
+      ? ` — identity from the ${slotIdxs.map((idx) => ORDINALS[idx]).join(' and ')} image${slotIdxs.length > 1 ? 's' : ''}`
+      : '';
     L.push(`${head}${sheetRef}: ${t.identityEn}.`);
     L.push(`  BODY: ${t.sizeEn}.`);
     if (t.expression) L.push(`  EXPRESSION: ${t.expression.en}.`);
@@ -356,6 +378,9 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
       'Each person keeps their own distinct identity from their own reference sheet — never blend faces between people, never give two people the same face.',
     );
   }
+  L.push(
+    'FACE MATCH: the identity sheets are ground truth. The rendered face must be recognisably the SAME person — same bone structure, eye shape, nose, lips, hairline. Do not beautify, de-age, or drift toward a generic face.',
+  );
   return L;
 }
 

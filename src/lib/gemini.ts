@@ -61,8 +61,12 @@ export async function shrinkReference(raw: Buffer, maxSide = 1024, quality = 82)
   }
 }
 
-/** cafe24 등 공개 URL 의 이미지를 참조로 불러온다 (서버에서 받아오므로 CORS 무관) */
-export async function loadReference(url: string): Promise<InlineImage | null> {
+/**
+ * cafe24 등 공개 URL 의 이미지를 참조로 불러온다 (서버에서 받아오므로 CORS 무관).
+ * @param maxSide 축소 상한. 모델 시트는 다패널 그리드라 1024 로 줄이면 얼굴이 판독 불가 —
+ *                아이덴티티 앵커는 1600 으로 덜 줄인다 (요청 본문 예산은 충분히 남는다).
+ */
+export async function loadReference(url: string, maxSide = 1024): Promise<InlineImage | null> {
   const m = /^data:([^;]+);base64,(.+)$/.exec(url);
   if (m) return { mimeType: m[1], data: m[2] };
   if (!/^https?:\/\//i.test(url)) return null;
@@ -70,7 +74,7 @@ export async function loadReference(url: string): Promise<InlineImage | null> {
     const res = await fetch(url);
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
-    return await shrinkReference(buf);
+    return await shrinkReference(buf, maxSide);
   } catch {
     return null;
   }

@@ -130,6 +130,7 @@ export async function POST(req: Request) {
         slot: String(t.slot),
         identityEn: String(t.identityEn || t.thumbDesc || t.identity || ''),
         sizeEn: String(t.sizeEn || t.size || ''),
+        ...(t.sheets?.face ? { faceSheet: String(t.sheets.face) } : {}),
         ...(t.exprSheet ? { exprSheet: String(t.exprSheet) } : {}),
         ...(expr ? { expression: { kr: String(expr.kr), en: String(expr.en) } } : {}),
         ...(outfit
@@ -281,7 +282,12 @@ export async function POST(req: Request) {
     const inline: InlineImage[] = [];
     const usedRefs: RefSlot[] = [];
     for (const r of written.refs) {
-      const img = r.swatchHex ? await colorSwatch(r.swatchHex) : r.url ? await loadReference(r.url) : null;
+      // 모델 시트는 다패널이라 덜 줄인다 — 1024 로 줄이면 얼굴이 판독 불가 크기가 된다
+      const img = r.swatchHex
+        ? await colorSwatch(r.swatchHex)
+        : r.url
+          ? await loadReference(r.url, r.kind === 'talent' ? 1600 : 1024)
+          : null;
       if (!img) {
         console.warn('[generate] 참조 로딩 실패 — 건너뜀:', r.title, r.url);
         continue;
