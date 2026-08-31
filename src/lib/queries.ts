@@ -1,6 +1,28 @@
 import 'server-only';
 import { collection, COLLECTIONS } from '@/lib/db';
-import type { ProductDoc, PoseRefDoc, TalentDoc, CutDoc, HouseRuleDoc, ColorChipDoc } from '@/lib/types';
+import type { ProductDoc, PoseRefDoc, TalentDoc, CutDoc, HouseRuleDoc, ColorChipDoc, ExpressionDoc } from '@/lib/types';
+
+/** 규격 프리셋 — 자사몰/스마트스토어/SNS */
+export interface SizePresetDoc {
+  value: string; label: string; group: string;
+  width: number; height: number; variableHeight: boolean;
+  exactRatio: string | null; genAspect: string; retention: number;
+  cropAxis: 'vertical' | 'horizontal' | 'none';
+  order: number; active: boolean;
+}
+/** 연출 변형 축 */
+export interface VariationDoc {
+  axis: string; axisLabel: string; value: string; label: string; hint: string; order: number;
+}
+/** 업로드 레퍼런스 보존 강도 */
+export interface PreservationDoc {
+  value: string; label: string; desc: string; instruction: string; order: number;
+}
+/** 제품 연출컷 */
+export interface UsageShotDoc {
+  itemId: string; itemName: string; line: string | null; colorKey: string | null;
+  kind: string; kindKr: string; kindEn: string; usableAsRef: boolean; url: string;
+}
 
 /**
  * 서버 컴포넌트에서 쓰는 읽기 쿼리 모음.
@@ -71,6 +93,37 @@ export async function getHouseRules(): Promise<WithId<HouseRuleDoc>[]> {
 export async function getColorChips(): Promise<WithId<ColorChipDoc>[]> {
   const col = await collection<ColorChipDoc>(COLLECTIONS.colorChips);
   const docs = await col.find({}).toArray();
+  return docs.map((d) => plain(d)!);
+}
+
+export async function getSizePresets(): Promise<WithId<SizePresetDoc>[]> {
+  const col = await collection<SizePresetDoc>(COLLECTIONS.sizePresets);
+  const docs = await col.find({ active: true }).sort({ order: 1 }).toArray();
+  return docs.map((d) => plain(d)!);
+}
+
+export async function getVariationOptions(): Promise<WithId<VariationDoc>[]> {
+  const col = await collection<VariationDoc>(COLLECTIONS.variationOptions);
+  const docs = await col.find({}).sort({ axis: 1, order: 1 }).toArray();
+  return docs.map((d) => plain(d)!);
+}
+
+export async function getPreservationModes(): Promise<WithId<PreservationDoc>[]> {
+  const col = await collection<PreservationDoc>(COLLECTIONS.preservationModes);
+  const docs = await col.find({}).sort({ order: 1 }).toArray();
+  return docs.map((d) => plain(d)!);
+}
+
+export async function getExpressions(): Promise<WithId<ExpressionDoc>[]> {
+  const col = await collection<ExpressionDoc>('expressions');
+  const docs = await col.find({ active: true }).sort({ order: 1 }).toArray();
+  return docs.map((d) => plain(d)!);
+}
+
+/** 생성 참조로 쓸 수 있는 연출컷만 (텍스트 박힌 가이드시트·GIF 제외) */
+export async function getUsageShots(line?: string): Promise<WithId<UsageShotDoc>[]> {
+  const col = await collection<UsageShotDoc>(COLLECTIONS.usageShots);
+  const docs = await col.find({ usableAsRef: true, ...(line ? { line } : {}) }).toArray();
   return docs.map((d) => plain(d)!);
 }
 
