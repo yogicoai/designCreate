@@ -1,0 +1,31 @@
+{
+  "name": "imgcreate",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 6100",
+    "build": "next build",
+    "start": "next start -p 6100",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@google/genai": "^2.19.0",
+    "basic-ftp": "^6.2.1",
+    "mongoose": "^9.9.4",
+    "next": "16.3.3",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "sharp": "^0.35.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.3",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "description": "자사몰 이미지 생성 프로그램 — 레퍼런스·제품·전속모델 조합 → 나노바나나(Gemini) 생성"
+}
