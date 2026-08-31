@@ -133,10 +133,15 @@ export interface ReferenceDoc {
   title: string;
   width: number;
   height: number;
+  /** eventTemp(디자인 빌더) 갤러리 분류 — web-banner/sns/sns-story/mobile/thumbnail */
+  category: string | null;
+  tags: string[];
+  /** 'upload' = 이 앱에서 업로드 / 'eventtemp' = 디자인 빌더 갤러리에서 가져옴 */
+  source: string;
   createdAt: Date | string | null;
 }
 
-export async function getReferences(limit = 80): Promise<ReferenceDoc[]> {
+export async function getReferences(limit = 300): Promise<ReferenceDoc[]> {
   const col = await collection<ReferenceDoc & { active?: boolean }>('references');
   const docs = await col.find({ active: { $ne: false } }).sort({ createdAt: -1 }).limit(limit).toArray();
   return docs.map((d) => ({
@@ -144,6 +149,9 @@ export async function getReferences(limit = 80): Promise<ReferenceDoc[]> {
     title: d.title ?? '',
     width: d.width ?? 0,
     height: d.height ?? 0,
+    category: d.category ?? null,
+    tags: d.tags ?? [],
+    source: d.source ?? 'upload',
     createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : null,
   }));
 }

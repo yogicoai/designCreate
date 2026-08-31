@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import sharp from 'sharp';
-import { uploadBuffer, REF_SUBPATH, ftpConfigured } from '@/lib/ftp';
+import { uploadBuffer, deleteRemote, REF_SUBPATH, ftpConfigured } from '@/lib/ftp';
 import { getDb } from '@/lib/db';
 
 /**
@@ -61,19 +61,44 @@ export async function POST(req: Request) {
     const url = await uploadBuffer(REF_SUBPATH, `ref_${stamp}_${rand}.${ext}`, buf);
 
     const title = String(form?.get('title') || file.name || '레퍼런스').slice(0, 120);
+    // replaceUrl 이 오면 "이미지 교체" — 기존 보관함 항목을 유지한 채 파일만 갈아끼운다
+    const replaceUrl = String(form?.get('replaceUrl') || '');
 
-    // 보관함 자동 등록 — 다음 작업에서 재업로드 없이 골라 쓸 수 있게.
-    // 등록 실패가 업로드 자체를 실패시키면 안 되므로 조용히 넘어간다.
     try {
       const db = await getDb();
-      await db.collection('references').updateOne(
-        { url },
-        { $set: { url, title, width: meta.width ?? 0, height: meta.height ?? 0, bytes: buf.length, active: true },
-          $setOnInsert: { createdAt: new Date() } },
-        { upsert: true },
-      );
+      if (replaceUrl) {
+        const existing = await db.collection('references').findOne({ url: replaceUrl });
+        await db.collection('references').updateOne(
+          { url: replaceUrl },
+          { $set: {
+              url,
+              // 교체는 파일만 바꾸는 것 — 사람이 붙인 이름은 유지한다
+              title: existing?.title || title,
+              width: meta.width ?? 0, height: meta.height ?? 0, bytes: buf.length, active: true,
+            },
+            $setOnInsert: { createdAt: new Date() } },
+          { upsert: true },
+        );
+        // 옛 파일 정리 — 우리 폴더 것이고 생성 이력이 안 쓰면 지운다
+        const base = (process.env.FTP_PUBLIC_BASE || '').replace(/\/$/, '');
+        const prefix = `${base}/${REF_SUBPATH}/`;
+        if (replaceUrl.startsWith(prefix)) {
+          const usedIn = await db.collection('cuts').countDocuments({ 'inputImages.url': replaceUrl });
+          const oldName = replaceUrl.slice(prefix.length);
+          if (!usedIn && oldName && !oldName.includes('/')) await deleteRemote(REF_SUBPATH, oldName);
+        }
+      } else {
+        // 보관함 자동 등록 — 다음 작업에서 재업로드 없이 골라 쓸 수 있게.
+        await db.collection('references').updateOne(
+          { url },
+          { $set: { url, title, width: meta.width ?? 0, height: meta.height ?? 0, bytes: buf.length, active: true },
+            $setOnInsert: { createdAt: new Date() } },
+          { upsert: true },
+        );
+      }
     } catch (e) {
-      console.warn('[upload] 보관함 등록 실패(업로드는 성공):', (e as Error).message);
+      // 등록/교체 기록 실패가 업로드 자체를 실패시키면 안 된다
+      console.warn('[upload] 보관함 기록 실패(업로드는 성공):', (e as Error).message);
     }
 
     return NextResponse.json({

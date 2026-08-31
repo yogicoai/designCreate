@@ -253,7 +253,7 @@ export default function CreateStudio(p: Props) {
           setUploads((u) => [...u, { url: json.url, title: json.title, role: 'style' }]);
           // 보관함(서버에도 자동 등록됨)에 즉시 반영
           setLibrary((cur) => [
-            { url: json.url, title: json.title, width: json.width, height: json.height, createdAt: new Date().toISOString() },
+            { url: json.url, title: json.title, width: json.width, height: json.height, category: null, tags: [], source: 'upload', createdAt: new Date().toISOString() },
             ...cur.filter((x) => x.url !== json.url),
           ]);
         } else setErr(json.error || '업로드 실패');
