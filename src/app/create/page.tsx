@@ -42,6 +42,7 @@ export default async function CreatePage() {
       expressions={expressions}
       baseCuts={baseCuts}
       references={references}
+      promptMode={(process.env.PROMPT_MODE || 'local') === 'opus' ? 'opus' : 'local'}
     />
   );
 }

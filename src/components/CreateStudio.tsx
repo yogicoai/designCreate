@@ -23,6 +23,8 @@ interface Props {
   baseCuts: BaseCut[];
   /** 자산관리 > 레퍼런스 보관함 (생성 중 업로드분도 자동 등록됨) */
   references: ReferenceDoc[];
+  /** 프롬프트 작성 모드 — local(템플릿·무과금) / opus(라이브, 확인에도 소액 과금) */
+  promptMode: 'local' | 'opus';
 }
 
 type RefRole = 'style' | 'base' | 'background';
@@ -677,7 +679,11 @@ export default function CreateStudio(p: Props) {
 
         <div className="flex flex-col gap-2 mb-4">
           <button className="btn" onClick={() => run(true)} disabled={!!busy}>
-            {busy === 'dry' ? '만드는 중…' : '프롬프트 확인 (무료)'}
+            {busy === 'dry'
+              ? '만드는 중…'
+              : p.promptMode === 'opus'
+                ? '프롬프트 확인 (Opus · 약 ₩50)'
+                : '프롬프트 확인 (무료)'}
           </button>
           <div className="flex gap-2">
             <select className="input flex-1" value={samples} onChange={(e) => setSamples(Number(e.target.value))}>
@@ -689,7 +695,8 @@ export default function CreateStudio(p: Props) {
             </button>
           </div>
           <div className="text-[10.5px] text-center" style={{ color: 'var(--text-mute)' }}>
-            예상 비용 약 <b style={{ color: 'var(--text-dim)' }}>₩{cost.toLocaleString()}</b> · 25~35초/장
+            생성 약 <b style={{ color: 'var(--text-dim)' }}>₩{cost.toLocaleString()}</b> · 25~35초/장
+            {p.promptMode === 'local' && <span> · 프롬프트는 템플릿 조립(무과금)</span>}
           </div>
         </div>
 
