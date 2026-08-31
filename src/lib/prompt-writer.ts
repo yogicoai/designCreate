@@ -61,12 +61,14 @@ export interface GenerationSpec {
     code: string;
     category: string;
     slot: string;
-    identity: string;
-    size: string;
+    /** 영문 아이덴티티 — 프롬프트에 그대로 들어간다 */
+    identityEn: string;
+    /** 영문 체형 서술 (제품 대비 상대 크기 포함) */
+    sizeEn: string;
     exprSheet?: string;
-    /** 사용할 표정 패널 */
-    expression?: string;
-    outfit?: { code: string; desc: string };
+    /** 사용할 표정 패널 — 한글 라벨과 영문 서술 */
+    expression?: { kr: string; en: string };
+    outfit?: { code: string; desc: string; descEn: string };
   };
 
   /** 제품 */
@@ -77,7 +79,7 @@ export interface GenerationSpec {
     modes: string;
     dims: { w?: number; d?: number; h?: number; weight?: number };
     scalePrompt: string;
-    color?: { name: string; hex: string };
+    color?: { name: string; nameEn: string; hex: string };
   };
 
   size: SizeSpec;
@@ -203,7 +205,8 @@ function productBlock(spec: GenerationSpec): string[] {
   const p = spec.product;
   if (!p) return [];
   const L: string[] = [];
-  L.push(`PRODUCT — Yogibo ${p.line}${p.color?.name ? ` (${p.color.name})` : ''}.`);
+  const colorEn = p.color?.nameEn || p.color?.name || '';
+  L.push(`PRODUCT — Yogibo ${p.line}${colorEn ? ` (${colorEn})` : ''}.`);
   L.push(`SHAPE: ${p.shape}.`);
   const d = p.dims ?? {};
   const dims = [d.w && `${d.w}cm wide`, d.d && `${d.d}cm deep`, d.h && `${d.h}cm tall/long`].filter(Boolean).join(' x ');
@@ -211,7 +214,7 @@ function productBlock(spec: GenerationSpec): string[] {
   if (p.scalePrompt) L.push(`SCALE ANCHOR: ${p.scalePrompt}.`);
   L.push(`NEGATIVE: ${p.negative}.`);
   if (p.color?.hex) {
-    L.push(`COLOUR: ${p.color.name} (${p.color.hex}) — exact, must not drift toward a neighbouring hue.`);
+    L.push(`COLOUR: ${colorEn} (${p.color.hex}) — exact, must not drift toward a neighbouring hue.`);
   }
   L.push(`USE: ${p.modes}.`);
   return L;
@@ -222,10 +225,14 @@ function talentBlock(spec: GenerationSpec): string[] {
   const t = spec.talent;
   if (!t) return [];
   const L: string[] = [];
-  L.push(`MODEL — ${t.identity}`);
-  L.push(`BODY: ${t.size}. Her scale against the product must be consistent with these measurements.`);
-  if (t.expression) L.push(`EXPRESSION: use the "${t.expression}" panel from the expression sheet.`);
-  if (t.outfit) L.push(`OUTFIT: ${t.outfit.desc} (${t.outfit.code}). Barefoot unless stated otherwise.`);
+  L.push(`MODEL — ${t.identityEn}.`);
+  L.push(`BODY: ${t.sizeEn}. The model scale against the product must be consistent with these measurements.`);
+  if (t.expression) {
+    L.push(`EXPRESSION: ${t.expression.en} — use that panel from the expression sheet.`);
+  }
+  if (t.outfit) {
+    L.push(`OUTFIT: ${t.outfit.descEn || t.outfit.desc} (${t.outfit.code}). Barefoot unless stated otherwise.`);
+  }
   return L;
 }
 

@@ -9,6 +9,8 @@ export interface ProductColor {
   key: string;
   /** 표시명 (한글) */
   name: string;
+  /** 영문 표기 — 프롬프트에 한글이 섞이면 지시가 흐려진다 */
+  nameEn: string;
   /** 공식 컬러칩 hex */
   hex: string;
   /** 대표 컬러 여부 */
@@ -100,6 +102,8 @@ export interface TalentSheets {
 export interface Outfit {
   code: string;
   desc: string;
+  /** 영문 표기 — 프롬프트에 들어간다 */
+  descEn: string;
   /** web/img/none/clothes/<code>.jpg */
   imageUrl: string;
 }
@@ -114,8 +118,12 @@ export interface TalentDoc {
   name: string;
   /** 고정 아이덴티티 서술 (락의 핵심) */
   identity: string;
+  /** 아이덴티티의 영문 표기 — 프롬프트에 그대로 들어간다 */
+  identityEn: string;
   /** 키·체형 — 제품 비례 연출에 필수 */
   size: string;
+  /** 체형의 영문 표기 (제품 대비 상대 크기까지 서술) */
+  sizeEn: string;
   /** 썸네일 페이지 쪽 설명 — 헤어 업데이트가 반영된 최신본이라 identity 보다 우선 표시 */
   thumbDesc: string;
   /** 대표 컷 */
@@ -198,7 +206,23 @@ export interface HouseRuleDoc {
   en: string;
   /** ★ 표시된 필수 규칙 여부 */
   critical: boolean;
+  /**
+   * image = 생성 프롬프트에 넣는 규칙 / operator = 사람이 지킬 작업 절차.
+   * 작업 절차를 프롬프트에 넣으면 순수 노이즈가 된다 ("생성 전 크레딧을 고지하라" 같은 것).
+   */
+  appliesTo: 'image' | 'operator';
+  /** 'no-scene' = MD 가 장면을 지정하면 이 규칙은 빠진다 (스튜디오 배경 규칙이 거실 지시와 충돌) */
+  conditional: string | null;
   enabled: boolean;
+}
+
+/** 표정 시트 8패널 */
+export interface ExpressionDoc {
+  id: string;
+  kr: string;
+  en: string;
+  order: number;
+  active: boolean;
 }
 
 export interface ApiUsageDoc {

@@ -35,12 +35,27 @@ export default function Sidebar() {
       className="w-[212px] shrink-0 flex flex-col border-r"
       style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
     >
-      <div className="px-5 pt-5 pb-4">
+      <div className="px-4 pt-4 pb-4">
         <Link href="/" className="block">
-          <div className="text-[15px] font-extrabold tracking-tight">
-            img<span style={{ color: 'var(--accent)' }}>Create</span>
+          {/*
+            공식 로고는 짙은 회색 + 시안이라 다크 배경에서 묻힌다.
+            로고 자체를 리컬러하면 브랜드 훼손이므로, 밝은 플레이트를 깔고 원본을 그대로 얹는다.
+            외부 호스트(yogibo.kr)라 next/image 최적화 대신 img 를 쓴다.
+          */}
+          <div
+            className="rounded-lg px-3 py-2.5 flex items-center justify-center"
+            style={{ background: '#f4f5f7' }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://yogibo.kr/web/img/icon/logo3_on.png"
+              alt="Yogibo"
+              width={400}
+              height={160}
+              className="w-[92px] h-auto"
+            />
           </div>
-          <div className="text-[10.5px] mt-0.5" style={{ color: 'var(--text-mute)' }}>
+          <div className="text-[10.5px] mt-2 text-center" style={{ color: 'var(--text-mute)' }}>
             자사몰 이미지 생성
           </div>
         </Link>

@@ -40,11 +40,16 @@ export async function collection<T extends Document = Document>(name: string): P
 
 /** 컬렉션 이름 상수 — 오타 방지 + 한 곳에서 관리 */
 export const COLLECTIONS = {
-  products: 'products',        // 제품 라인 + 컬러 슬롯
-  poseRefs: 'pose_refs',       // 실사 포즈 레퍼 (on=포즈·각도 / off=형태)
-  talents: 'talents',          // 전속 모델 + 아이덴티티 시트 4종
-  cuts: 'cuts',                // 생성 컷 (legacy 이관분 + 신규 생성물)
-  colorChips: 'color_chips',   // 공식 컬러칩
-  houseRules: 'house_rules',   // 전 컷 공통 규칙 (구 CAUTIONS)
-  apiUsage: 'api_usage',       // 생성 사용량/한도
+  products: 'products',                    // 제품 라인 + 컬러 슬롯 (프롬프트 조립 단위)
+  productItems: 'product_items',           // 제품 카탈로그 70종 (판매 제품 단위)
+  usageShots: 'usage_shots',               // 제품 연출컷
+  poseRefs: 'pose_refs',                   // 실사 포즈 레퍼 (on=포즈·각도 / off=형태)
+  talents: 'talents',                      // 전속 모델 + 아이덴티티 시트 3종 + 의상
+  cuts: 'cuts',                            // 생성 컷 (legacy 이관분 + 신규 생성물)
+  colorChips: 'color_chips',               // 공식 컬러칩
+  houseRules: 'house_rules',               // 전 컷 공통 규칙 (구 CAUTIONS)
+  sizePresets: 'size_presets',             // 규격 프리셋 (자사몰/스마트스토어/SNS)
+  variationOptions: 'variation_options',   // 카메라·포즈·인물·조명·시나리오
+  preservationModes: 'preservation_modes', // 업로드 레퍼런스 보존 강도
+  apiUsage: 'api_usage',                   // 생성 사용량/한도
 } as const;
