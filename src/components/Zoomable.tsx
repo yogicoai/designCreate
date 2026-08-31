@@ -12,12 +12,15 @@ export default function Zoomable({
   className,
   style,
   caption,
+  action,
 }: {
   src: string;
   alt: string;
   className?: string;
   style?: React.CSSProperties;
   caption?: string;
+  /** 팝업 안에 표시할 액션 버튼 (예: "이번 작업에 추가") — 누르면 실행 후 닫힌다 */
+  action?: { label: string; onClick: () => void; disabled?: boolean };
 }) {
   const [open, setOpen] = useState(false);
 
@@ -54,7 +57,17 @@ export default function Zoomable({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={src} alt={alt} className="max-w-[96vw] max-h-[88vh] object-contain rounded-lg" />
           {caption && (
-            <div className="text-[12px] text-center max-w-[70ch]" style={{ color: '#c8ccd4' }}>{caption}</div>
+            <div className="text-[12px] text-center max-w-[70ch] whitespace-pre-line" style={{ color: '#c8ccd4' }}>{caption}</div>
+          )}
+          {action && (
+            <button
+              onClick={(e) => { e.stopPropagation(); if (action.disabled) return; action.onClick(); setOpen(false); }}
+              disabled={action.disabled}
+              className="btn btn-primary"
+              style={action.disabled ? { opacity: 0.5, cursor: 'default' } : {}}
+            >
+              {action.label}
+            </button>
           )}
           <button
             onClick={(e) => { e.stopPropagation(); setOpen(false); }}

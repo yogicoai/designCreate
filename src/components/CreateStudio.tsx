@@ -4,6 +4,7 @@ import { useMemo, useState, useRef } from 'react';
 import type { ProductDoc, TalentDoc, PoseRefDoc, ExpressionDoc } from '@/lib/types';
 import type { SizePresetDoc, VariationDoc, PreservationDoc, ReferenceDoc } from '@/lib/queries';
 import { shrinkForUpload, formatBytes } from '@/lib/client-image';
+import Zoomable from '@/components/Zoomable';
 
 type WithId<T> = T & { id: string };
 
@@ -379,18 +380,23 @@ export default function CreateStudio(p: Props) {
 
             {showLibrary && (
               <div className="mb-3 p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
-                <div className="label mb-1.5">보관함 — 클릭하면 이번 작업에 추가됩니다</div>
+                <div className="label mb-1.5">보관함 — 클릭하면 크게 보이고, 팝업에서 추가할 수 있습니다</div>
                 {library.length ? (
                   <div className="grid grid-cols-6 gap-1.5 max-h-[180px] overflow-y-auto pr-1">
                     {library.map((r) => {
                       const used = uploads.some((u) => u.url === r.url);
                       return (
-                        <button key={r.url} onClick={() => addFromLibrary(r)} title={r.title} disabled={used}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={r.url} alt={r.title} loading="lazy"
-                               className="w-full aspect-square object-cover rounded-md border"
-                               style={{ borderColor: used ? 'var(--accent)' : 'var(--line)', opacity: used ? 0.45 : 1 }} />
-                        </button>
+                        <div key={r.url} style={{ opacity: used ? 0.45 : 1 }}>
+                          <Zoomable
+                            src={r.url}
+                            alt={r.title}
+                            caption={`${r.title}${used ? '
+(이미 이번 작업에 들어가 있음)' : ''}`}
+                            action={{ label: used ? '이미 추가됨' : '＋ 이번 작업에 추가', onClick: () => addFromLibrary(r), disabled: used }}
+                            className="w-full aspect-square object-cover rounded-md border"
+                            style={{ borderColor: used ? 'var(--accent)' : 'var(--line)' }}
+                          />
+                        </div>
                       );
                     })}
                   </div>
@@ -404,8 +410,8 @@ export default function CreateStudio(p: Props) {
 
             {uploads.map((u, i) => (
               <div key={u.url} className="flex gap-2.5 p-2 rounded-lg mb-2" style={{ background: 'var(--surface-2)' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={u.url} alt={u.title} className="w-[76px] h-[76px] object-cover rounded-lg shrink-0" />
+                <Zoomable src={u.url} alt={u.title} caption={u.title}
+                          className="w-[76px] h-[76px] object-cover rounded-lg shrink-0" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-[11px] truncate" style={{ color: 'var(--text-dim)' }}>{u.title}</div>
