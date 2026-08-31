@@ -156,6 +156,47 @@ export async function POST(req: Request) {
 
     const color = product?.colors?.find((c: { key: string }) => c.key === body.colorKey);
 
+    /*
+     * 공식 제품 뷰 선택 — youtube/productPrompt.js 의 규칙:
+     * "카메라 각도에 맞는 뷰를 첨부하라". 카메라 변형 미지정이면 ¾뷰 우선(썸네일 관행).
+     * 자기 색 뷰가 없으면 같은 라인의 뷰 보유 색으로 폴백 — 형태만 참고, 색은 스와치가 잡는다.
+     */
+    const cameraPick = (body.variationIds ?? []).find((v) => v.startsWith('camera:'))?.split(':')[1];
+    const ANGLE_PREF: Record<string, string[]> = {
+      front: ['front', 'side'],
+      '45deg': ['a045', 'side', 'front'],
+      side: ['side', 'front'],
+      top: ['front', 'side'],
+      low: ['front', 'side'],
+    };
+    const wantedAngles = ANGLE_PREF[cameraPick ?? ''] ?? ['a045', 'side', 'front'];
+
+    let productViews: { angle: string; url: string; colorMatched: boolean }[] = [];
+    if (product && body.colorKey) {
+      let viewSrc: Record<string, string> | undefined = color?.views;
+      let colorMatched = true;
+      if (!viewSrc || !Object.keys(viewSrc).length) {
+        const fallback = product.colors?.find(
+          (c: { views?: Record<string, string> }) => c.views && Object.keys(c.views).length,
+        );
+        viewSrc = fallback?.views;
+        colorMatched = false;
+      }
+      if (viewSrc) {
+        for (const a of wantedAngles) {
+          if (productViews.length >= 2) break; // 참조 슬롯 예산 — 뷰는 2장까지
+          if (viewSrc[a]) productViews.push({ angle: a, url: viewSrc[a], colorMatched });
+        }
+      }
+    }
+
+    // product_items.notes 의 "연출: <영문>" — 실제 판매 데이터에 박힌 연출 지침
+    let staging = '';
+    if (product && body.colorKey) {
+      const item = await db.collection('product_items').findOne({ line: product.line, colorKey: body.colorKey });
+      staging = String(item?.notes || '').match(/연출:\s*([^·]+)/)?.[1]?.trim() ?? '';
+    }
+
     // ── 3) 프롬프트 작성 ──────────────────────────────────────────
     const spec: GenerationSpec = {
       mode: body.mode || 'thumbnail',
@@ -181,6 +222,8 @@ export async function POST(req: Request) {
               dims: product.dims,
               scalePrompt: product.scalePrompt,
               ...(color ? { color: { name: color.name, nameEn: color.nameEn || color.name, hex: color.hex } } : {}),
+              ...(staging ? { staging } : {}),
+              ...(productViews.length ? { views: productViews } : {}),
             },
           }
         : {}),

@@ -12,7 +12,7 @@ import Anthropic from '@anthropic-ai/sdk';
  * 그래서 참조 목록과 프롬프트를 따로 만들지 않고 여기서 함께 만든다.
  */
 
-export type RefKind = 'base' | 'style' | 'background' | 'shape' | 'pose' | 'usage' | 'talent' | 'outfit' | 'swatch';
+export type RefKind = 'base' | 'style' | 'background' | 'shape' | 'pose' | 'usage' | 'talent' | 'outfit' | 'product' | 'swatch';
 
 export interface RefSlot {
   kind: RefKind;
@@ -112,6 +112,13 @@ export interface GenerationSpec {
     dims: { w?: number; d?: number; h?: number; weight?: number };
     scalePrompt: string;
     color?: { name: string; nameEn: string; hex: string };
+    /** product_items.notes 의 "연출:" 영문 지침 — 있으면 modes 대신 쓴다 (실제 판매 데이터 기준) */
+    staging?: string;
+    /**
+     * 공식 제품 뷰 (360에서 뽑은 단일 각도 실사) — 형태·비례 앵커의 정본.
+     * colorMatched=false 면 같은 라인의 다른 색 뷰(형태만 참고, 색은 스와치가 잡는다).
+     */
+    views?: { angle: string; url: string; colorMatched: boolean }[];
   };
 
   size: SizeSpec;
@@ -203,6 +210,19 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
         role: `an official product staging shot showing ${spec.usageShot.kindEn}`,
       });
     }
+
+    // 공식 제품 뷰 — 형태가 어긋나는 사고의 직접 대응.
+    // 눌림 레퍼는 "앉은 뒤의 변형"을, 공식 뷰는 "제품 자체의 형태·비례"를 잡는다.
+    for (const v of spec.product?.views ?? []) {
+      slots.push({
+        kind: 'product',
+        title: `제품 뷰 · ${v.angle}${v.colorMatched ? '' : ' (형태만)'}`,
+        url: v.url,
+        role: v.colorMatched
+          ? `an official product photograph of the exact product from the ${ANGLE_EN[v.angle] ?? v.angle} — reproduce this exact three-dimensional shape, proportions and smooth seamless cover`
+          : `an official product photograph showing the exact SHAPE and proportions from the ${ANGLE_EN[v.angle] ?? v.angle} — it is shown in a different colour, so take ONLY the shape; the colour comes from the swatch`,
+      });
+    }
   }
 
   const talents = spec.talents ?? [];
@@ -251,6 +271,18 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
 
 const ORDINALS = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'SIXTH', 'SEVENTH', 'EIGHTH'];
 
+/** 제품 뷰 각도 → 영문 표기 */
+const ANGLE_EN: Record<string, string> = {
+  front: 'front view',
+  side: 'side view',
+  back: 'back view',
+  a045: '45-degree three-quarter view',
+  a135: '135-degree rear three-quarter view',
+  a225: '225-degree rear three-quarter view',
+  a270: '270-degree side view',
+  a315: '315-degree three-quarter view',
+};
+
 function describeRefs(refs: RefSlot[]): string {
   return refs.map((r, i) => `The ${ORDINALS[i]} image is ${r.role}.`).join('\n');
 }
@@ -290,7 +322,7 @@ function productBlock(spec: GenerationSpec): string[] {
   if (p.scalePrompt) L.push(`SCALE ANCHOR: ${p.scalePrompt}.`);
   L.push(`NEGATIVE: ${p.negative}.`);
   if (p.color?.hex) L.push(`COLOUR: ${colorEn} (${p.color.hex}) — exact, must not drift toward a neighbouring hue.`);
-  L.push(`USE: ${p.modes}.`);
+  L.push(`USE: ${p.staging || p.modes}.`);
   return L;
 }
 

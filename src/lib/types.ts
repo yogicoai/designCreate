@@ -156,8 +156,8 @@ export interface CutRecipe {
 
 /** 생성에 실제로 넣은 입력 이미지 1장 — 삭제·수정에 흔들리지 않게 URL 을 스냅샷으로 박아둔다 */
 export interface InputImage {
-  /** base=베이스 컷 / shape=형태 레퍼 / pose=포즈 레퍼 / talent=모델 시트 / swatch=컬러 스와치 */
-  kind: 'base' | 'shape' | 'pose' | 'talent' | 'swatch' | 'style';
+  /** 참조의 역할 — prompt-writer 의 RefKind 와 동일 */
+  kind: 'base' | 'style' | 'background' | 'shape' | 'pose' | 'usage' | 'talent' | 'outfit' | 'product' | 'swatch';
   title: string;
   url: string;
   role?: string;
