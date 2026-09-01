@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import Zoomable from '@/components/Zoomable';
-import { getTalents, getCuts } from '@/lib/queries';
+import { getTalents, getCuts, getExpressions } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +17,7 @@ const SHEETS = [
 ];
 
 export default async function TalentsPage() {
-  const [talents, cuts] = await Promise.all([getTalents(), getCuts({ limit: 2000 })]);
+  const [talents, cuts, expressions] = await Promise.all([getTalents(), getCuts({ limit: 2000 }), getExpressions()]);
 
   const cutCount = new Map<string, number>();
   for (const c of cuts) for (const t of c.recipe?.talentCodes ?? []) cutCount.set(t, (cutCount.get(t) ?? 0) + 1);
@@ -121,6 +121,32 @@ export default async function TalentsPage() {
                       );
                     })}
                   </div>
+
+                  {t.expressionCrops && Object.keys(t.expressionCrops).length > 0 && (
+                    <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--line)' }}>
+                      <div className="label mb-2">
+                        표정 조각 — 생성 때는 시트 대신 요청한 표정 한 장만 들어갑니다
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {expressions.map((ex) => {
+                          const url = t.expressionCrops?.[ex.id];
+                          if (!url) return null;
+                          return (
+                            <div key={ex.id} className="text-center">
+                              <Zoomable
+                                src={url}
+                                alt={ex.kr}
+                                caption={`${cat} ${t.slot} · ${ex.kr} — ${ex.en}`}
+                                className="w-[64px] rounded-lg border object-cover"
+                                style={{ aspectRatio: '9/10', borderColor: 'var(--line-strong)', background: 'var(--surface-2)' }}
+                              />
+                              <div className="text-[9.5px] mt-1" style={{ color: 'var(--text-mute)' }}>{ex.kr}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {t.outfits.length > 0 && (
                     <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--line)' }}>
