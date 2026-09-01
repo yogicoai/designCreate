@@ -30,17 +30,6 @@ interface Saved {
   collectedAt: string | null;
 }
 
-/*
- * 자주 쓰는 검색어 — 매번 타이핑하지 않게.
- * 우리는 빈백 회사다. 일반 디자인·배너 검색어는 우리 제품과 무관한 결과만 끌고 오므로 넣지 않는다.
- * 전부 빈백을 중심에 두고, 쓰임새(거실·침실·키즈·게이밍·캠핑)로 갈래를 낸다.
- */
-const PRESETS = [
-  '빈백소파', '빈백 인테리어', '빈백 거실', '요기보',
-  '빈백 침대', '키즈 빈백', '게이밍 빈백', '캠핑 빈백',
-  '좌식소파 인테리어', '빈백 원룸',
-];
-
 interface Promo {
   id?: string;
   title: string; link: string; desc: string; date: string;
@@ -58,7 +47,7 @@ function thisMonth(): string {
 }
 
 export default function TrendBoard() {
-  const [tab, setTab] = useState<'image' | 'promo' | 'copy'>('image');
+  const [tab, setTab] = useState<'promo' | 'copy'>('promo');
   const [configured, setConfigured] = useState(true);
   const [promos, setPromos] = useState<Promo[]>([]);
   const [foundPromos, setFoundPromos] = useState<Promo[]>([]);
@@ -91,8 +80,6 @@ export default function TrendBoard() {
   const [saved, setSaved] = useState<Saved[]>([]);
 
   const [q, setQ] = useState('');
-  const [found, setFound] = useState<Found[]>([]);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [saveMonth, setSaveMonth] = useState(thisMonth());
   const [busy, setBusy] = useState<'search' | 'save' | null>(null);
   const [note, setNote] = useState('');
@@ -118,52 +105,6 @@ export default function TrendBoard() {
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
   }, [zoom]);
 
-  async function search() {
-    const query = q.trim();
-    if (!query) return;
-    setBusy('search'); setErr(''); setNote(''); setPicked(new Set());
-    try {
-      const res = await fetch('/api/trends', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ q: query, display: 48 }),
-      });
-      const j = await res.json();
-      if (!j.ok) { setErr(j.error || '검색 실패'); setFound([]); return; }
-      setFound(j.items ?? []);
-      if (!j.items?.length) setNote('결과가 없습니다. 다른 검색어를 써보세요.');
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function keep() {
-    const items = found.filter((f) => picked.has(f.link));
-    if (!items.length) return;
-    setBusy('save'); setErr('');
-    try {
-      const res = await fetch('/api/trends', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ items, month: saveMonth, keyword: q.trim() }),
-      });
-      const j = await res.json();
-      if (!j.ok) { setErr(j.error || '담기 실패'); return; }
-      setNote(`${j.saved}장 담았습니다${j.failed ? ` (${j.failed}장 실패)` : ''} · ${j.month}`);
-      setFound((cur) => cur.map((f) => (picked.has(f.link) ? { ...f, saved: true } : f)));
-      setPicked(new Set());
-      load(month);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  /*
-   * 이벤트·특가 탭을 열면 검색을 기다리지 않고 추적 업체 이미지를 먼저 띄운다.
-   * 이 화면의 주인공은 이미지다 — 빈 화면에서 검색어부터 치게 만들 이유가 없다.
-   */
   useEffect(() => {
     if (tab !== 'promo' || !configured) return;
     if (!brands.length || Object.keys(brandImgs).length) return;
@@ -189,13 +130,6 @@ export default function TrendBoard() {
       .then((j) => { if (j.ok) setCopyData(j); })
       .catch(() => {});
   }, [tab, configured, copyMonth, copyData]);
-
-  /** 문구를 이미지 검색 씨앗으로 — 이 화면에서 가장 쓸모 있는 동선이다 */
-  function seedImageSearch(phrase: string) {
-    setQ(`빈백 ${phrase}`.slice(0, 60));
-    setTab('image');
-    window.setTimeout(() => search(), 0);
-  }
 
   async function searchPromo() {
     const query = q.trim();
@@ -290,13 +224,6 @@ export default function TrendBoard() {
     if ((await res.json()).ok) setSaved((cur) => cur.filter((x) => x.id !== id));
   }
 
-  const toggle = (link: string) =>
-    setPicked((cur) => {
-      const n = new Set(cur);
-      if (n.has(link)) n.delete(link); else n.add(link);
-      return n;
-    });
-
   return (
     <div>
       {!configured && (
@@ -314,87 +241,13 @@ export default function TrendBoard() {
 
       {/* 탭 — 이미지 보드와 이벤트 기록은 성격이 달라 화면을 나눈다 */}
       <div className="flex gap-1.5 mb-4">
-        {([['image', '연출 이미지'], ['promo', '이벤트 · 특가'], ['copy', '문구 추천']] as const).map(([v, l]) => (
+        {([['promo', '경쟁사 이벤트'], ['copy', '문구 추천']] as const).map(([v, l]) => (
           <button key={v} onClick={() => { setTab(v); setNote(''); setErr(''); }} className="chip"
                   style={tab === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
             {l}
           </button>
         ))}
       </div>
-
-      {/* ── 찾기 ── */}
-      {tab !== 'copy' && (
-      <div className="card p-4 mb-4">
-        <div className="label mb-2">1. 찾기</div>
-        <div className="flex gap-2 mb-2 flex-wrap">
-          <input
-            className="input flex-1" style={{ minWidth: 220 }}
-            value={q} onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') (tab === 'promo' ? searchPromo() : search()); }}
-            placeholder="예: 빈백 / 빈백소파 / 빈백 인테리어 — 빈백 관련 검색어를 넣으세요"
-            disabled={!configured}
-          />
-          <button className="btn btn-primary" onClick={tab === 'promo' ? searchPromo : search}
-                  disabled={!configured || busy === 'search' || !q.trim()}>
-            {busy === 'search' ? '찾는 중…' : '검색'}
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {(tab === 'promo' ? PROMO_PRESETS : PRESETS).map((p) => (
-            <button key={p} className="chip" onClick={() => setQ(p)} disabled={!configured}>{p}</button>
-          ))}
-        </div>
-        {note && <div className="text-[11px] mt-2" style={{ color: 'var(--ok)' }}>{note}</div>}
-        {err && <div className="text-[11px] mt-2" style={{ color: 'var(--danger)' }}>{err}</div>}
-      </div>
-      )}
-
-      {/* ── 결과에서 고르기 (연출 이미지) ── */}
-      {tab === 'image' && found.length > 0 && (
-        <div className="card p-4 mb-4">
-          <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
-            <div className="label">
-              2. 담을 것만 고르세요{' '}
-              <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
-                — 고른 것만 저장됩니다. 원본은 받지 않고 썸네일과 출처만 남습니다.
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px]" style={{ color: 'var(--text-mute)' }}>월</span>
-              <input className="input py-1 text-[11px]" style={{ width: 100 }} value={saveMonth}
-                     onChange={(e) => setSaveMonth(e.target.value)} placeholder="YYYY-MM" />
-              <button className="btn btn-primary text-[12px]" onClick={keep} disabled={!picked.size || busy === 'save'}>
-                {busy === 'save' ? '담는 중…' : `${picked.size}장 담기`}
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
-            {found.map((f) => {
-              const on = picked.has(f.link);
-              return (
-                <div key={f.link}>
-                  <button onClick={() => toggle(f.link)} className="block w-full rounded-lg overflow-hidden border relative"
-                          style={{ padding: 0, borderColor: on ? 'var(--accent)' : 'var(--line)', borderWidth: on ? 2 : 1, background: 'var(--surface-2)' }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={f.thumbnail} alt={f.title} loading="lazy" className="w-full object-cover" style={{ aspectRatio: '1/1' }} />
-                    {on && (
-                      <span className="absolute top-1 left-1 w-5 h-5 rounded-full text-[11px] flex items-center justify-center"
-                            style={{ background: 'var(--accent)', color: '#fff' }}>✓</span>
-                    )}
-                    {f.saved && !on && (
-                      <span className="absolute top-1 right-1 px-1 rounded text-[9px]"
-                            style={{ background: 'rgba(0,0,0,.6)', color: '#9fe0a8' }}>담김</span>
-                    )}
-                  </button>
-                  <div className="text-[9.5px] mt-1 truncate" style={{ color: 'var(--text-mute)' }}>
-                    {f.sizeWidth}×{f.sizeHeight}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* ── 이벤트·특가: 검색 결과 (업체별) ── */}
       {tab === 'promo' && (foundPromos.length > 0 || Object.keys(brandImgs).length > 0) && (
@@ -624,7 +477,7 @@ export default function TrendBoard() {
                 <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
                   이건 <b style={{ color: 'var(--text-dim)' }}>수집이 아니라 제안</b>입니다 — 시즌에 맞춰 만든 문장이고,
                   숫자(<b style={{ color: 'var(--warn)' }}>{copyData.median || '—'}%</b>)만 경쟁사 실측값입니다.
-                  <br />클릭하면 복사, <b>이미지 찾기</b>를 누르면 그 문구로 레퍼런스를 검색합니다.
+                  <br />클릭하면 복사됩니다.
                 </div>
                 <div className="flex flex-col gap-1.5">
                   {copyData.suggestions.map((x) => (
@@ -635,9 +488,6 @@ export default function TrendBoard() {
                         {x}
                       </button>
                       {copied === x && <span className="text-[10px] shrink-0" style={{ color: 'var(--ok)' }}>복사됨 ✓</span>}
-                      <button className="chip shrink-0" onClick={() => seedImageSearch(x.split(/[·,]/)[0].trim())}>
-                        이미지 찾기
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -656,8 +506,9 @@ export default function TrendBoard() {
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {copyData.harvested.map((h) => (
-                    <button key={h.phrase} className="chip" title="이 표현으로 이미지 검색"
-                            onClick={() => seedImageSearch(h.phrase)}>
+                    <button key={h.phrase} className="chip" title="클릭하면 복사"
+                            style={copied === h.phrase ? { borderColor: 'var(--ok)', color: 'var(--ok)' } : {}}
+                            onClick={() => { navigator.clipboard?.writeText(h.phrase); setCopied(h.phrase); window.setTimeout(() => setCopied(''), 1500); }}>
                       {h.phrase} <span style={{ color: 'var(--text-mute)' }}>{h.count}</span>
                     </button>
                   ))}
@@ -674,9 +525,9 @@ export default function TrendBoard() {
       )}
 
       {/* ── 월별 보드 ── */}
-      {tab === 'image' && (
-      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-        <span className="label mr-1">월별</span>
+      {tab === 'promo' && (
+      <div className="flex items-center gap-1.5 mt-5 mb-3 flex-wrap">
+        <span className="label mr-1">담아둔 이미지 · 월별</span>
         <button className="chip" onClick={() => setMonth('')}
                 style={!month ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>전체</button>
         {months.map((m) => (
@@ -686,7 +537,7 @@ export default function TrendBoard() {
       </div>
       )}
 
-      {tab === 'image' && (saved.length === 0 ? (
+      {tab === 'promo' && (saved.length === 0 ? (
         <div className="card p-8 text-center text-[13px]" style={{ color: 'var(--text-dim)' }}>
           아직 담아둔 참고 이미지가 없습니다. 위에서 검색해 마음에 드는 것만 담아보세요.
         </div>
