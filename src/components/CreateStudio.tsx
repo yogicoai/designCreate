@@ -557,7 +557,7 @@ export default function CreateStudio(p: Props) {
                 {busy === 'gen'
                   ? `보통 25~35초 걸립니다${samples > 1 ? ` · ${samples}장` : ''}. 창을 닫지 마세요.`
                   : busy === 'handoff'
-                    ? '프롬프트와 선택값을 저장합니다. 40~50초 걸립니다.'
+                    ? '프롬프트와 선택값을 저장합니다. 과금 없이 바로 끝납니다.'
                     : '레퍼런스를 읽고 프롬프트를 씁니다. 40~50초 걸립니다.'}
               </div>
             </div>
@@ -1288,9 +1288,9 @@ ${c.spec}`}>
           */}
           {p.localMode && (
             <button className="btn" onClick={leaveHandoff} disabled={!!busy || handoff === 'busy'}
-                    title="프롬프트와 지금 고른 값(모델·표정·의상·규격·레퍼런스)을 저장합니다. 대화에서 그대로 읽어 힉스필드로 뽑을 수 있습니다."
+                    title="프롬프트와 지금 고른 값(모델·표정·의상·규격·레퍼런스)을 저장합니다. 대화에서 그대로 읽어 힉스필드로 뽑을 수 있습니다. 프롬프트는 대화에서 쓰므로 Opus 를 타지 않습니다 (무과금)."
                     style={handoff === 'done' ? { borderColor: 'var(--ok)', color: 'var(--ok)' } : {}}>
-              {handoff === 'busy' ? '남기는 중…' : handoff === 'done' ? '남겼습니다 ✓' : '힉스필드용으로 남기기'}
+              {handoff === 'busy' ? '남기는 중…' : handoff === 'done' ? '남겼습니다 ✓' : '힉스필드용으로 남기기 (무과금)'}
             </button>
           )}
           {p.localMode && handoff === 'done' && (

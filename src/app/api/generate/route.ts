@@ -362,7 +362,17 @@ export async function POST(req: Request) {
       houseRules: activeRules.map((r) => r.en).filter(Boolean),
     };
 
-    const written = await writePrompt(spec, { mode: body.promptMode, manualPrompt: body.promptOverride });
+    /*
+     * 넘기기는 절대 Opus 를 타지 않는다.
+     * 이 경로의 결과물은 대화로 넘어가서 거기서 프롬프트가 다시 쓰인다 —
+     * 앱이 Opus 로 한 번 쓰면 그 토큰(1회 약 9,300개)은 그냥 버려진다.
+     * env(PROMPT_MODE)가 opus 여도 여기서는 무조건 무과금 템플릿으로 조립한다.
+     * 필요한 건 참조 순서와 선택값이지 완성된 문장이 아니다.
+     */
+    const written = await writePrompt(spec, {
+      mode: body.handoff ? 'local' : body.promptMode,
+      manualPrompt: body.promptOverride,
+    });
 
     /*
      * 넘기기 기록 — 프롬프트 + 참조 순서 + 화면에서 고른 값 원본을 통째로 남긴다.
@@ -459,7 +469,7 @@ export async function POST(req: Request) {
     if (usedRefs.length !== written.refs.length) {
       // 참조가 빠지면 FIRST/SECOND 번호가 어긋난다 — 프롬프트를 다시 쓴다
       console.warn(`[generate] 참조 ${written.refs.length - usedRefs.length}장 누락 — 프롬프트 재작성`);
-      const redone = await writePrompt(spec, { mode: body.promptMode, manualPrompt: body.promptOverride });
+      const redone = await writePrompt(spec, { mode: body.handoff ? 'local' : body.promptMode, manualPrompt: body.promptOverride });
       written.prompt = redone.prompt;
     }
 
