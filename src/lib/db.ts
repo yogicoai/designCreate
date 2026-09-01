@@ -52,4 +52,5 @@ export const COLLECTIONS = {
   variationOptions: 'variation_options',   // 카메라·포즈·인물·조명·시나리오
   preservationModes: 'preservation_modes', // 업로드 레퍼런스 보존 강도
   apiUsage: 'api_usage',                   // 생성 사용량/한도
+  trendImages: 'trend_images',             // 시즌 트렌드 참고 보드 (썸네일+출처만, 원본 미보관)
 } as const;
