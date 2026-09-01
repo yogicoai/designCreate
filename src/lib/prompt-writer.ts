@@ -475,6 +475,25 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
   const L: string[] = [];
   const multi = talents.length > 1;
 
+  /*
+   * 베이스에 사람이 더 있으면 지워야 한다.
+   * 레퍼런스 3인 사진에 모델 2명만 지정하면 "정확히 2명"이라고만 말해봐야
+   * 남은 1명을 어떻게 하라는 지시가 없어서, 모델이 그 사람을 그대로 두거나
+   * 어정쩡하게 뭉갠다. 지우고 그 뒤에 있던 제품·바닥·배경을 복원하라고 못박는다.
+   * (사람이 줄면 가려져 있던 제품 형태가 드러나므로 오히려 제품 컷에 유리하다)
+   */
+  const editingPeople = (spec.editTargets ?? []).some((x) => x === 'person' || x === 'face' || x === 'add-person');
+  const hasBase = !!spec.baseCut || (spec.uploadedRefs ?? []).some((r) => r.role === 'base');
+  if (editingPeople && hasBase) {
+    L.push(
+      `If the base image contains MORE people than the ${talents.length} listed here, remove the extra ones completely — ` +
+        'erase the whole person, not just the face. Reconstruct whatever was behind them: the product surface, its ' +
+        'seams and silhouette, the floor, the rug and the background, all consistent with the surrounding lighting ' +
+        'and shadows. No ghosting, no leftover limbs, no blurred smear where a person used to be. ' +
+        'The product must read as a complete, undistorted form where it becomes visible again.',
+    );
+  }
+
   if (multi) {
     // 위치가 하나라도 명시되면 '왼쪽부터' 문장을 쓰면 안 된다 — PERSON 1 이 가운데인데
     // 헤더가 왼쪽부터 세라고 하면 모델이 둘 중 하나를 버린다
