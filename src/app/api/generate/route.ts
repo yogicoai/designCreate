@@ -51,6 +51,8 @@ interface TalentPick {
 interface Body {
   mode?: 'thumbnail' | 'banner';
   baseCutId?: string;
+  /** 베이스 컷 사용 방식 — full(그대로 재현) | pose(포즈만 빌림) */
+  baseCutUsage?: 'full' | 'pose';
   uploadedRefs?: { url: string; title: string; role?: 'style' | 'base' | 'background' }[];
   preservation?: string;
   /** 업로드 base 에서 무엇을 바꿀지 */
@@ -222,7 +224,7 @@ export async function POST(req: Request) {
     const spec: GenerationSpec = {
       mode: body.mode || 'thumbnail',
       ...(baseCut
-        ? { baseCut: { url: baseCut.url, spec: baseCut.spec, line: baseCut.line, colorName: baseCut.colorName } }
+        ? { baseCut: { url: baseCut.url, spec: baseCut.spec, line: baseCut.line, colorName: baseCut.colorName, usage: body.baseCutUsage ?? 'full' } }
         : {}),
       uploadedRefs,
       ...(body.editTargets?.length ? { editTargets: body.editTargets } : {}),

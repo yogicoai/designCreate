@@ -96,7 +96,14 @@ export interface GenerationSpec {
   mode: 'thumbnail' | 'banner';
 
   /** 베이스 컷 — 우리 자산 중 확정된 컷. 있으면 가장 강한 앵커. */
-  baseCut?: { url: string; spec: string; line: string; colorName: string };
+  baseCut?: {
+    url: string; spec: string; line: string; colorName: string;
+    /**
+     * full = 이 컷을 그대로 재현하고 지정한 것만 교체 (포토에딧)
+     * pose = 포즈·앵글·눌림만 빌리고 제품·컬러·모델은 아래 지정을 따른다
+     */
+    usage?: 'full' | 'pose';
+  };
 
   /** 사용자가 올린 레퍼런스 */
   uploadedRefs?: UploadedRefSpec[];
@@ -170,9 +177,11 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
   if (spec.baseCut) {
     slots.push({
       kind: 'base',
-      title: `베이스 컷 · ${spec.baseCut.line} ${spec.baseCut.colorName}`,
+      title: `${spec.baseCut.usage === 'pose' ? '포즈 소스' : '베이스 컷'} · ${spec.baseCut.line} ${spec.baseCut.colorName}`,
       url: spec.baseCut.url,
-      role: 'the base photograph — reproduce its camera angle, pose, product shape and compression, lighting and framing exactly',
+      role: spec.baseCut.usage === 'pose'
+        ? 'a POSE reference from our own approved catalogue — copy ONLY the body pose, limb placement, camera angle, framing and how the fabric compresses under the body. Do NOT copy its product colour, its model identity or its outfit; those are specified separately below'
+        : 'the base photograph — reproduce its camera angle, pose, product shape and compression, lighting and framing exactly',
     });
   }
   for (const u of bases) {
@@ -239,7 +248,11 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
   });
 
   // 베이스가 이미 있으면 형태·포즈 레퍼는 중복이라 넣지 않는다 (참조 과다는 오히려 흐려진다)
-  const hasBase = !!spec.baseCut || bases.length > 0;
+  /*
+   * 포즈만 빌리는 경우(baseCut.usage==='pose')는 "베이스가 있다"로 치지 않는다.
+   * 그 컷은 자세만 주는 것이라, 제품 형태·색 앵커(공식 뷰·형태 레퍼)가 여전히 필요하다.
+   */
+  const hasBase = (!!spec.baseCut && spec.baseCut.usage !== 'pose') || bases.length > 0;
   if (!hasBase) {
     if (spec.poseRef) {
       slots.push({
@@ -433,7 +446,14 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
   L.push(describeRefs(refs));
   L.push('');
 
-  if (spec.baseCut || hasUploadBase) {
+  if (spec.baseCut?.usage === 'pose') {
+    L.push(
+      'Use the pose reference ONLY for body pose, limb placement, camera angle, framing and fabric compression. ' +
+        'The product, its colour, the model identity and the outfit all come from the specifications below — ' +
+        'do not inherit them from that image.',
+    );
+    L.push('');
+  } else if (spec.baseCut || hasUploadBase) {
     L.push(
       'Reproduce the base photograph EXACTLY — same camera angle, same poses, same body positions and limb placement, ' +
         'same product shapes and compression, same lighting, same background, same framing and crop. ' +
@@ -518,7 +538,13 @@ function specToBrief(spec: GenerationSpec, refs: RefSlot[]): string {
   refs.forEach((r, i) => L.push(`  ${ORDINALS[i]} — [${r.kind}] ${r.title}\n      역할: ${r.role}`));
   L.push('');
 
-  if (spec.baseCut) L.push(`베이스 컷 원문 스펙: ${spec.baseCut.spec}`);
+  if (spec.baseCut) {
+    L.push(
+      spec.baseCut.usage === 'pose'
+        ? `포즈 소스(우리 승인 컷) — 포즈·앵글·눌림만 가져오고 제품/컬러/모델/의상은 아래 지정을 따른다: ${spec.baseCut.spec}`
+        : `베이스 컷 원문 스펙: ${spec.baseCut.spec}`,
+    );
+  }
   const eb = editBlock(spec);
   if (eb.length) { L.push(''); L.push('편집 지시 (이것만 바꾸고 나머지는 원본 그대로 — 가장 강하게 반영할 것):'); L.push(...eb.map((x) => '  ' + x)); }
   if (spec.preservation) { L.push(''); L.push(`레퍼런스 보존 강도: ${spec.preservation.label}`); L.push(spec.preservation.instruction); }

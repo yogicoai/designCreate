@@ -131,7 +131,7 @@ export default function CreateStudio(p: Props) {
   const [colorKey, setColorKey] = useState('');
   /** 선택 순서 유지 — ①②③④ = 사진 왼쪽부터 */
   const [picks, setPicks] = useState<TalentPick[]>([]);
-  const [baseTab, setBaseTab] = useState<'none' | 'cut' | 'pose'>('none');
+  const [baseTab, setBaseTab] = useState<'none' | 'cut' | 'posecut' | 'pose'>('none');
   const [baseCutUrl, setBaseCutUrl] = useState('');
   const [poseRefKey, setPoseRefKey] = useState('');
   const [shapeRefKey, setShapeRefKey] = useState('');
@@ -180,10 +180,24 @@ export default function CreateStudio(p: Props) {
   const size = sizes.find((s) => s.value === sizeValue);
   const linePoses = p.poses.filter((x) => x.line === line);
   const hasBaseUpload = uploads.some((u) => u.role === 'base');
+  /** 베이스 컷(그대로 재현) — 같은 제품·컬러의 확정 컷 */
   const lineCuts = useMemo(
     () => p.baseCuts.filter((c) => (!line || c.line === line) && (!colorKey || c.colorKey === colorKey)).slice(0, 60),
     [p.baseCuts, line, colorKey],
   );
+
+  /**
+   * 포즈 소스 — 포즈만 빌리는 용도라 컬러로 거르지 않는다.
+   * 같은 라인을 앞에, 그 다음 형태가 같은 라인(Max 계열), 나머지 순.
+   * (Mini 라이트그레이처럼 그 색 컷이 0건이어도 다른 색 포즈를 쓸 수 있어야 한다)
+   */
+  const poseCuts = useMemo(() => {
+    const sameShape = new Set(
+      p.products.filter((x) => x.line === line || x.sameShapeAs === line || (product?.sameShapeAs && x.line === product.sameShapeAs)).map((x) => x.line),
+    );
+    const rank = (c: BaseCut) => (c.line === line ? 0 : sameShape.has(c.line) ? 1 : 2);
+    return [...p.baseCuts].sort((a, b) => rank(a) - rank(b)).slice(0, 72);
+  }, [p.baseCuts, p.products, line, product]);
 
   const sizeGroups = useMemo(() => {
     const m = new Map<string, WithId<SizePresetDoc>[]>();
@@ -267,7 +281,9 @@ export default function CreateStudio(p: Props) {
       ...(line ? { line } : {}),
       ...(colorKey ? { colorKey } : {}),
       ...(picks.length ? { talents: picks } : {}),
-      ...(baseTab === 'cut' && baseCutUrl ? { baseCutId: baseCutUrl } : {}),
+      ...((baseTab === 'cut' || baseTab === 'posecut') && baseCutUrl
+        ? { baseCutId: baseCutUrl, baseCutUsage: baseTab === 'posecut' ? 'pose' : 'full' }
+        : {}),
       ...(baseTab === 'pose' && poseRefKey ? { poseRefKey } : {}),
       ...(baseTab === 'pose' && shapeRefKey ? { shapeRefKey } : {}),
       ...(uploads.length ? { uploadedRefs: uploads, preservation } : {}),
@@ -740,14 +756,44 @@ export default function CreateStudio(p: Props) {
           {/* ⑤ 베이스 (자산) */}
           {flow === 'direct' && (
           <Section n="4" title="베이스 (기존 자산)" hint="확정된 컷이나 실사 포즈 레퍼를 앵커로 씁니다. 레퍼런스를 '이 사진을 편집'으로 쓸 땐 비워두세요.">
-            <div className="flex gap-1.5 mb-3">
-              {([['none', '없음'], ['cut', '기존 컷'], ['pose', '포즈 레퍼']] as const).map(([v, l]) => (
-                <button key={v} onClick={() => setBaseTab(v)} className="btn"
+            <div className="flex gap-1.5 mb-3 flex-wrap">
+              {([
+                ['none', '없음', ''],
+                ['posecut', '우리 컷의 포즈만', '승인 컷에서 포즈·앵글·눌림만 빌리고 제품·컬러·모델은 위 지정을 따릅니다'],
+                ['cut', '기존 컷 그대로', '그 컷을 재현하고 지정한 것만 교체 (같은 제품·컬러 컷)'],
+                ['pose', '실사 포즈 레퍼', '촬영 원본 레퍼런스'],
+              ] as const).map(([v, l, tip]) => (
+                <button key={v} onClick={() => setBaseTab(v)} className="btn" title={tip}
                         style={baseTab === v ? { background: 'var(--surface-3)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' } : {}}>
                   {l}
                 </button>
               ))}
             </div>
+
+            {baseTab === 'posecut' && (
+              poseCuts.length ? (
+                <>
+                  <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                    포즈·앵글·눌림만 가져옵니다. <b style={{ color: 'var(--text-dim)' }}>제품·컬러·모델·의상은 위에서 고른 값</b>이 적용되므로
+                    다른 색 컷을 골라도 됩니다.
+                  </div>
+                  <div className="grid grid-cols-6 gap-1.5 max-h-[240px] overflow-y-auto pr-1">
+                    {poseCuts.map((c) => (
+                      <button key={c.url} onClick={() => setBaseCutUrl(c.url === baseCutUrl ? '' : c.url)}
+                              title={`${c.line} · ${c.colorName}
+${c.spec}`}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={c.url} alt={c.spec} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
+                             style={{ borderColor: c.url === baseCutUrl ? 'var(--accent)' : 'var(--line)', borderWidth: c.url === baseCutUrl ? 2 : 1 }} />
+                        <div className="text-[8.5px] mt-0.5 truncate" style={{ color: c.line === line ? 'var(--accent)' : 'var(--text-mute)' }}>
+                          {c.line}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : <p className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>아직 컷이 없습니다.</p>
+            )}
             {baseTab === 'cut' && (
               lineCuts.length ? (
                 <div className="grid grid-cols-6 gap-1.5 max-h-[220px] overflow-y-auto pr-1">
