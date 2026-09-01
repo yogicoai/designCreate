@@ -574,7 +574,11 @@ export async function POST(req: Request) {
         sizeLabel: size.label,
         aspect: size.genAspect,
         editTargets: body.editTargets ?? [],
-        inputImages: usedRefs.map((r) => ({ kind: r.kind, title: r.title, url: r.url ?? '', role: r.role })),
+        // 스와치는 URL 이 없으므로 hex 를 함께 남긴다 — 갤러리에서 색칩으로 되살린다
+        inputImages: usedRefs.map((r) => ({
+          kind: r.kind, title: r.title, url: r.url ?? '', role: r.role,
+          ...(r.swatchHex ? { swatchHex: r.swatchHex } : {}),
+        })),
         direction: body.direction ?? '',
         width: cropped.width,
         height: cropped.height,

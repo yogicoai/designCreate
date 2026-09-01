@@ -6,6 +6,13 @@ import { getCuts, getProducts, getTalents } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
+/** 참조 종류 — 썸네일에 마우스를 올렸을 때 무엇인지 알려준다 */
+const REF_KIND_KR: Record<string, string> = {
+  base: '베이스', style: '스타일', background: '배경', shape: '형태',
+  pose: '포즈', usage: '연출', talent: '모델', outfit: '의상',
+  product: '제품 뷰', swatch: '색 스와치',
+};
+
 const TALENT_LABEL: Record<string, string> = {
   W_A: '여성A', W_B: '여성B', W_C: '여성C', W_D: '여성D',
   M_A: '남성A', K_A: '아동A', K_B: '아동B',
@@ -137,6 +144,36 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
                       </span>
                     )}
                   </div>
+                  {/*
+                    이 컷이 무엇을 보고 만들어졌는지 — 결과만 있고 입력이 없으면
+                    나중에 "이건 어떻게 뽑았더라" 를 되살릴 수 없다.
+                    스와치는 URL 이 없으므로 색칩으로 그린다.
+                  */}
+                  {(c.inputImages ?? []).length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {(c.inputImages ?? []).slice(0, 6).map((r, ri) =>
+                        r.url ? (
+                          <a key={`${r.url}#${ri}`} href={r.url} target="_blank" rel="noreferrer noopener"
+                             title={`${REF_KIND_KR[r.kind] ?? r.kind} · ${r.title ?? ''}`}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={r.url} alt={r.title ?? ''} loading="lazy"
+                                 className="rounded border object-cover"
+                                 style={{ width: 22, height: 22, borderColor: 'var(--line)' }} />
+                          </a>
+                        ) : (
+                          <span key={`sw#${ri}`} title={`색 스와치 · ${r.title ?? ''}`}
+                                className="rounded border"
+                                style={{ width: 22, height: 22, display: 'inline-block',
+                                         background: r.swatchHex || 'var(--surface-2)', borderColor: 'var(--line)' }} />
+                        ),
+                      )}
+                      {(c.inputImages ?? []).length > 6 && (
+                        <span className="text-[9px] self-center" style={{ color: 'var(--text-mute)' }}>
+                          +{(c.inputImages ?? []).length - 6}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <CutActions id={c.id} source={c.source} />
                 </div>
               ))}

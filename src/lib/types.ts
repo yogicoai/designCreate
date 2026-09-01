@@ -169,6 +169,11 @@ export interface InputImage {
   title: string;
   url: string;
   role?: string;
+  /**
+   * 색 스와치의 hex. 스와치는 생성한 이미지라 URL 이 없어서,
+   * 이걸 안 남기면 나중에 갤러리에서 무슨 색을 넣었는지 되살릴 수 없다.
+   */
+  swatchHex?: string;
 }
 
 export interface CutDoc {

@@ -88,6 +88,9 @@ export default async function DashboardPage() {
                       .filter(Boolean)
                       .join('\n')}
                     source={c.source}
+                    refs={(c.inputImages ?? []).map((r) => ({
+                      kind: r.kind, title: r.title ?? '', url: r.url ?? '', swatchHex: r.swatchHex,
+                    }))}
                   />
                 );
               })}

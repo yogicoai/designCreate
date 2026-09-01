@@ -20,6 +20,7 @@ export default function DashboardCut({
   sub,
   caption,
   source,
+  refs = [],
 }: {
   id: string;
   url: string;
@@ -27,6 +28,8 @@ export default function DashboardCut({
   sub: string;
   caption: string;
   source: string;
+  /** 이 컷을 만들 때 들어간 참조 — 팝업에서 작게 함께 보여준다 */
+  refs?: { kind: string; title: string; url: string; swatchHex?: string }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -119,6 +122,26 @@ export default function DashboardCut({
           <div className="text-[12px] text-center max-w-[70ch] whitespace-pre-line" style={{ color: '#c8ccd4' }}>
             {caption}
           </div>
+          {/* 무엇을 보고 만들었는지 — 결과 옆에 입력이 있어야 재현할 수 있다 */}
+          {refs.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap justify-center max-w-[80vw]"
+                 onClick={(e) => e.stopPropagation()}>
+              <span className="text-[10px] mr-1" style={{ color: '#8b909a' }}>참조</span>
+              {refs.slice(0, 10).map((r, i) =>
+                r.url ? (
+                  <a key={`${r.url}#${i}`} href={r.url} target="_blank" rel="noreferrer noopener" title={r.title}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={r.url} alt={r.title} loading="lazy" className="rounded border object-cover"
+                         style={{ width: 34, height: 34, borderColor: 'rgba(255,255,255,.2)' }} />
+                  </a>
+                ) : (
+                  <span key={`sw#${i}`} title={r.title} className="rounded border"
+                        style={{ width: 34, height: 34, display: 'inline-block',
+                                 background: r.swatchHex || '#333', borderColor: 'rgba(255,255,255,.2)' }} />
+                ),
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             {popBtn('숨김', () => act(false), '#c8ccd4')}
             {source === 'imgcreate' && popBtn('삭제', () => act(true), '#ff8080')}
