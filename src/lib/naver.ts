@@ -10,8 +10,14 @@ import 'server-only';
  *     NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 을 .env.local 에 넣는다.
  */
 
-const ID = process.env.NAVER_CLIENT_ID || '';
-const SECRET = process.env.NAVER_CLIENT_SECRET || '';
+/*
+ * .trim() 이 필수다.
+ * 윈도우에서 .env.local 이 CRLF 로 저장되면 값 끝에  이 남는데, Next 는 그걸
+ * 그대로 넘긴다. HTTP 헤더에  이 섞이면 네이버가 SE99(System error)로 거부한다.
+ * 실측으로 하루를 날릴 뻔한 자리다 — 키는 맞는데 라우트에서만 실패한다.
+ */
+const ID = (process.env.NAVER_CLIENT_ID || '').trim();
+const SECRET = (process.env.NAVER_CLIENT_SECRET || '').trim();
 
 export function naverConfigured(): boolean {
   return !!(ID && SECRET);
