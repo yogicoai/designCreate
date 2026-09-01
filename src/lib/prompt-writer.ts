@@ -708,6 +708,20 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
       : 'ABSOLUTELY NO TEXT: Korean copy will be overlaid later in a separate editing step, so the image must contain no typography, no lettering, no numbers, no CTA button, no badges and no watermarks.',
   );
 
+  /*
+   * 브랜드 태그·라벨 처리.
+   * 베이스 사진에 요기보 봉제 태그가 찍혀 있으면 모델이 그걸 따라 그리는데,
+   * 작은 글씨라 로고가 뭉개져 나온다("yogibo" -> "qo ㅕo"). 뭉개진 로고는
+   * 로고가 없는 것보다 브랜드에 해롭다 — 배너에 그대로 쓸 수 없다.
+   * 그래서 글자를 흉내내지 말고 무지 태그로 두게 한다. 실제 로고는 후보정으로 얹는다.
+   */
+  L.push(
+    'BRAND TAGS: if the base image shows a sewn-in fabric tag, care label or any small brand patch on the product, ' +
+      'render it as a PLAIN BLANK tag — same shape, size, position, fabric and fold, but with NO lettering, ' +
+      'no logo and no printed marks on it. Never attempt to reproduce or imitate brand text at small scale: ' +
+      'a garbled or misspelled logo is worse than no logo. The real logo is composited in afterwards.',
+  );
+
   return L.join('\n');
 }
 
@@ -772,6 +786,9 @@ const OPUS_SYSTEM = `너는 요기보(빈백 소파 브랜드) 자사몰의 AI �
 5. 편집 지시(EDIT)가 있으면 "이것만 바꾸고 나머지는 원본 그대로"를 가장 앞에, 가장 강하게 써라.
 6. 전 컷 공통 규칙은 빠짐없이 반영하라.
 7. 텍스트·로고·워터마크 금지 문장을 마지막에 반드시 넣어라.
+7-2. 베이스에 요기보 봉제 태그·케어라벨이 찍혀 있으면, 그 자리에 **글자 없는 무지 태그**를
+   두라고 프롬프트에 명시하라. 작은 글씨의 브랜드 로고를 흉내내면 반드시 뭉개지고,
+   뭉개진 로고는 로고가 없는 것보다 나쁘다. 실제 로고는 후보정으로 얹는다.
 7-1. 인물마다 지정된 EXPRESSION 은 MD 가 직접 고른 값이다. 전 컷 공통 규칙에
    "항상 자연스러운 미소" 같은 문장이 있어도, **지정된 표정이 우선**이다.
    놀람·무표정·진지함·슬픔·찡그림이 지정됐다면 그대로 살리고 미소로 바꾸지 마라.
