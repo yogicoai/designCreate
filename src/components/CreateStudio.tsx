@@ -195,9 +195,11 @@ export default function CreateStudio(p: Props) {
     const sameShape = new Set(
       p.products.filter((x) => x.line === line || x.sameShapeAs === line || (product?.sameShapeAs && x.line === product.sameShapeAs)).map((x) => x.line),
     );
-    const rank = (c: BaseCut) => (c.line === line ? 0 : sameShape.has(c.line) ? 1 : 2);
-    return [...p.baseCuts].sort((a, b) => rank(a) - rank(b)).slice(0, 72);
-  }, [p.baseCuts, p.products, line, product]);
+    // 고른 컬러의 컷을 맨 앞에 — 같은 색 포즈가 있으면 그게 1순위다
+    const rank = (c: BaseCut) =>
+      c.line === line && c.colorKey === colorKey ? 0 : c.line === line ? 1 : sameShape.has(c.line) ? 2 : 3;
+    return [...p.baseCuts].sort((a, b) => rank(a) - rank(b)).slice(0, 96);
+  }, [p.baseCuts, p.products, line, colorKey, product]);
 
   const sizeGroups = useMemo(() => {
     const m = new Map<string, WithId<SizePresetDoc>[]>();
@@ -614,17 +616,66 @@ export default function CreateStudio(p: Props) {
               {p.products.map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>)}
             </select>
             {product && (
-              <div className="flex flex-wrap gap-1.5">
-                {product.colors.map((c) => (
-                  <button key={c.key} onClick={() => setColorKey(c.key === colorKey ? '' : c.key)}
-                          className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-lg border text-[11px]"
-                          style={{ borderColor: c.key === colorKey ? 'var(--accent)' : 'var(--line)',
-                                   background: c.key === colorKey ? 'var(--accent-soft)' : 'transparent' }}>
-                    <span className="w-4 h-4 rounded" style={{ background: c.hex, border: '1px solid rgba(255,255,255,.15)' }} />
-                    {c.name}
-                  </button>
-                ))}
-              </div>
+              <>
+                <div className="label mb-1">컬러</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {product.colors.map((c) => (
+                    <button key={c.key} onClick={() => setColorKey(c.key === colorKey ? '' : c.key)}
+                            className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-lg border text-[11px]"
+                            style={{ borderColor: c.key === colorKey ? 'var(--accent)' : 'var(--line)',
+                                     background: c.key === colorKey ? 'var(--accent-soft)' : 'transparent' }}>
+                      <span className="w-4 h-4 rounded" style={{ background: c.hex, border: '1px solid rgba(255,255,255,.15)' }} />
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+
+                {/*
+                  포즈 — 우리가 실제로 만든 썸네일 컷에서 고른다.
+                  촬영 실사 레퍼보다 이쪽이 실제 작업 소스다. 컬러로 거르지 않으므로
+                  다른 색 컷의 포즈도 쓸 수 있고, 제품·컬러는 위 선택이 적용된다.
+                */}
+                {poseCuts.length > 0 && (
+                  <>
+                    <div className="label mt-3 mb-1">
+                      포즈{' '}
+                      <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
+                        — 우리 썸네일 컷에서 포즈·앵글만 가져옵니다 (다른 색 컷도 가능)
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-[210px] overflow-y-auto pr-1">
+                      <button onClick={() => { setBaseCutUrl(''); setBaseTab('none'); }} className="chip"
+                              style={!baseCutUrl ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                        자동
+                      </button>
+                      {poseCuts.map((c) => {
+                        const on = baseCutUrl === c.url;
+                        return (
+                          <button key={c.url}
+                                  onClick={() => {
+                                    const next = on ? '' : c.url;
+                                    setBaseCutUrl(next);
+                                    setBaseTab(next ? 'posecut' : 'none');
+                                  }}
+                                  title={`${c.line} · ${c.colorName}
+${c.spec}`}
+                                  className="rounded-lg overflow-hidden border block"
+                                  style={{ width: 72, padding: 0, background: 'var(--surface)',
+                                           borderColor: on ? 'var(--accent)' : 'var(--line)', borderWidth: on ? 2 : 1 }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={c.url} alt={c.spec} loading="lazy"
+                                 className="w-full object-cover" style={{ aspectRatio: '1/1' }} />
+                            <div className="text-[8.5px] px-1 py-0.5 truncate"
+                                 style={{ color: on ? 'var(--accent)' : c.line === line ? 'var(--text-dim)' : 'var(--text-mute)' }}>
+                              {c.line} {c.colorName}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </>
             )}
           </Section>
 
@@ -755,13 +806,12 @@ export default function CreateStudio(p: Props) {
 
           {/* ⑤ 베이스 (자산) */}
           {flow === 'direct' && (
-          <Section n="4" title="베이스 (기존 자산)" hint="확정된 컷이나 실사 포즈 레퍼를 앵커로 씁니다. 레퍼런스를 '이 사진을 편집'으로 쓸 땐 비워두세요.">
+          <Section n="4" title="베이스 (선택)" hint="포즈는 위 제품 섹션에서 고릅니다. 여기서는 컷을 통째로 재현하거나 촬영 실사 레퍼를 앵커로 쓸 때만 씁니다.">
             <div className="flex gap-1.5 mb-3 flex-wrap">
               {([
                 ['none', '없음', ''],
-                ['posecut', '우리 컷의 포즈만', '승인 컷에서 포즈·앵글·눌림만 빌리고 제품·컬러·모델은 위 지정을 따릅니다'],
                 ['cut', '기존 컷 그대로', '그 컷을 재현하고 지정한 것만 교체 (같은 제품·컬러 컷)'],
-                ['pose', '실사 포즈 레퍼', '촬영 원본 레퍼런스'],
+                ['pose', '실사 포즈 레퍼', '촬영 원본 — 형태(사람 지운 눌림)와 각도를 각각 고릅니다'],
               ] as const).map(([v, l, tip]) => (
                 <button key={v} onClick={() => setBaseTab(v)} className="btn" title={tip}
                         style={baseTab === v ? { background: 'var(--surface-3)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' } : {}}>
