@@ -158,7 +158,9 @@ const products = A.thumbs.PRODUCTS.map((p, i) => {
     ...(p.sameLine ? { sameShapeAs: p.sameLine } : {}),
     colors: [...byKey.values()],
     order: i,
-    active: true,
+    // Etc 는 제품 라인이 아니라 레퍼런스 이미지 슬롯(sumUp/zoola/매장 등)이라 제품 선택에서 제외.
+    // 컷 28건이 line:'Etc' 로 붙어 있어 문서 자체는 지우지 않는다.
+    active: p.product !== 'Etc',
   };
 });
 
