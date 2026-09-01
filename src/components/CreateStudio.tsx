@@ -24,8 +24,6 @@ interface Props {
   references: ReferenceDoc[];
   /** 프롬프트 작성 모드 — local(템플릿·무과금) / opus(라이브, 확인에도 소액 과금) */
   promptMode: 'local' | 'opus';
-  /** ANTHROPIC_API_KEY 유무. 없으면 화면에서 Opus 를 켤 수 없다 */
-  opusAvailable: boolean;
 }
 
 type RefRole = 'style' | 'base' | 'background';
@@ -197,10 +195,8 @@ export default function CreateStudio(p: Props) {
   const [samples, setSamples] = useState(1);
   /** 품질 티어 — 초안은 Flash 로 싸게 돌려보고, 확정본만 Pro 로 */
   const [tier, setTier] = useState<'pro' | 'draft'>('pro');
-  // 프롬프트 작성 방식 — 서버 기본값에서 출발하되 컷 단위로 바꿀 수 있다
-  const [writer, setWriter] = useState<'local' | 'opus'>(
-    p.opusAvailable && p.promptMode === 'opus' ? 'opus' : 'local',
-  );
+  // 프롬프트 작성 방식 — 서버(PROMPT_MODE)가 정한다. 화면에서 바꿀 수 없다.
+  const writer: 'local' | 'opus' = p.promptMode === 'opus' ? 'opus' : 'local';
 
   const [uploadNote, setUploadNote] = useState('');
   const [copied, setCopied] = useState<'prompt' | 'urls' | null>(null);
@@ -380,7 +376,8 @@ export default function CreateStudio(p: Props) {
       engine,
       ...(direction.trim() ? { direction: direction.trim() } : {}),
       tier,
-      promptMode: writer,
+      // promptMode 는 보내지 않는다 — 서버 env 가 유일한 결정권자여야
+      // 클라이언트가 과금 모드를 강제로 켤 수 없다
     };
   }
 
@@ -1245,32 +1242,30 @@ ${c.spec}`}>
           </div>
           )}
           {/*
-            프롬프트 작성 — 템플릿 조립 vs Opus.
-            Opus 는 참조 이미지를 실제로 보고 쓰고, 한글 지시를 영문으로 풀어 각 항목에 배치한다.
-            손으로 쓴 프롬프트 수준의 결과가 나오는 지점이 여기다.
+            프롬프트 작성 방식은 고르는 게 아니라 환경이 정한다.
+            로컬(PROMPT_MODE=local) = 템플릿 조립, 무과금.
+            배포 = Opus 가 레퍼런스를 보고 직접 작성.
+            버튼으로 두면 로컬에서 실수로 유료를 눌러 돈이 나간다 — 그래서 표시만 한다.
           */}
-          {p.opusAvailable && (
-            <div className="flex gap-1.5">
-              {([['opus', '프롬프트 Opus (권장)'], ['local', '프롬프트 템플릿 · 무과금']] as const).map(([v, l]) => (
-                <button key={v} onClick={() => setWriter(v)} className="chip flex-1 justify-center"
-                        title={v === 'local'
-                          ? '규칙 템플릿으로 조립 — 빠르고 공짜, 대신 레퍼런스를 보지 않는다'
-                          : 'Opus 가 참조 이미지를 보고 직접 작성 — 한글 지시를 영문으로 풀어 각 항목에 배치. 이미지 생성비와 별도로 소액 과금'}
-                        style={writer === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
-                  {l}
-                </button>
-              ))}
-            </div>
-          )}
-          {writer === 'opus' && (
-            <div className="text-[10px] px-1" style={{ color: 'var(--info)' }}>
-              Opus 가 레퍼런스를 보고 프롬프트를 씁니다.{' '}
-              {dry?.promptMode === 'opus' && dry.usage
-                ? <>직전 실측 <b>{(dry.usage.input_tokens + dry.usage.output_tokens).toLocaleString()} 토큰</b>
-                    {dry.promptCost ? <> · 약 ₩{dry.promptCost.krw.toLocaleString()}</> : <> (단가 미설정 — OPUS_PRICE_*_PER_MTOK)</>}</>
-                : <>이미지 생성비와 별도로 소액 과금됩니다.</>}
-            </div>
-          )}
+          <div className="text-[10px] px-1" style={{ color: writer === 'opus' ? 'var(--info)' : 'var(--text-mute)' }}>
+            {writer === 'opus' ? (
+              <>
+                프롬프트 — <b>Opus 작성</b> · 레퍼런스를 직접 보고 씁니다.{' '}
+                {dry?.promptMode === 'opus' && dry.usage ? (
+                  <>
+                    직전 실측 <b>{(dry.usage.input_tokens + dry.usage.output_tokens).toLocaleString()} 토큰</b>
+                    {dry.promptCost
+                      ? <> · 약 ₩{dry.promptCost.krw.toLocaleString()}</>
+                      : <> (단가 미설정 — OPUS_PRICE_*_PER_MTOK)</>}
+                  </>
+                ) : (
+                  <>이미지 생성비와 별도로 소액 과금됩니다.</>
+                )}
+              </>
+            ) : (
+              <>프롬프트 — <b>템플릿 조립 · 무과금</b> (로컬 개발 모드)</>
+            )}
+          </div>
           {engine === 'gemini' && tier === 'draft' && (
             <div className="text-[10px] px-1" style={{ color: 'var(--warn)' }}>
               초안 모드는 얼굴·제품 참조 유지력이 낮습니다. 확정본은 고품질로 다시 뽑으세요.
