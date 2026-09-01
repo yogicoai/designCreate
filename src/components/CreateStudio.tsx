@@ -107,12 +107,6 @@ const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
  *   draft = gemini-3.1-flash-image 2K — 출력 단가가 Pro 의 약 1/4
  */
 const WON_BY_TIER = { pro: 270, draft: 90 } as const;
-/**
- * 힉스필드는 원화가 아니라 크레딧으로 빠진다.
- * 서버(/api/balance)가 실제 설정값(perImage)을 내려주므로 그걸 우선 쓰고,
- * 못 받았을 때만 이 기본값을 쓴다.
- */
-const HF_CREDITS_FALLBACK = 2;
 const ORD = ['①', '②', '③', '④'];
 const MY_SIZE_GROUP = '내 규격';
 
@@ -167,8 +161,9 @@ export default function CreateStudio(p: Props) {
   // 기본은 '레퍼런스로 제작하기'. 실무에서 압도적으로 이쪽이 많고,
   // 레퍼런스를 깔고 시작하는 편이 결과도 안정적이다.
   const [flow, setFlow] = useState<'ref' | 'direct'>('ref');
-  const [engine, setEngine] = useState<'gemini' | 'higgs'>('gemini');
-  const [balance, setBalance] = useState<{ gemini?: { count: number; limit: number; remaining: number }; higgs?: { credits?: number | null; configured?: boolean; perImage?: number; estimated?: boolean } } | null>(null);
+  // 앱의 생성 엔진은 나노바나나 하나다. 힉스필드는 화면에서 뺐다 (백엔드 경로는 살아 있다).
+  const engine = 'gemini' as const;
+  const [balance, setBalance] = useState<{ gemini?: { count: number; limit: number; remaining: number } } | null>(null);
   const [mode, setMode] = useState<'thumbnail' | 'banner'>('thumbnail');
   /** 프리셋 목록 — 커스텀 규격을 저장하면 여기 즉시 추가된다 */
   const [sizes, setSizes] = useState<WithId<SizePresetDoc>[]>(p.sizes);
@@ -218,21 +213,11 @@ export default function CreateStudio(p: Props) {
   const [err, setErr] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
 
-  /** 힉스필드 실제 크레딧으로 기준값 재설정 (플랫폼 REST 에 잔액 API 가 없어 수동) */
-  async function syncCredits() {
-    const v = window.prompt('힉스필드 현재 크레딧 잔액을 입력하세요 (힉스필드 사이트에서 확인)', String(balance?.higgs?.credits ?? ''));
-    if (v == null) return;
-    const credits = Number(v.replace(/[^0-9.]/g, ''));
-    if (!Number.isFinite(credits)) return;
-    const r = await fetch('/api/balance', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ credits }) });
-    if ((await r.json()).ok) loadBalance();
-  }
-
   const loadBalance = useCallback(async () => {
     try {
       const r = await fetch('/api/balance');
       const j = await r.json();
-      if (j.ok) setBalance({ gemini: j.gemini, higgs: j.higgs });
+      if (j.ok) setBalance({ gemini: j.gemini });
     } catch { /* 잔액 조회 실패는 생성을 막지 않는다 */ }
   }, []);
   useEffect(() => { loadBalance(); }, [loadBalance]);
@@ -489,7 +474,6 @@ export default function CreateStudio(p: Props) {
   }
 
   const cost = samples * WON_BY_TIER[tier];
-  const dryElement = !!dry?.elementId;
   const isMySize = size?.group === MY_SIZE_GROUP;
 
   return (
@@ -1209,60 +1193,25 @@ ${c.spec}`}>
                 ? '프롬프트 확인 (Opus · 약 ₩50)'
                 : '프롬프트 확인 (무료)'}
           </button>
-          {/* 엔진 — 힉스필드는 Element 토큰 보유 제품에서 형태·색이 더 정확 */}
-          <div className="flex gap-1.5">
-            {([
-              ['gemini', '나노바나나', '범용 · 원화 한도에서 차감'],
-              ['higgs', '힉스필드', 'Element 토큰 제품에서 형태·색 우세 · 크레딧 차감'],
-            ] as const).map(([v, l, tip]) => {
-              const off = v === 'higgs' && balance?.higgs?.configured === false;
-              return (
-                <button key={v} onClick={() => !off && setEngine(v)} title={off ? '힉스필드 설정이 없습니다 (.env.local)' : tip}
-                        className="chip flex-1 justify-center"
-                        style={{ ...(engine === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}),
-                                 ...(off ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}>
-                  {l}
-                </button>
-              );
-            })}
-          </div>
+          {/*
+            엔진 선택은 화면에서 뺐다.
+            힉스필드는 앱이 쓰는 API 키에 크레딧이 없어 어차피 못 쓰고(대화용 MCP 계정과 지갑이 다르다),
+            골라봐야 403 을 맞을 뿐이다. 앱의 생성은 나노바나나 하나다.
+            백엔드의 힉스필드 경로는 살려둔다 — 크레딧을 붙이면 다시 열면 된다.
+          */}
 
           {/* 잔액 — 생성 전에 "얼마 남았고 얼마 나간다" 를 항상 보여준다 */}
           <div className="text-[10.5px] px-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
-            {engine === 'higgs' ? (
-              balance?.higgs?.credits != null ? (
-                <>
-                  힉스필드 잔액(추정) <b style={{ color: 'var(--text-dim)' }}>{balance.higgs.credits.toLocaleString()} 크레딧</b>
-                  {' → 이번 생성 약 '}
-                  <b style={{ color: 'var(--warn)' }}>{(samples * (balance?.higgs?.perImage ?? HF_CREDITS_FALLBACK)).toLocaleString()} 크레딧</b> 차감
-                  <button onClick={syncCredits} className="ml-1"
-                          style={{ color: 'var(--info)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 10 }}>
-                    동기화
-                  </button>
-                  {dry && !dryElement && <><br />이 제품엔 Element 토큰이 없어 힉스필드 이점이 적습니다.</>}
-                  {dry && dryElement && <><br /><span style={{ color: 'var(--ok)' }}>Element 토큰 보유 — 형태·색 정확도 우세</span></>}
-                </>
-              ) : (
-                <>
-                  힉스필드 잔액 미설정 —{' '}
-                  <button onClick={syncCredits} style={{ color: 'var(--info)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 10.5 }}>
-                    현재 크레딧 입력
-                  </button>
-                </>
-              )
-            ) : (
-              balance?.gemini ? (
-                <>
-                  월 한도 <b style={{ color: 'var(--text-dim)' }}>{balance.gemini.count}/{balance.gemini.limit}장</b>
-                  {` (남은 ${balance.gemini.remaining}장) → 이번 생성 `}
-                  <b style={{ color: 'var(--warn)' }}>{samples}장 · 약 ₩{cost.toLocaleString()}</b>
-                  <br />실제 원가는 생성마다 달라집니다 (사고 토큰 변동 — 1장 ₩230~₩314 실측)
-                </>
-              ) : '사용량을 불러오는 중…'
-            )}
+            {balance?.gemini ? (
+              <>
+                월 한도 <b style={{ color: 'var(--text-dim)' }}>{balance.gemini.count}/{balance.gemini.limit}장</b>
+                {` (남은 ${balance.gemini.remaining}장) → 이번 생성 `}
+                <b style={{ color: 'var(--warn)' }}>{samples}장 · 약 ₩{cost.toLocaleString()}</b>
+                <br />실제 원가는 생성마다 달라집니다 (사고 토큰 변동 — 1장 ₩230~₩314 실측)
+              </>
+            ) : '사용량을 불러오는 중…'}
           </div>
 
-          {engine === 'gemini' && (
           <div className="flex gap-1.5">
             {([['pro', '고품질 · ₩200'], ['draft', '초안 · ₩145']] as const).map(([v, l]) => (
               <button key={v} onClick={() => setTier(v)} className="chip flex-1 justify-center"
@@ -1272,7 +1221,6 @@ ${c.spec}`}>
               </button>
             ))}
           </div>
-          )}
           {/*
             프롬프트 작성 방식은 고르는 게 아니라 환경이 정한다.
             로컬(PROMPT_MODE=local) = 템플릿 조립, 무과금.
@@ -1298,7 +1246,7 @@ ${c.spec}`}>
               <>프롬프트 — <b>템플릿 조립 · 무과금</b> (로컬 개발 모드)</>
             )}
           </div>
-          {engine === 'gemini' && tier === 'draft' && (
+          {tier === 'draft' && (
             <div className="text-[10px] px-1" style={{ color: 'var(--warn)' }}>
               초안 모드는 얼굴·제품 참조 유지력이 낮습니다. 확정본은 고품질로 다시 뽑으세요.
             </div>
@@ -1313,9 +1261,7 @@ ${c.spec}`}>
             </button>
           </div>
           <div className="text-[10.5px] text-center" style={{ color: 'var(--text-mute)' }}>
-            {engine === 'higgs'
-              ? <>약 <b style={{ color: 'var(--text-dim)' }}>{(samples * (balance?.higgs?.perImage ?? HF_CREDITS_FALLBACK)).toLocaleString()} 크레딧</b> · 20~40초/장</>
-              : <>생성 약 <b style={{ color: 'var(--text-dim)' }}>₩{cost.toLocaleString()}</b> · 25~35초/장 (생성 후 실측 표시)</>}
+            생성 약 <b style={{ color: 'var(--text-dim)' }}>₩{cost.toLocaleString()}</b> · 25~35초/장 (생성 후 실측 표시)
             {writer === 'local' && <span> · 프롬프트는 템플릿 조립(무과금)</span>}
           </div>
         </div>
