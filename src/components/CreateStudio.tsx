@@ -217,7 +217,7 @@ export default function CreateStudio(p: Props) {
    */
   const [promptText, setPromptText] = useState('');
   const [promptEdited, setPromptEdited] = useState(false);
-  const [busy, setBusy] = useState<'dry' | 'gen' | null>(null);
+  const [busy, setBusy] = useState<'dry' | 'gen' | 'handoff' | null>(null);
   const [results, setResults] = useState<GenResult[]>([]);
   const [err, setErr] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
@@ -346,7 +346,7 @@ export default function CreateStudio(p: Props) {
    * "방금 고른 걸로 뽑아줘" 한마디로 끝난다. 로컬에서만 보인다.
    */
   async function leaveHandoff() {
-    setHandoff('busy'); setErr('');
+    setHandoff('busy'); setBusy('handoff'); setErr('');
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
@@ -362,9 +362,11 @@ export default function CreateStudio(p: Props) {
       });
       setPromptText(json.prompt); setPromptEdited(false);
       setHandoff('done');
-      window.setTimeout(() => setHandoff(null), 4000);
+      window.setTimeout(() => setHandoff(null), 6000);
     } catch (e) {
       setErr((e as Error).message); setHandoff(null);
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -545,7 +547,7 @@ export default function CreateStudio(p: Props) {
             />
             <div className="text-center">
               <div className="text-[14px] font-bold">
-                {busy === 'gen' ? '이미지 생성 중' : '프롬프트 만드는 중'}
+                {busy === 'gen' ? '이미지 생성 중' : busy === 'handoff' ? '대화로 넘길 내용 만드는 중' : '프롬프트 만드는 중'}
               </div>
               <div className="text-[11.5px] mt-1.5 tabular-nums" style={{ color: 'var(--text-dim)' }}>
                 {Math.floor(elapsed / 60) > 0 && `${Math.floor(elapsed / 60)}분 `}
@@ -554,7 +556,9 @@ export default function CreateStudio(p: Props) {
               <div className="text-[10.5px] mt-1" style={{ color: 'var(--text-mute)' }}>
                 {busy === 'gen'
                   ? `보통 25~35초 걸립니다${samples > 1 ? ` · ${samples}장` : ''}. 창을 닫지 마세요.`
-                  : '레퍼런스를 읽고 프롬프트를 씁니다.'}
+                  : busy === 'handoff'
+                    ? '프롬프트와 선택값을 저장합니다. 40~50초 걸립니다.'
+                    : '레퍼런스를 읽고 프롬프트를 씁니다. 40~50초 걸립니다.'}
               </div>
             </div>
           </div>
