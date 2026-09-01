@@ -56,13 +56,17 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   try {
-    const body = (await req.json()) as { url?: string; title?: string };
+    const body = (await req.json()) as { url?: string; title?: string; category?: string | null };
     if (!body.url) return NextResponse.json({ ok: false, error: 'url 이 필요합니다.' }, { status: 400 });
     const db = await getDb();
-    await db.collection('references').updateOne(
-      { url: body.url },
-      { $set: { title: String(body.title ?? '').slice(0, 120) } },
-    );
+    const set: Record<string, unknown> = {};
+    if (body.title !== undefined) set.title = String(body.title ?? '').slice(0, 120);
+    if (body.category !== undefined) {
+      const ALLOWED = ['web-banner', 'sns', 'sns-story', 'mobile', 'thumbnail'];
+      set.category = body.category && ALLOWED.includes(body.category) ? body.category : null;
+    }
+    if (!Object.keys(set).length) return NextResponse.json({ ok: false, error: '변경할 값이 없습니다.' }, { status: 400 });
+    await db.collection('references').updateOne({ url: body.url }, { $set: set });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });

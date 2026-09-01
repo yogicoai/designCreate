@@ -50,9 +50,6 @@ function NavBody({ path, onNavigate }: { path: string; onNavigate?: () => void }
               className="w-[92px] h-auto"
             />
           </div>
-          <div className="text-[10.5px] mt-2 text-center" style={{ color: 'var(--text-mute)' }}>
-            자사몰 이미지 생성
-          </div>
         </Link>
       </div>
 
@@ -98,9 +95,8 @@ export default function Sidebar() {
   const path = usePathname();
   const [open, setOpen] = useState(false);
 
-  // 라우트가 바뀌면 드로어는 닫는다 (모바일에서 메뉴가 남아 있으면 본문을 가린다)
-  useEffect(() => { setOpen(false); }, [path]);
-
+  // ESC 로 드로어 닫기. 라우트 변경 시 닫는 건 각 Link 의 onNavigate 가 담당한다
+  // (effect 에서 setState 하면 렌더 중 상태 변경 경고가 난다)
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
@@ -140,7 +136,7 @@ export default function Sidebar() {
           <img src="https://yogibo.kr/web/img/icon/logo3_on.png" alt="Yogibo" width={400} height={160} className="w-[54px] h-auto" />
         </div>
         <span className="text-[13px] font-semibold truncate" style={{ color: 'var(--text-dim)' }}>
-          {current?.label ?? '자사몰 이미지 생성'}
+          {current?.label ?? ''}
         </span>
       </header>
 

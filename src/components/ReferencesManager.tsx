@@ -22,12 +22,23 @@ const CATEGORY_KR: Record<string, string> = {
   thumbnail: '썸네일',
 };
 
+/** 등록 시 고르는 분류 — eventTemp 갤러리와 같은 체계 */
+const CATEGORY_OPTIONS: { value: string; label: string; desc: string }[] = [
+  { value: 'web-banner', label: '웹 배너', desc: '자사몰·스마트스토어 가로형' },
+  { value: 'mobile', label: '모바일', desc: '모바일 메인 · 히어로' },
+  { value: 'sns', label: 'SNS', desc: '인스타 정사각 등' },
+  { value: 'sns-story', label: '스토리/릴스', desc: '세로형 9:16' },
+  { value: 'thumbnail', label: '썸네일', desc: '상품 썸네일 (작은 사이즈)' },
+];
+
 export default function ReferencesManager({ initial }: { initial: ReferenceDoc[] }) {
   const [items, setItems] = useState<ReferenceDoc[]>(initial);
   const [uploading, setUploading] = useState(false);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const [filter, setFilter] = useState<string>('');
+  /** 등록할 때 적용할 분류 — 고르기 전에는 파일창을 열지 않는다 */
+  const [uploadCategory, setUploadCategory] = useState<string>('');
   const fileInput = useRef<HTMLInputElement>(null);
   const replaceInput = useRef<HTMLInputElement>(null);
   /** 이미지 교체 대상 URL — 교체용 파일창이 닫힐 때 참조 */
@@ -41,6 +52,7 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
     const fd = new FormData();
     fd.append('file', shrunk.file);
     fd.append('title', f.name);
+    if (uploadCategory) fd.append('category', uploadCategory);
     if (replaceUrl) fd.append('replaceUrl', replaceUrl);
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
     return res.json();
@@ -54,7 +66,7 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
         const json = await uploadOne(f);
         if (json.ok) {
           setItems((cur) => [
-            { url: json.url, title: json.title, width: json.width, height: json.height, category: null, tags: [], source: 'upload', createdAt: new Date().toISOString() },
+            { url: json.url, title: json.title, width: json.width, height: json.height, category: json.category ?? null, tags: [], source: 'upload', createdAt: new Date().toISOString() },
             ...cur.filter((x) => x.url !== json.url),
           ]);
         } else setErr(json.error || '업로드 실패');
@@ -81,6 +93,18 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
       setUploading(false);
       if (replaceInput.current) replaceInput.current.value = '';
     }
+  }
+
+  /** 분류 변경 — 순환식으로 다음 분류를 고른다 (미지정 → 웹배너 → … → 미지정) */
+  async function changeCategory(url: string, current: string | null) {
+    const order = [...CATEGORY_OPTIONS.map((c) => c.value), ''];
+    const next = order[(order.indexOf(current ?? '') + 1) % order.length];
+    const res = await fetch('/api/references', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url, category: next || null }),
+    });
+    if ((await res.json()).ok) setItems((cur) => cur.map((x) => (x.url === url ? { ...x, category: next || null } : x)));
   }
 
   async function rename(url: string, current: string) {
@@ -133,15 +157,36 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
       <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} />
       <input ref={replaceInput} type="file" accept="image/*" hidden onChange={(e) => onReplaceFile(e.target.files)} />
 
-      <div className="card p-4 mb-4 flex items-center gap-3 flex-wrap">
-        <button className="btn btn-primary" onClick={() => fileInput.current?.click()} disabled={uploading}>
-          {uploading ? '처리 중…' : '＋ 레퍼런스 등록'}
-        </button>
-        <span className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
-          큰 사진도 그대로 올리면 됩니다 — 자동으로 줄여서 저장됩니다.
-        </span>
-        {note && <span className="text-[11px]" style={{ color: 'var(--ok)' }}>{note}</span>}
-        {err && <span className="text-[11px]" style={{ color: 'var(--danger)' }}>{err}</span>}
+      <div className="card p-4 mb-4">
+        <div className="label mb-2">1. 용도 분류를 고르세요</div>
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {CATEGORY_OPTIONS.map((c) => (
+            <button key={c.value} onClick={() => setUploadCategory(c.value === uploadCategory ? '' : c.value)}
+                    title={c.desc} className="chip"
+                    style={uploadCategory === c.value
+                      ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' }
+                      : {}}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="label mb-2">2. 이미지를 올리세요</div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button className="btn btn-primary" onClick={() => fileInput.current?.click()}
+                  disabled={uploading || !uploadCategory}
+                  title={!uploadCategory ? '먼저 용도 분류를 골라주세요' : ''}
+                  style={!uploadCategory ? { opacity: 0.45, cursor: 'not-allowed' } : {}}>
+            {uploading ? '처리 중…' : '＋ 레퍼런스 등록'}
+          </button>
+          <span className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
+            {uploadCategory
+              ? `${CATEGORY_KR[uploadCategory]} 로 등록됩니다 — 큰 사진도 그대로 올리면 자동으로 줄여서 저장됩니다.`
+              : '분류를 먼저 고르면 등록 버튼이 활성화됩니다.'}
+          </span>
+          {note && <span className="text-[11px]" style={{ color: 'var(--ok)' }}>{note}</span>}
+          {err && <span className="text-[11px]" style={{ color: 'var(--danger)' }}>{err}</span>}
+        </div>
       </div>
 
       {categories.length > 0 && (
@@ -196,6 +241,15 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
                 style={{ color: 'var(--text-dim)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
               >
                 {r.title || '(이름 없음)'}
+              </button>
+              {/* 분류 — 클릭하면 다음 분류로 순환 (미지정 포함) */}
+              <button
+                onClick={() => changeCategory(r.url, r.category)}
+                title="클릭해서 분류 변경"
+                className="text-[9.5px] truncate text-left w-full"
+                style={{ color: r.category ? 'var(--info)' : 'var(--text-mute)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              >
+                {r.category ? (CATEGORY_KR[r.category] ?? r.category) : '＋ 분류 지정'}
               </button>
               <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-mute)' }}>
                 <button onClick={() => { replaceTarget.current = r.url; replaceInput.current?.click(); }}

@@ -3,11 +3,6 @@ import { getOverview, getCuts } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
-const TALENT_LABEL: Record<string, string> = {
-  W_A: '여성 A', W_B: '여성 B', W_C: '여성 C', W_D: '여성 D',
-  M_A: '남성 A', K_A: '아동 A', K_B: '아동 B',
-};
-
 function Stat({ value, label, sub, accent }: { value: number | string; label: string; sub?: string; accent?: boolean }) {
   return (
     <div className="card p-4">
@@ -55,7 +50,7 @@ export default async function DashboardPage() {
         <Link href="/create" className="btn btn-primary">이미지 생성 →</Link>
       </div>
 
-      <div className="grid lg:grid-cols-[1fr_300px] 2xl:grid-cols-[1fr_360px] gap-5">
+      <div>
         {/* 최근 컷 */}
         <section>
           <div className="flex items-baseline justify-between mb-3">
@@ -95,44 +90,7 @@ export default async function DashboardPage() {
           )}
         </section>
 
-        <aside className="flex flex-col gap-4">
-          {/* 모델별 컷 */}
-          <section>
-            <h2 className="h-section mb-3">모델별 보유 컷</h2>
-            <div className="card p-3.5 flex flex-col gap-2">
-              {o.byTalent.map((b) => {
-                const max = o.byTalent[0]?.n || 1;
-                return (
-                  <div key={b.code} className="flex items-center gap-2.5">
-                    <div className="w-[52px] text-[11.5px] font-semibold shrink-0" style={{ color: 'var(--text-dim)' }}>
-                      {TALENT_LABEL[b.code] ?? b.code}
-                    </div>
-                    <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: 'var(--surface-3)' }}>
-                      <div className="h-full rounded-full" style={{ width: `${(b.n / max) * 100}%`, background: 'var(--accent)' }} />
-                    </div>
-                    <div className="w-[26px] text-right text-[11.5px] tabular-nums" style={{ color: 'var(--text-mute)' }}>{b.n}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
 
-          {/* 점검 필요 */}
-          {o.unverifiedGeometry.length > 0 && (
-            <section>
-              <h2 className="h-section mb-3">점검 필요</h2>
-              <div className="card p-3.5">
-                <div className="text-[12px] font-semibold" style={{ color: 'var(--warn)' }}>
-                  기하 서술 미검증 {o.unverifiedGeometry.length}라인
-                </div>
-                <div className="text-[11.5px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-dim)' }}>
-                  {o.unverifiedGeometry.join(' · ')} — 12차 실측을 거치지 않은 서술입니다.
-                  생성 결과를 보고 <Link href="/products" style={{ color: 'var(--accent)' }}>제품 관리</Link>에서 다듬어주세요.
-                </div>
-              </div>
-            </section>
-          )}
-        </aside>
       </div>
     </div>
   );

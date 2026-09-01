@@ -61,6 +61,10 @@ export async function POST(req: Request) {
     const url = await uploadBuffer(REF_SUBPATH, `ref_${stamp}_${rand}.${ext}`, buf);
 
     const title = String(form?.get('title') || file.name || '레퍼런스').slice(0, 120);
+    // 분류 — eventTemp 갤러리와 같은 체계 (web-banner/sns/sns-story/mobile/thumbnail)
+    const ALLOWED_CATEGORY = ['web-banner', 'sns', 'sns-story', 'mobile', 'thumbnail'];
+    const rawCategory = String(form?.get('category') || '');
+    const category = ALLOWED_CATEGORY.includes(rawCategory) ? rawCategory : null;
     // replaceUrl 이 오면 "이미지 교체" — 기존 보관함 항목을 유지한 채 파일만 갈아끼운다
     const replaceUrl = String(form?.get('replaceUrl') || '');
 
@@ -91,7 +95,7 @@ export async function POST(req: Request) {
         // 보관함 자동 등록 — 다음 작업에서 재업로드 없이 골라 쓸 수 있게.
         await db.collection('references').updateOne(
           { url },
-          { $set: { url, title, width: meta.width ?? 0, height: meta.height ?? 0, bytes: buf.length, active: true },
+          { $set: { url, title, category, source: 'upload', width: meta.width ?? 0, height: meta.height ?? 0, bytes: buf.length, active: true },
             $setOnInsert: { createdAt: new Date() } },
           { upsert: true },
         );
@@ -108,6 +112,7 @@ export async function POST(req: Request) {
       width: meta.width ?? 0,
       height: meta.height ?? 0,
       bytes: buf.length,
+      category,
     });
   } catch (e) {
     console.error('[upload]', e);
