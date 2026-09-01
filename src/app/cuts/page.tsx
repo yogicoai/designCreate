@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import Zoomable from '@/components/Zoomable';
+import CutActions from '@/components/CutActions';
 import { getCuts, getProducts, getTalents } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
@@ -136,6 +137,7 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
                       </span>
                     )}
                   </div>
+                  <CutActions id={c.id} source={c.source} />
                 </div>
               ))}
             </div>
