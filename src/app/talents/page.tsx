@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
  */
 const SHEETS = [
   { key: 'face' as const, label: '① 페이스 턴어라운드', layout: '5패널', goal: '얼굴 정체성·각도 고정' },
-  { key: 'expr' as const, label: '② 페이셜 익스프레션', layout: '2×4 · 8컷', goal: '표정만 변경, 얼굴 고정 — 생성 시 항상 동반 투입' },
+  { key: 'expr' as const, label: '② 페이셜 익스프레션', layout: '2×4 · 8컷', goal: '표정만 변경, 얼굴 고정 — 아래 표정 조각의 원본' },
   { key: 'body' as const, label: '③ 바디 턴어라운드', layout: '5패널', goal: '체형·비율 고정' },
 ];
 
@@ -39,8 +39,8 @@ export default async function TalentsPage() {
       <div className="card p-4 mb-5" style={{ background: 'var(--accent-soft)', borderColor: 'var(--accent-dim)' }}>
         <div className="text-[12.5px] font-bold mb-1">★ 얼굴 드리프트 방지 규칙</div>
         <div className="text-[12px] leading-relaxed" style={{ color: 'var(--text-dim)' }}>
-          생성할 때 <b>표정 시트(②)를 아이덴티티 앵커로 함께 투입</b>하고 원하는 패널(옅은미소/밝은미소 등)을 지정해야 합니다.
-          얼굴 턴어라운드만 넣고 프롬프트에 &ldquo;smile&rdquo; 이라고만 쓰면 얼굴이 흔들립니다.
+          생성할 때 <b>대표컷(아이덴티티 정본) + 요청한 표정 조각 한 장</b>이 참조로 들어갑니다.
+          8칸 시트 통째로 넣거나 무표정 턴어라운드만 넣고 &ldquo;smile&rdquo; 이라고 쓰면 얼굴이 흔들립니다.
         </div>
       </div>
 
@@ -68,8 +68,8 @@ export default async function TalentsPage() {
                       <span className="chip" style={{ color: 'var(--info)' }}>{t.size}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="chip" style={{ color: sheetCount === 4 ? 'var(--ok)' : 'var(--warn)' }}>
-                        시트 {sheetCount}/4
+                      <span className="chip" style={{ color: sheetCount === SHEETS.length ? 'var(--ok)' : 'var(--warn)' }}>
+                        시트 {sheetCount}/{SHEETS.length}
                       </span>
                       <Link href={`/cuts?talent=${t.code}`} className="chip" style={{ color: 'var(--accent)' }}>
                         {n}컷 →
