@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb, COLLECTIONS } from '@/lib/db';
 import { searchImages, searchPosts, naverConfigured, NaverError, BEANBAG_BRANDS } from '@/lib/naver';
+import { SEASONS, harvestPhrases, buildSuggestions } from '@/lib/copy-ideas';
 
 /**
  * 시즌 트렌드 참고 보드.
@@ -76,9 +77,46 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
       q?: string; display?: number; start?: number; sort?: 'sim' | 'date';
-      kind?: 'image' | 'promo' | 'brandimg';
+      kind?: 'image' | 'promo' | 'brandimg' | 'copy';
       brands?: string[];
+      month?: number;
     };
+    /*
+     * 이달의 문구 추천.
+     *   시즌 캘린더가 뼈대를 잡고, 실제 수집이 지금 시장의 온도를 채운다.
+     *   추천 문구는 그대로 쓰는 카피이기도 하지만, **이미지 검색의 씨앗**으로 쓸 때 더 쓸모 있다.
+     *   "추석 이벤트" 로 검색하면 그 시즌의 비주얼 톤이 한눈에 들어온다.
+     */
+    if (body.kind === 'copy') {
+      const month = Math.min(12, Math.max(1, Number(body.month) || new Date().getMonth() + 1));
+      const season = SEASONS[month];
+      const titles: string[] = [];
+      // 시즌 키워드로 실제 글 제목을 모아 유행 표현을 뽑는다
+      for (const kw of season.keywords) {
+        try {
+          const posts = await searchPosts(kw, { display: 40 });
+          titles.push(...posts.map((x) => `${x.title} ${x.desc}`));
+        } catch { /* 한 키워드가 실패해도 나머지로 진행한다 */ }
+      }
+      const harvested = harvestPhrases(titles);
+
+      // 경쟁사 실측 할인율의 중앙값 — 추천 문구의 숫자 자리에 넣는다
+      const db2 = await getDb();
+      const ds = (await db2.collection(COLLECTIONS.trendPromos).find({ discount: { $gt: 0 } })
+        .project({ discount: 1 }).toArray()).map((d) => d.discount as number).sort((a, b) => a - b);
+      const median = ds.length ? ds[Math.floor(ds.length / 2)] : 0;
+
+      return NextResponse.json({
+        ok: true,
+        month,
+        season: { label: season.label, angle: season.angle, keywords: season.keywords },
+        suggestions: buildSuggestions(month, median),
+        harvested,
+        median,
+        sampled: titles.length,
+      });
+    }
+
     /*
      * 업체별 대표 이미지.
      * 블로그·카페 검색은 이미지를 주지 않는다. "이 업체가 어떤 비주얼을 쓰나" 는

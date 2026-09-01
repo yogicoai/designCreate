@@ -58,7 +58,7 @@ function thisMonth(): string {
 }
 
 export default function TrendBoard() {
-  const [tab, setTab] = useState<'image' | 'promo'>('image');
+  const [tab, setTab] = useState<'image' | 'promo' | 'copy'>('image');
   const [configured, setConfigured] = useState(true);
   const [promos, setPromos] = useState<Promo[]>([]);
   const [foundPromos, setFoundPromos] = useState<Promo[]>([]);
@@ -73,6 +73,16 @@ export default function TrendBoard() {
   const [loadingImgs, setLoadingImgs] = useState(false);
   /** 크게 보기 팝업 — 새 창으로 튕기지 않고 이 자리에서 확인한다 */
   const [zoom, setZoom] = useState<{ src: string; label: string; href: string } | null>(null);
+  const [copyData, setCopyData] = useState<{
+    month: number;
+    season: { label: string; angle: string; keywords: string[] };
+    suggestions: string[];
+    harvested: { phrase: string; count: number }[];
+    median: number;
+    sampled: number;
+  } | null>(null);
+  const [copyMonth, setCopyMonth] = useState(new Date().getMonth() + 1);
+  const [copied, setCopied] = useState('');
   const [months, setMonths] = useState<string[]>([]);
   const [month, setMonth] = useState('');
   const [saved, setSaved] = useState<Saved[]>([]);
@@ -164,6 +174,25 @@ export default function TrendBoard() {
       .catch(() => {})
       .finally(() => setLoadingImgs(false));
   }, [tab, configured, brands, brandImgs]);
+
+  useEffect(() => {
+    if (tab !== 'copy' || !configured) return;
+    if (copyData && copyData.month === copyMonth) return;
+    fetch('/api/trends', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'copy', month: copyMonth }),
+    })
+      .then((r) => r.json())
+      .then((j) => { if (j.ok) setCopyData(j); })
+      .catch(() => {});
+  }, [tab, configured, copyMonth, copyData]);
+
+  /** 문구를 이미지 검색 씨앗으로 — 이 화면에서 가장 쓸모 있는 동선이다 */
+  function seedImageSearch(phrase: string) {
+    setQ(`빈백 ${phrase}`.slice(0, 60));
+    setTab('image');
+    window.setTimeout(() => search(), 0);
+  }
 
   async function searchPromo() {
     const query = q.trim();
@@ -282,7 +311,7 @@ export default function TrendBoard() {
 
       {/* 탭 — 이미지 보드와 이벤트 기록은 성격이 달라 화면을 나눈다 */}
       <div className="flex gap-1.5 mb-4">
-        {([['image', '연출 이미지'], ['promo', '이벤트 · 특가']] as const).map(([v, l]) => (
+        {([['image', '연출 이미지'], ['promo', '이벤트 · 특가'], ['copy', '문구 추천']] as const).map(([v, l]) => (
           <button key={v} onClick={() => { setTab(v); setNote(''); setErr(''); }} className="chip"
                   style={tab === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
             {l}
@@ -291,6 +320,7 @@ export default function TrendBoard() {
       </div>
 
       {/* ── 찾기 ── */}
+      {tab !== 'copy' && (
       <div className="card p-4 mb-4">
         <div className="label mb-2">1. 찾기</div>
         <div className="flex gap-2 mb-2 flex-wrap">
@@ -314,6 +344,7 @@ export default function TrendBoard() {
         {note && <div className="text-[11px] mt-2" style={{ color: 'var(--ok)' }}>{note}</div>}
         {err && <div className="text-[11px] mt-2" style={{ color: 'var(--danger)' }}>{err}</div>}
       </div>
+      )}
 
       {/* ── 결과에서 고르기 (연출 이미지) ── */}
       {tab === 'image' && found.length > 0 && (
@@ -538,6 +569,87 @@ export default function TrendBoard() {
             ))}
           </div>
         )
+      )}
+
+      {/* ── 문구 추천 ── */}
+      {tab === 'copy' && (
+        <>
+          <div className="card p-4 mb-4">
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <span className="label">월</span>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <button key={m} className="chip" onClick={() => setCopyMonth(m)}
+                        style={copyMonth === m ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                  {m}월
+                </button>
+              ))}
+            </div>
+            {copyData && (
+              <div className="text-[12px]">
+                <b>{copyData.season.label}</b>
+                <span className="ml-2" style={{ color: 'var(--text-dim)' }}>{copyData.season.angle}</span>
+                <div className="text-[10.5px] mt-1" style={{ color: 'var(--text-mute)' }}>
+                  경쟁사 할인 중앙값 <b style={{ color: 'var(--warn)' }}>{copyData.median || '—'}%</b>
+                  {' · '}수집 표본 {copyData.sampled}건
+                </div>
+              </div>
+            )}
+          </div>
+
+          {!copyData ? (
+            <div className="card p-8 text-center text-[13px]" style={{ color: 'var(--text-dim)' }}>
+              문구를 모으는 중…
+            </div>
+          ) : (
+            <>
+              <div className="card p-4 mb-4">
+                <div className="label mb-2">
+                  추천 문구{' '}
+                  <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
+                    — 클릭하면 복사됩니다. <b>이미지 찾기</b>를 누르면 그 문구로 레퍼런스를 검색합니다.
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {copyData.suggestions.map((x) => (
+                    <div key={x} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                      <button className="text-[12px] text-left flex-1 min-w-0"
+                              style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 0 }}
+                              onClick={() => { navigator.clipboard?.writeText(x); setCopied(x); window.setTimeout(() => setCopied(''), 1500); }}>
+                        {x}
+                      </button>
+                      {copied === x && <span className="text-[10px] shrink-0" style={{ color: 'var(--ok)' }}>복사됨 ✓</span>}
+                      <button className="chip shrink-0" onClick={() => seedImageSearch(x.split(/[·,]/)[0].trim())}>
+                        이미지 찾기
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="card p-4">
+                <div className="label mb-2">
+                  지금 실제로 많이 쓰는 표현{' '}
+                  <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
+                    — 블로그·카페에서 2회 이상 등장한 것만
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {copyData.harvested.map((h) => (
+                    <button key={h.phrase} className="chip" title="이 표현으로 이미지 검색"
+                            onClick={() => seedImageSearch(h.phrase)}>
+                      {h.phrase} <span style={{ color: 'var(--text-mute)' }}>{h.count}</span>
+                    </button>
+                  ))}
+                  {copyData.harvested.length === 0 && (
+                    <span className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
+                      반복 등장한 표현이 없습니다.
+                    </span>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </>
       )}
 
       {/* ── 월별 보드 ── */}
