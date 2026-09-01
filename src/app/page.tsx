@@ -27,7 +27,7 @@ export default async function DashboardPage() {
   const coverage = o.counts.colorSlots ? Math.round((o.counts.coveredSlots / o.counts.colorSlots) * 100) : 0;
 
   return (
-    <div className="p-7 max-w-[1180px]">
+    <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">
       <header className="mb-6">
         <h1 className="text-[22px] font-extrabold tracking-tight">대시보드</h1>
         <p className="text-[13px] mt-1" style={{ color: 'var(--text-dim)' }}>
@@ -55,7 +55,7 @@ export default async function DashboardPage() {
         <Link href="/create" className="btn btn-primary">이미지 생성 →</Link>
       </div>
 
-      <div className="grid lg:grid-cols-[1fr_300px] gap-5">
+      <div className="grid lg:grid-cols-[1fr_300px] 2xl:grid-cols-[1fr_360px] gap-5">
         {/* 최근 컷 */}
         <section>
           <div className="flex items-baseline justify-between mb-3">
@@ -70,7 +70,7 @@ export default async function DashboardPage() {
               <Link href="/create" className="btn btn-primary">첫 이미지 생성하기 →</Link>
             </div>
           ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 2xl:grid-cols-6 gap-2.5">
               {recent.map((c) => (
                 <Link key={c.id} href={c.line ? `/cuts?line=${c.line}&color=${c.colorKey}` : '/cuts?source=imgcreate'} className="group">
                   {/* 원본이 cafe24 외부 호스트라 next/image 최적화 대신 img 를 쓴다 (URL 이 이미 최적 크기) */}

@@ -30,7 +30,7 @@ export default async function TalentsPage() {
   const EMOJI: Record<string, string> = { 여성: '👩', 남성: '👨', 아동: '🧒' };
 
   return (
-    <div className="p-7 max-w-[1180px]">
+    <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">
       <PageHeader
         title="전속 모델"
         desc="포즈·의상·공간이 바뀌어도 동일 인물로 인식되는 얼굴 아이덴티티 고정 모델. 실존인물 복제가 아니라 레퍼런스의 인상만 참고합니다."

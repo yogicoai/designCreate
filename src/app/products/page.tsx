@@ -15,7 +15,7 @@ export default async function ProductsPage() {
   }
 
   return (
-    <div className="p-7 max-w-[1180px]">
+    <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">
       <PageHeader
         title="제품 · 컬러"
         desc="제품 라인별 기하 서술·실측 치수·컬러 슬롯. 프롬프트의 4종 세트(기하·치수·네거티브·스케일 앵커)가 여기서 조립됩니다."

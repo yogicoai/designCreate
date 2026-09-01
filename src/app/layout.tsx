@@ -16,7 +16,8 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
     <html lang="ko" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex">
         <Sidebar />
-        <main className="flex-1 min-w-0 overflow-x-hidden">{children}</main>
+        {/* 모바일에서는 상단 고정 바(h-12) 아래로 본문을 내린다 */}
+        <main className="flex-1 min-w-0 overflow-x-hidden pt-12 lg:pt-0">{children}</main>
       </body>
     </html>
   );

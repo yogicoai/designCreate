@@ -165,7 +165,7 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
           {items.length === 0 ? '아직 등록된 레퍼런스가 없습니다.' : '이 분류에는 항목이 없습니다.'}
         </div>
       ) : (
-        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 2xl:grid-cols-8 gap-2.5">
           {shown.map((r) => (
             <div key={r.url}>
               <div className="relative">

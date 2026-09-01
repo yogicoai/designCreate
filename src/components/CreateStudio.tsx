@@ -404,9 +404,9 @@ export default function CreateStudio(p: Props) {
   const isMySize = size?.group === MY_SIZE_GROUP;
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col xl:flex-row h-full">
       {/* ── 좌: 선택 ── */}
-      <div className="flex-1 min-w-0 p-7 overflow-y-auto">
+      <div className="flex-1 min-w-0 p-4 sm:p-6 2xl:p-8 xl:overflow-y-auto">
         <header className="mb-5">
           <h1 className="text-[22px] font-extrabold tracking-tight">이미지 생성</h1>
           <p className="text-[13px] mt-1" style={{ color: 'var(--text-dim)' }}>
@@ -414,9 +414,13 @@ export default function CreateStudio(p: Props) {
           </p>
         </header>
 
-        <div className="flex flex-col gap-3 max-w-[680px]">
+        {/*
+          넓은 화면에서 폼을 680px 에 묶어두면 가운데가 통째로 비어 보인다.
+          2xl 부터 2열 masonry 로 펼쳐 화면을 쓰되, 각 카드는 읽기 좋은 폭을 유지한다.
+        */}
+        <div className="w-full max-w-[1320px] flex flex-col gap-3 2xl:block 2xl:columns-2 2xl:gap-3 [&>*]:2xl:mb-3 [&>*]:2xl:break-inside-avoid">
           {/* 0. 작업 방식 — 이 선택이 아래 섹션 구성을 바꾼다 */}
-          <div className="grid sm:grid-cols-2 gap-2.5">
+          <div className="grid sm:grid-cols-2 gap-2.5 2xl:break-inside-avoid">
             {([
               ['ref', '레퍼런스로 제작', '가진 사진에서 출발 — 그 사진을 편집하거나, 분위기·배경만 가져옵니다'],
               ['direct', '직접 제작', '제품·컬러·모델·포즈를 조합해 새로 만듭니다'],
@@ -930,7 +934,10 @@ ${c.spec}`}>
       </div>
 
       {/* ── 우: 미리보기 · 실행 ── */}
-      <aside className="w-[336px] shrink-0 border-l p-5 overflow-y-auto" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+      <aside
+        className="w-full xl:w-[336px] 2xl:w-[380px] shrink-0 border-t xl:border-t-0 xl:border-l p-4 sm:p-5 xl:overflow-y-auto"
+        style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
+      >
         {dry?.prompt && (
           <div className="card p-3 mb-4" style={{ borderColor: 'var(--accent-dim)' }}>
             <div className="flex items-center justify-between mb-2">

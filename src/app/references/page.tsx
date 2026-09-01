@@ -8,7 +8,7 @@ export default async function ReferencesPage() {
   const references = await getReferences(200);
 
   return (
-    <div className="p-7 max-w-[1180px]">
+    <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">
       <PageHeader
         title="레퍼런스"
         desc="여기 등록한 이미지는 이미지 생성 화면의 보관함에 그대로 뜹니다. 생성 중에 올린 레퍼런스도 자동으로 여기 등록됩니다."

@@ -16,7 +16,7 @@ export default async function PosesPage() {
   const lines = [...byLine.keys()].sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99));
 
   return (
-    <div className="p-7 max-w-[1180px]">
+    <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">
       <PageHeader
         title="포즈 레퍼런스"
         desc="실제 촬영본에서 뽑은 착석 레퍼런스. 착석 썸네일 품질의 핵심 자산입니다."
@@ -43,7 +43,7 @@ export default async function PosesPage() {
           <h2 className="h-section mb-3">
             {line} <span className="text-[12px] font-normal" style={{ color: 'var(--text-mute)' }}>{byLine.get(line)!.length}포즈</span>
           </h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
             {byLine.get(line)!.map((p) => (
               <div key={p.id} className="card p-3">
                 <div className="flex items-start justify-between gap-2 mb-2">

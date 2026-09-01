@@ -67,7 +67,7 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
   };
 
   return (
-    <div className="p-7 max-w-[1180px]">
+    <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">
       <PageHeader
         title="컷 갤러리"
         desc={`총 ${cuts.length}컷 · 이 앱이 생성한 컷 ${generated}건. 생성일자별로 정리됩니다.`}
@@ -115,7 +115,7 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
                 ? <span className="text-[11px]" style={{ color: 'var(--text-mute)' }}>youtube 프로젝트에서 가져온 기존 작업분</span>
                 : <span className="chip" style={{ color: 'var(--accent)' }}>생성</span>}
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 2xl:grid-cols-8 gap-2.5">
               {list.map((c) => (
                 <div key={c.id}>
                   <Zoomable
