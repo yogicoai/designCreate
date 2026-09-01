@@ -64,6 +64,8 @@ interface DryRunResult {
   prompt: string;
   promptMode: string;
   refs: { kind: string; title: string; url?: string; swatchHex?: string }[];
+  aspect?: string;
+  target?: { width: number; height: number };
 }
 
 interface GenResult {
@@ -123,6 +125,8 @@ export default function CreateStudio(p: Props) {
   const [showStaging, setShowStaging] = useState(false);
 
   const [uploadNote, setUploadNote] = useState('');
+  const [copied, setCopied] = useState<'prompt' | 'urls' | null>(null);
+  const [zipping, setZipping] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dry, setDry] = useState<DryRunResult | null>(null);
   const [busy, setBusy] = useState<'dry' | 'gen' | null>(null);
@@ -246,7 +250,7 @@ export default function CreateStudio(p: Props) {
       if (dryRun) setDry(json);
       else {
         setResults(json.results ?? []);
-        if (json.prompt) setDry({ prompt: json.prompt, promptMode: json.promptMode, refs: json.refs });
+        if (json.prompt) setDry({ prompt: json.prompt, promptMode: json.promptMode, refs: json.refs, aspect: json.aspect, target: json.target });
         if (!json.ok) setErr(json.results?.find((r: GenResult) => r.error)?.error || '생성 실패');
       }
     } catch (e) {
@@ -283,6 +287,44 @@ export default function CreateStudio(p: Props) {
     } finally {
       setUploading(false);
       if (fileInput.current) fileInput.current.value = '';
+    }
+  }
+
+  const ORDS = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'SIXTH', 'SEVENTH', 'EIGHTH', 'NINTH', 'TENTH', 'ELEVENTH', 'TWELFTH', 'THIRTEENTH', 'FOURTEENTH'];
+
+  async function copyText(kind: 'prompt' | 'urls') {
+    if (!dry) return;
+    const text = kind === 'prompt'
+      ? dry.prompt
+      : dry.refs.map((r, i) => `[${ORDS[i]}] ${r.title} — ${r.url ?? `(단색 스와치 ${r.swatchHex}, 첨부 생략 가능)`}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 1600);
+    } catch {
+      window.prompt('복사가 막혀 있습니다. 아래 내용을 직접 복사하세요.', text);
+    }
+  }
+
+  /** 프롬프트 + 참조 이미지(순번 파일명) ZIP — ChatGPT/Gemini 앱에서 동등 비교용 */
+  async function downloadTestKit() {
+    if (!dry) return;
+    setZipping(true); setErr('');
+    try {
+      const res = await fetch('/api/test-kit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: dry.prompt, refs: dry.refs, aspect: dry.aspect, target: dry.target }),
+      });
+      if (!res.ok) { setErr('ZIP 생성 실패'); return; }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'imgcreate-test-kit.zip';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } finally {
+      setZipping(false);
     }
   }
 
@@ -711,6 +753,31 @@ export default function CreateStudio(p: Props) {
 
       {/* ── 우: 미리보기 · 실행 ── */}
       <aside className="w-[336px] shrink-0 border-l p-5 overflow-y-auto" style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}>
+        {dry?.prompt && (
+          <div className="card p-3 mb-4" style={{ borderColor: 'var(--accent-dim)' }}>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-[13px] font-bold">프롬프트 <span className="font-normal" style={{ color: 'var(--text-mute)' }}>({dry.promptMode})</span></h2>
+              <span className="text-[10px]" style={{ color: 'var(--text-mute)' }}>{dry.aspect ?? ''}</span>
+            </div>
+            <textarea
+              readOnly
+              value={dry.prompt}
+              onFocus={(e) => e.currentTarget.select()}
+              className="input font-mono text-[10px] leading-relaxed"
+              style={{ height: 150, resize: 'vertical' }}
+            />
+            <div className="flex gap-1.5 mt-2 flex-wrap">
+              <button className="btn text-[11px]" onClick={() => copyText('prompt')}>{copied === 'prompt' ? '복사됨 ✓' : '프롬프트 복사'}</button>
+              <button className="btn text-[11px]" onClick={() => copyText('urls')}>{copied === 'urls' ? '복사됨 ✓' : '참조 URL 복사'}</button>
+              <button className="btn text-[11px]" onClick={downloadTestKit} disabled={zipping}>{zipping ? '묶는 중…' : '테스트 키트 ZIP'}</button>
+            </div>
+            <div className="text-[10px] mt-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+              ChatGPT·Gemini 앱에서 비교하려면 <b>참조 이미지를 같은 순서로 첨부</b>한 뒤 프롬프트를 붙여넣으세요.
+              ZIP에 순번 파일명 + 프롬프트 txt가 들어 있습니다.
+            </div>
+          </div>
+        )}
+
         <h2 className="text-[13.5px] font-bold mb-3">참조 이미지</h2>
         {dry?.refs?.length ? (
           <div className="flex flex-col gap-1.5 mb-4">
@@ -803,15 +870,7 @@ export default function CreateStudio(p: Props) {
           </div>
         )}
 
-        {dry?.prompt && (
-          <details>
-            <summary className="text-[12px] cursor-pointer mb-2" style={{ color: 'var(--text-dim)' }}>
-              프롬프트 전문 <span style={{ color: 'var(--text-mute)' }}>({dry.promptMode})</span>
-            </summary>
-            <pre className="text-[10px] leading-relaxed whitespace-pre-wrap p-2.5 rounded-lg font-mono"
-                 style={{ background: 'var(--surface-2)', color: 'var(--text-dim)' }}>{dry.prompt}</pre>
-          </details>
-        )}
+
       </aside>
     </div>
   );
