@@ -128,28 +128,42 @@ export const ANGLES = [
  */
 export function harvestPhrases(titles: string[]): { phrase: string; count: number }[] {
   const PAT = [
-    /[가-힣A-Za-z0-9]{0,6}\s?(?:특가|할인|세일|프로모션|이벤트)/g,
+    // 앞자리를 6자로 잡았더니 '블랙프라이데이'가 '랙프라이데이'로 잘렸다 — 9자로 늘린다
+    /[가-힣A-Za-z0-9]{0,9}\s?(?:특가|할인|세일|프로모션|이벤트)/g,
     /(?:최대|단독|한정|선착순|마감|앵콜|리뉴얼|런칭|오픈)\s?[가-힣]{0,6}/g,
     /(?:증정|사은품|무료배송|적립|쿠폰|추가|덤)\s?[가-힣]{0,4}/g,
     /(?:온\s?가족|가족|우리집|집콕|홈캉스|힐링|휴식|편안|포근|아늑)\s?[가-힣]{0,4}/g,
   ];
+  /*
+   * 띄어쓰기만 다른 같은 말을 합친다.
+   * "추석 이벤트"(12회)와 "추석이벤트"(5회)가 따로 세어지면 순위가 왜곡된다.
+   * 공백을 지운 형태를 키로 세고, 표시는 가장 많이 쓰인 표기를 쓴다.
+   */
   const count = new Map<string, number>();
+  const surface = new Map<string, Map<string, number>>();
   for (const t of titles) {
     const seen = new Set<string>();
     for (const re of PAT) {
       for (const m of String(t).matchAll(re)) {
         const w = m[0].replace(/\s+/g, ' ').trim();
-        // 너무 짧거나 숫자만인 건 문구가 아니다
         if (w.length < 2 || /^\d+$/.test(w)) continue;
-        if (seen.has(w)) continue;
-        seen.add(w);
-        count.set(w, (count.get(w) ?? 0) + 1);
+        const key = w.replace(/\s+/g, '');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        count.set(key, (count.get(key) ?? 0) + 1);
+        if (!surface.has(key)) surface.set(key, new Map());
+        const sm = surface.get(key)!;
+        sm.set(w, (sm.get(w) ?? 0) + 1);
       }
     }
   }
   return [...count.entries()]
     .filter(([, n]) => n >= 2)
-    .map(([phrase, n]) => ({ phrase, count: n }))
+    .map(([key, n]) => {
+      const sm = surface.get(key)!;
+      const best = [...sm.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      return { phrase: best, count: n };
+    })
     .sort((a, b) => b.count - a.count)
     .slice(0, 24);
 }

@@ -90,15 +90,30 @@ export async function POST(req: Request) {
     if (body.kind === 'copy') {
       const month = Math.min(12, Math.max(1, Number(body.month) || new Date().getMonth() + 1));
       const season = SEASONS[month];
-      const titles: string[] = [];
-      // 시즌 키워드로 실제 글 제목을 모아 유행 표현을 뽑는다
+      /*
+       * 표본을 **그 달에 실제로 올라온 글**로 좁힌다.
+       *
+       * 네이버 검색 API 에는 기간 필터가 없어서 최신순으로 받은 뒤 게시일로 거른다.
+       * 이걸 안 하면 11월을 눌러도 '지금' 글이 잡혀서 "11월에 많이 쓴 문구"가 아니라
+       * "지금 많이 쓰는 문구"가 나온다 — 화면이 말하는 것과 데이터가 어긋난다.
+       *
+       * 연도는 묶는다. 작년·재작년 9월도 같은 9월이고, 시즌 문구는 해마다 반복되기 때문이다.
+       * 표본이 너무 적으면(10건 미만) 월 필터를 풀고 전체로 센다 — 빈 화면보다는 낫다.
+       */
+      const mm = String(month).padStart(2, '0');
+      const all: { text: string; date: string }[] = [];
       for (const kw of season.keywords) {
         try {
-          const posts = await searchPosts(kw, { display: 40 });
-          titles.push(...posts.map((x) => `${x.title} ${x.desc}`));
+          const posts = await searchPosts(kw, { display: 60 });
+          all.push(...posts.map((x) => ({ text: `${x.title} ${x.desc}`, date: x.date })));
         } catch { /* 한 키워드가 실패해도 나머지로 진행한다 */ }
       }
+      const inMonth = all.filter((x) => x.date && x.date.slice(5, 7) === mm);
+      const usedMonthFilter = inMonth.length >= 10;
+      const pool = usedMonthFilter ? inMonth : all;
+      const titles = pool.map((x) => x.text);
       const harvested = harvestPhrases(titles);
+      const years = [...new Set(pool.map((x) => x.date?.slice(0, 4)).filter(Boolean))].sort();
 
       // 경쟁사 실측 할인율의 중앙값 — 추천 문구의 숫자 자리에 넣는다
       const db2 = await getDb();
@@ -114,6 +129,10 @@ export async function POST(req: Request) {
         harvested,
         median,
         sampled: titles.length,
+        /** 그 달로 실제 걸렀는지 — 화면이 기준을 정확히 말할 수 있어야 한다 */
+        monthFiltered: usedMonthFilter,
+        years,
+        totalFetched: all.length,
       });
     }
 

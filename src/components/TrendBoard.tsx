@@ -80,6 +80,9 @@ export default function TrendBoard() {
     harvested: { phrase: string; count: number }[];
     median: number;
     sampled: number;
+    monthFiltered: boolean;
+    years: string[];
+    totalFetched: number;
   } | null>(null);
   const [copyMonth, setCopyMonth] = useState(new Date().getMonth() + 1);
   const [copied, setCopied] = useState('');
@@ -588,9 +591,23 @@ export default function TrendBoard() {
               <div className="text-[12px]">
                 <b>{copyData.season.label}</b>
                 <span className="ml-2" style={{ color: 'var(--text-dim)' }}>{copyData.season.angle}</span>
-                <div className="text-[10.5px] mt-1" style={{ color: 'var(--text-mute)' }}>
+                <div className="text-[10.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                  검색어 <b style={{ color: 'var(--text-dim)' }}>{copyData.season.keywords.join(' · ')}</b>
+                  {' → 네이버 블로그·카페 '}{copyData.totalFetched}건 중{' '}
+                  {copyData.monthFiltered ? (
+                    <>
+                      <b style={{ color: 'var(--text-dim)' }}>{copyMonth}월에 올라온 {copyData.sampled}건</b>
+                      {copyData.years.length > 0 && ` (${copyData.years.join('·')}년)`}
+                    </>
+                  ) : (
+                    <>
+                      <b style={{ color: 'var(--warn)' }}>{copyData.sampled}건 전체</b>
+                      {` — ${copyMonth}월 글이 10건 미만이라 월 구분 없이 집계했습니다`}
+                    </>
+                  )}
+                  <br />
                   경쟁사 할인 중앙값 <b style={{ color: 'var(--warn)' }}>{copyData.median || '—'}%</b>
-                  {' · '}수집 표본 {copyData.sampled}건
+                  {' — 이벤트·특가 탭에 담아둔 기록에서 계산합니다.'}
                 </div>
               </div>
             )}
@@ -603,11 +620,11 @@ export default function TrendBoard() {
           ) : (
             <>
               <div className="card p-4 mb-4">
-                <div className="label mb-2">
-                  추천 문구{' '}
-                  <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
-                    — 클릭하면 복사됩니다. <b>이미지 찾기</b>를 누르면 그 문구로 레퍼런스를 검색합니다.
-                  </span>
+                <div className="label mb-1">추천 문구</div>
+                <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                  이건 <b style={{ color: 'var(--text-dim)' }}>수집이 아니라 제안</b>입니다 — 시즌에 맞춰 만든 문장이고,
+                  숫자(<b style={{ color: 'var(--warn)' }}>{copyData.median || '—'}%</b>)만 경쟁사 실측값입니다.
+                  <br />클릭하면 복사, <b>이미지 찾기</b>를 누르면 그 문구로 레퍼런스를 검색합니다.
                 </div>
                 <div className="flex flex-col gap-1.5">
                   {copyData.suggestions.map((x) => (
@@ -627,11 +644,15 @@ export default function TrendBoard() {
               </div>
 
               <div className="card p-4">
-                <div className="label mb-2">
-                  지금 실제로 많이 쓰는 표현{' '}
-                  <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
-                    — 블로그·카페에서 2회 이상 등장한 것만
-                  </span>
+                <div className="label mb-1">
+                  {copyMonth}월에 실제로 많이 쓰인 표현
+                </div>
+                <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                  집계 기준: 위 검색어로 모은 글의 제목·요약에서 판촉 표현을 뽑아,
+                  <b style={{ color: 'var(--text-dim)' }}> 한 글에 한 번만</b> 세고
+                  <b style={{ color: 'var(--text-dim)' }}> 2회 이상</b> 나온 것만 남깁니다.
+                  띄어쓰기만 다른 말은 합칩니다. 옆의 숫자가 등장 글 수입니다.
+                  <br />업종을 가리지 않은 표본이라 빈백 업계 밖 표현도 섞입니다 — 참고용으로 보세요.
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {copyData.harvested.map((h) => (
