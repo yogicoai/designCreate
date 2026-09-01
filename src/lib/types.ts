@@ -133,6 +133,8 @@ export interface TalentDoc {
   sheets: TalentSheets;
   /** 표정 시트 (썸네일 쪽 최신 버전). sheets.expr 보다 이걸 우선 쓴다. */
   exprSheet: string;
+  /** 표정 시트를 칸별로 잘라둔 표정컷 — { 표정id: url }. 생성 시 요청 표정 한 장만 참조로 쓴다. */
+  expressionCrops?: Record<string, string>;
   /** MD 지정 의상 컨셉 (레퍼 이미지 포함) */
   outfits: Outfit[];
   status: string;

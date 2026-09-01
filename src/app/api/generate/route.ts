@@ -131,6 +131,9 @@ export async function POST(req: Request) {
         identityEn: String(t.identityEn || t.thumbDesc || t.identity || ''),
         sizeEn: String(t.sizeEn || t.size || ''),
         ...(t.rep ? { repShot: String(t.rep) } : {}),
+        ...(pick.expression && t.expressionCrops?.[pick.expression]
+          ? { expressionCrop: String(t.expressionCrops[pick.expression]) }
+          : {}),
         ...(t.exprSheet ? { exprSheet: String(t.exprSheet) } : {}),
         ...(expr ? { expression: { kr: String(expr.kr), en: String(expr.en) } } : {}),
         ...(outfit

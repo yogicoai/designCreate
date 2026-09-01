@@ -26,6 +26,8 @@ export interface RefSlot {
   role: string;
   /** 인물 시트일 때 몇 번째 사람인지 (1-base, 왼쪽부터) */
   personIndex?: number;
+  /** 인물 참조의 종류 — rep(대표컷) / expr(요청 표정 한 칸) / sheet(8칸 시트 폴백) */
+  sub?: 'rep' | 'expr' | 'sheet';
 }
 
 export interface SizeSpec {
@@ -81,6 +83,8 @@ export interface TalentSpec {
    * 결과 얼굴이 굳거나 흔들린다 (기존 팀 규칙 + 실사용 피드백).
    */
   repShot?: string;
+  /** 요청한 표정 한 칸만 잘라낸 표정컷 — 있으면 8칸 시트 대신 이걸 쓴다 */
+  expressionCrop?: string;
   exprSheet?: string;
   /** 사용할 표정 패널 */
   expression?: { kr: string; en: string };
@@ -145,7 +149,12 @@ export interface GenerationSpec {
  * 참조 상한. 나노바나나 Pro 는 여러 장을 받지만 무한정 넣으면 각 참조의 영향력이 희석된다.
  * 다인 구성(모델 4명 = 시트 4장) + 베이스 + 스와치까지 감당하려면 8장은 필요하다.
  */
-const MAX_REFS = 8;
+/**
+ * 참조 상한 — 나노바나나 Pro 의 참조 한도(14).
+ * 예전 8장은 Vercel 4.5MB 를 의식한 값이었으나 그 한도는 브라우저→우리 서버 요청에만
+ * 걸린다. 서버→Gemini 호출은 별개라 인물 3~4명 × (대표컷+표정컷) 도 여유 있다.
+ */
+const MAX_REFS = 14;
 
 /**
  * 참조 이미지 목록을 우선순위대로 만든다.
@@ -197,27 +206,35 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
    * 1~2인이면 인당 2장, 3인 이상이면 슬롯 예산상 인당 1장(얼굴 시트 우선).
    */
   const talents = spec.talents ?? [];
-  const perTalent = talents.length <= 2 ? 2 : 1;
   talents.forEach((t, i) => {
     const multi = talents.length > 1;
     const who = multi ? `PERSON ${i + 1} (counting people from the LEFT of the base image)` : 'the model';
-    const ident: { url?: string; title: string; role: string }[] = [
+    const n = multi ? `${i + 1} ` : '';
+    const ident: { url?: string; title: string; role: string; sub: 'rep' | 'expr' | 'sheet' }[] = [
       {
         url: t.repShot,
-        title: `대표컷 ${multi ? `${i + 1} ` : ''}· ${t.category} ${t.slot}`,
-        role: `the PRIMARY identity reference for ${who} — an approved portrait of ONE model with her natural expression; treat it as ground truth for face construction, eye/nose/lip shape, skin tone, hairline and hairstyle`,
+        sub: 'rep',
+        title: `대표컷 ${n}· ${t.category} ${t.slot}`,
+        role: `the PRIMARY identity reference for ${who} — an approved portrait of ONE model; treat it as ground truth for face construction, eye/nose/lip shape, skin tone, hairline and hairstyle`,
       },
-      {
-        url: t.exprSheet,
-        title: `표정 시트 ${multi ? `${i + 1} ` : ''}· ${t.category} ${t.slot}`,
-        role: `the expression reference for ${who} — the SAME model in 8 expressions; pick the requested expression panel while keeping the identity identical`,
-      },
+      // 요청 표정 한 칸 (있으면) — 없으면 8칸 시트로 폴백
+      t.expressionCrop
+        ? {
+            url: t.expressionCrop,
+            sub: 'expr',
+            title: `표정컷 ${n}· ${t.category} ${t.slot}${t.expression ? ` · ${t.expression.kr}` : ''}`,
+            role: `the SAME person as the previous image, showing EXACTLY the expression to use for ${who} — copy this facial expression precisely while keeping the identity identical`,
+          }
+        : {
+            url: t.exprSheet,
+            sub: 'sheet',
+            title: `표정 시트 ${n}· ${t.category} ${t.slot}`,
+            role: `the expression reference for ${who} — the SAME model in 8 expressions; pick the requested expression panel while keeping the identity identical`,
+          },
     ];
-    let used = 0;
     for (const r of ident) {
-      if (!r.url || used >= perTalent) continue;
-      slots.push({ kind: 'talent', title: r.title, url: r.url, personIndex: i + 1, role: r.role });
-      used++;
+      if (!r.url) continue;
+      slots.push({ kind: 'talent', title: r.title, url: r.url, personIndex: i + 1, role: r.role, sub: r.sub });
     }
   });
 
@@ -375,7 +392,13 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
       : '';
     L.push(`${head}${sheetRef}: ${t.identityEn}.`);
     L.push(`  BODY: ${t.sizeEn}.`);
-    if (t.expression) L.push(`  EXPRESSION: ${t.expression.en}.`);
+    if (t.expression) {
+      const exprIdx = refs.findIndex((r) => r.kind === 'talent' && r.personIndex === i + 1 && r.sub === 'expr');
+      const sheetIdx = refs.findIndex((r) => r.kind === 'talent' && r.personIndex === i + 1 && r.sub === 'sheet');
+      if (exprIdx >= 0) L.push(`  EXPRESSION: ${t.expression.en} — match the expression in the ${ORDINALS[exprIdx]} image exactly.`);
+      else if (sheetIdx >= 0) L.push(`  EXPRESSION: ${t.expression.en} — use that panel from the expression sheet (the ${ORDINALS[sheetIdx]} image).`);
+      else L.push(`  EXPRESSION: ${t.expression.en}.`);
+    }
     if (t.outfit) L.push(`  OUTFIT: ${t.outfit.descEn || t.outfit.desc} (${t.outfit.code}), barefoot unless stated otherwise.`);
   });
 

@@ -552,29 +552,75 @@ export default function CreateStudio(p: Props) {
                       {dir === -1 ? '▲' : '▼'}
                     </button>
                   );
+                  const setExpr = (id: string) => setPicks((c) => c.map((x, j) => j === i ? { ...x, expression: id } : x));
+                  const setOutfit = (code: string) => setPicks((c) => c.map((x, j) => j === i ? { ...x, outfitCode: code } : x));
+                  const exprKr = p.expressions.find((e) => e.id === pick.expression)?.kr ?? '';
+                  const outfitDesc = t.outfits.find((o) => o.code === pick.outfitCode)?.desc ?? '자동';
+                  const sel = (on: boolean) => ({
+                    borderColor: on ? 'var(--accent)' : 'var(--line)',
+                    borderWidth: on ? 2 : 1,
+                    opacity: on ? 1 : 0.7,
+                  });
                   return (
-                    <div key={pick.code} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
-                      <span className="text-[13px] font-bold w-5 text-center" style={{ color: 'var(--accent)' }}>{ORD[i]}</span>
-                      {/* 순서 변경 — ①이 사진 맨 왼쪽 사람 */}
-                      <span className="flex flex-col shrink-0">
-                        {arrow(-1, i > 0, '왼쪽으로')}
-                        {arrow(1, i < picks.length - 1, '오른쪽으로')}
-                      </span>
-                      <span className="text-[11.5px] font-semibold w-[52px] shrink-0">{t.category}{t.slot}</span>
-                      <select className="input flex-1" value={pick.expression}
-                              onChange={(e) => setPicks((c) => c.map((x, j) => j === i ? { ...x, expression: e.target.value } : x))}>
-                        {p.expressions.map((ex) => <option key={ex.id} value={ex.id}>{ex.kr}</option>)}
-                      </select>
-                      <select className="input flex-1" value={pick.outfitCode}
-                              onChange={(e) => setPicks((c) => c.map((x, j) => j === i ? { ...x, outfitCode: e.target.value } : x))}>
-                        <option value="">의상 자동</option>
-                        {t.outfits.map((o) => <option key={o.code} value={o.code}>{o.desc}</option>)}
-                      </select>
-                      <button onClick={() => setPicks((c) => c.filter((_, j) => j !== i))} aria-label="빼기"
-                              className="text-[12px] shrink-0"
-                              style={{ color: 'var(--text-mute)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                        ✕
-                      </button>
+                    <div key={pick.code} className="p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                      {/* 1행 — 순번·이동·이름·빼기 */}
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-[13px] font-bold w-5 text-center" style={{ color: 'var(--accent)' }}>{ORD[i]}</span>
+                        {/* 순서 변경 — ①이 사진 맨 왼쪽 사람 */}
+                        <span className="flex flex-col shrink-0">
+                          {arrow(-1, i > 0, '왼쪽으로')}
+                          {arrow(1, i < picks.length - 1, '오른쪽으로')}
+                        </span>
+                        <span className="text-[11.5px] font-semibold">{t.category}{t.slot}</span>
+                        <span className="text-[10.5px] truncate" style={{ color: 'var(--text-mute)' }}>
+                          {exprKr} · {outfitDesc}
+                        </span>
+                        <button onClick={() => setPicks((c) => c.filter((_, j) => j !== i))} aria-label="빼기"
+                                className="text-[12px] shrink-0 ml-auto"
+                                style={{ color: 'var(--text-mute)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                          ✕
+                        </button>
+                      </div>
+
+                      {/* 2행 — 표정: 시트에서 잘라둔 표정컷 썸네일 (없으면 텍스트 칩) */}
+                      <div className="flex items-center gap-1 mb-1.5 flex-wrap">
+                        <span className="label w-[30px] shrink-0">표정</span>
+                        {p.expressions.map((ex) => {
+                          const url = t.expressionCrops?.[ex.id];
+                          const on = pick.expression === ex.id;
+                          return url ? (
+                            <button key={ex.id} onClick={() => setExpr(ex.id)} title={ex.kr}
+                                    className="rounded-md overflow-hidden shrink-0 border" style={{ width: 36, height: 40, padding: 0, background: 'var(--surface)', ...sel(on) }}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={url} alt={ex.kr} loading="lazy" className="w-full h-full object-cover" />
+                            </button>
+                          ) : (
+                            <button key={ex.id} onClick={() => setExpr(ex.id)} className="chip"
+                                    style={on ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                              {ex.kr}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* 3행 — 의상: 컨셉 이미지 썸네일 */}
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="label w-[30px] shrink-0">의상</span>
+                        <button onClick={() => setOutfit('')} className="chip"
+                                style={!pick.outfitCode ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                          자동
+                        </button>
+                        {t.outfits.map((o) => {
+                          const on = pick.outfitCode === o.code;
+                          return (
+                            <button key={o.code} onClick={() => setOutfit(o.code)} title={`${o.code} · ${o.desc}`}
+                                    className="rounded-md overflow-hidden shrink-0 border" style={{ width: 36, height: 46, padding: 0, background: 'var(--surface)', ...sel(on) }}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={o.imageUrl} alt={o.desc} loading="lazy" className="w-full h-full object-cover object-top" />
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })}
