@@ -30,11 +30,15 @@ interface Saved {
   collectedAt: string | null;
 }
 
-/** 자주 쓰는 검색어 — 매번 타이핑하지 않게 */
+/*
+ * 자주 쓰는 검색어 — 매번 타이핑하지 않게.
+ * 우리는 빈백 회사다. 일반 디자인·배너 검색어는 우리 제품과 무관한 결과만 끌고 오므로 넣지 않는다.
+ * 전부 빈백을 중심에 두고, 쓰임새(거실·침실·키즈·게이밍·캠핑)로 갈래를 낸다.
+ */
 const PRESETS = [
-  '빈백소파 인테리어', '거실 인테리어', '원룸 인테리어',
-  '홈카페 인테리어', '키즈룸 인테리어', '쇼핑몰 배너 디자인',
-  '가구 상세페이지', '이벤트 배너 디자인',
+  '빈백소파', '빈백 인테리어', '빈백 거실', '요기보',
+  '빈백 침대', '키즈 빈백', '게이밍 빈백', '캠핑 빈백',
+  '좌식소파 인테리어', '빈백 원룸',
 ];
 
 function thisMonth(): string {
@@ -146,7 +150,7 @@ export default function TrendBoard() {
             className="input flex-1" style={{ minWidth: 220 }}
             value={q} onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') search(); }}
-            placeholder="예: 빈백소파 인테리어 / 가구 상세페이지 / 이벤트 배너 디자인"
+            placeholder="예: 빈백 / 빈백소파 / 빈백 인테리어 — 빈백 관련 검색어를 넣으세요"
             disabled={!configured}
           />
           <button className="btn btn-primary" onClick={search} disabled={!configured || busy === 'search' || !q.trim()}>

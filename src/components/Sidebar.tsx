@@ -24,10 +24,17 @@ const NAV = [
     group: '자산 관리',
     items: [
       { href: '/references', label: '레퍼런스', icon: '▦' },
-      { href: '/trends', label: '시즌 트렌드', icon: '◷' },
       { href: '/products', label: '제품 · 컬러', icon: '▤' },
       { href: '/talents', label: '전속 모델', icon: '☺' },
       { href: '/poses', label: '포즈 레퍼런스', icon: '▥' },
+    ],
+  },
+  {
+    // 자산이 아니라 시장을 보는 화면 — 우리가 만드는 것이 아니라 남들이 하는 것을 본다.
+    // 생성에 쓰이지 않으므로 자산 관리와 섞지 않는다.
+    group: '시장 조사',
+    items: [
+      { href: '/trends', label: '빈백 트렌드', icon: '◷' },
     ],
   },
 ];
