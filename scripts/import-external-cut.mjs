@@ -22,10 +22,17 @@ const [srcUrl, metaPath] = process.argv.slice(2);
 if (!srcUrl || !metaPath) { console.error('사용: node scripts/import-external-cut.mjs <URL> <meta.json>'); process.exit(1); }
 const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
 
-// 1) 내려받기
-const res = await fetch(srcUrl);
-if (!res.ok) { console.error('다운로드 실패', res.status); process.exit(1); }
-const raw = Buffer.from(await res.arrayBuffer());
+// 1) 내려받기 — URL 이면 받아오고, 로컬 경로면 바로 읽는다
+//    (후보정한 파일을 다시 어딘가에 올려서 URL 을 만들 필요가 없게)
+let raw;
+if (/^https?:\/\//i.test(srcUrl)) {
+  const res = await fetch(srcUrl);
+  if (!res.ok) { console.error('다운로드 실패', res.status); process.exit(1); }
+  raw = Buffer.from(await res.arrayBuffer());
+} else {
+  if (!fs.existsSync(srcUrl)) { console.error('파일이 없습니다:', srcUrl); process.exit(1); }
+  raw = fs.readFileSync(srcUrl);
+}
 const jpg = await sharp(raw).jpeg({ quality: 92 }).toBuffer();
 const dim = await sharp(jpg).metadata();
 console.log(`내려받음: ${dim.width}x${dim.height} · ${(jpg.length / 1024 / 1024).toFixed(2)}MB`);
