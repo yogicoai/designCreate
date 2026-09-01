@@ -655,10 +655,11 @@ export default function CreateStudio(p: Props) {
                               style={!baseCutUrl ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
                         자동
                       </button>
-                      {poseCuts.map((c) => {
+                      {poseCuts.map((c, ci) => {
                         const on = baseCutUrl === c.url;
                         return (
-                          <button key={c.url}
+                          // 같은 URL 이 두 번 올 수 있어 인덱스를 섞어 key 를 유일하게 만든다
+                          <button key={`${c.url}#${ci}`}
                                   onClick={() => {
                                     const next = on ? '' : c.url;
                                     setBaseCutUrl(next);
@@ -854,8 +855,8 @@ ${c.spec}`}>
             {baseTab === 'cut' && (
               lineCuts.length ? (
                 <div className="grid grid-cols-6 gap-1.5 max-h-[220px] overflow-y-auto pr-1">
-                  {lineCuts.map((c) => (
-                    <button key={c.url} onClick={() => setBaseCutUrl(c.url === baseCutUrl ? '' : c.url)} title={c.spec}>
+                  {lineCuts.map((c, ci) => (
+                    <button key={`${c.url}#${ci}`} onClick={() => setBaseCutUrl(c.url === baseCutUrl ? '' : c.url)} title={c.spec}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={c.url} alt={c.spec} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
                            style={{ borderColor: c.url === baseCutUrl ? 'var(--accent)' : 'var(--line)', borderWidth: c.url === baseCutUrl ? 2 : 1 }} />

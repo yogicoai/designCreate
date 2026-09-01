@@ -311,12 +311,31 @@ const POSE_PREFIX = {
 
 const now = new Date();
 const cuts = [];
+/*
+ * 같은 URL 이 두 라인에 등록된 케이스가 있다 — Max 섹션의 리빙코랄 블록에 Support 컷
+ * (cand_support_*_jp2) 이 섞여 들어갔다. 원본 thumbnails/page.js 의 리빙코랄 중복 선언 탓.
+ * 파일명이 제품 라인을 말해주므로 이름이 맞는 라인에만 남긴다.
+ */
+const seenUrls = new Map();
+function ownsUrl(line, url) {
+  const file = url.split('/').pop() || '';
+  const m = file.match(/^cand_([a-z]+)_/);
+  const owner = m ? m[1] : null;
+  const LINE_OF = { support: 'Support', max: 'Max', slim: 'Slim', midi: 'Midi', mini: 'Mini',
+    drop: 'Drop', lounger: 'Lounger', pyramid: 'Pyramid', pod: 'Pod', double: 'Double' };
+  const expected = owner ? LINE_OF[owner] : null;
+  // 파일명이 라인을 특정하면 그 라인만 소유. 아니면 먼저 온 라인이 소유.
+  if (expected) return expected === line;
+  if (!seenUrls.has(url)) { seenUrls.set(url, line); return true; }
+  return seenUrls.get(url) === line;
+}
 for (const p of A.thumbs.PRODUCTS) {
   for (const c of p.colors || []) {
     const entries = [];
     if (c.url) entries.push({ url: c.url, spec: c.spec || '' });
     for (const cu of c.cuts || []) entries.push({ url: cu.url, spec: cu.spec || '' });
     for (const e of entries) {
+      if (!ownsUrl(p.product, e.url)) continue; // 다른 라인 소유 컷 — 건너뛴다
       const recipe = parseRecipe(e.spec, c.hex);
       // 조인 가능한 정규화 포즈 키 (예: Lounger + p5 -> lg_p5)
       if (recipe.pose && /^p\d+$/.test(recipe.pose) && POSE_PREFIX[p.product]) {
