@@ -65,6 +65,8 @@ export default function TrendBoard() {
   const [pickedPromos, setPickedPromos] = useState<Set<string>>(new Set());
   // 요기보는 우리 브랜드라 경쟁사 분석에서 기본으로 뺀다
   const [showOurs, setShowOurs] = useState(false);
+  /** 업체별 대표 이미지 — 검색 후 한 번 더 불러온다 (저장하지 않음) */
+  const [brandImgs, setBrandImgs] = useState<Record<string, { link: string; thumbnail: string }[]>>({});
   const [months, setMonths] = useState<string[]>([]);
   const [month, setMonth] = useState('');
   const [saved, setSaved] = useState<Saved[]>([]);
@@ -143,6 +145,17 @@ export default function TrendBoard() {
       if (!j.ok) { setErr(j.error || '검색 실패'); setFoundPromos([]); return; }
       setFoundPromos(j.posts ?? []);
       if (!j.posts?.length) setNote('결과가 없습니다.');
+      // 잡힌 업체들의 대표 이미지를 이어서 불러온다 — "어떤 비주얼을 쓰나" 가 같이 보여야 한다
+      const brands = [...new Set((j.posts ?? []).filter((x: Promo) => !x.isOurs && x.brand).map((x: Promo) => x.brand))];
+      if (brands.length) {
+        fetch('/api/trends', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: 'brandimg', brands }),
+        })
+          .then((r) => r.json())
+          .then((bj) => { if (bj.ok) setBrandImgs(bj.brandImages ?? {}); })
+          .catch(() => {});
+      }
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
 
@@ -330,6 +343,27 @@ export default function TrendBoard() {
                   {ds.length > 0 && <span className="chip" style={{ color: 'var(--warn)' }}>할인 {Math.min(...ds)}~{Math.max(...ds)}%</span>}
                   {ps.length > 0 && <span className="chip" style={{ color: 'var(--info)' }}>{Math.min(...ps)}~{Math.max(...ps)}만원</span>}
                 </div>
+                {(() => {
+                  // 이 업체가 반복해서 쓰는 문구 — 브랜드가 무엇을 소구하는지가 여기 드러난다
+                  const all = [...new Set(list.flatMap((x) => x.copy ?? []))].slice(0, 8);
+                  return all.length > 0 ? (
+                    <div className="text-[10.5px] mb-1.5" style={{ color: 'var(--accent)' }}>
+                      쓰는 문구: {all.join(' · ')}
+                    </div>
+                  ) : null;
+                })()}
+                {(brandImgs[brand] ?? []).length > 0 && (
+                  <div className="flex gap-1.5 mb-1.5 overflow-x-auto pb-1">
+                    {(brandImgs[brand] ?? []).map((im) => (
+                      <a key={im.link} href={im.link} target="_blank" rel="noreferrer noopener" className="shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={im.thumbnail} alt={brand} loading="lazy"
+                             className="rounded-lg border object-cover"
+                             style={{ width: 74, height: 74, borderColor: 'var(--line)' }} />
+                      </a>
+                    ))}
+                  </div>
+                )}
                 <div className="flex flex-col gap-1">
                   {list.map((pp) => {
                     const on = pickedPromos.has(pp.link);

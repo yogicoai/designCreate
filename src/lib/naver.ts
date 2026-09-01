@@ -175,87 +175,37 @@ export async function searchPosts(query: string, { display = 30 } = {}): Promise
   return [...a, ...b].sort((x, y) => (y.date || '').localeCompare(x.date || ''));
 }
 
-/*
- * 빈백 시장의 업체명 — 실제 검색 결과에서 반복해 등장한 것들.
- * 목록에 없으면 제목의 [브랜드] 대괄호 표기로도 잡는다.
- * 새 업체가 보이면 여기 추가하면 그때부터 업체별 정리에 잡힌다.
- */
 /** 자사 브랜드 — 경쟁사 분석에서는 빼야 한다 */
 export const OUR_BRAND = '요기보';
 
-export const BEANBAG_BRANDS = [
-  '요기보', 'Yogibo', '플래지어', '폴리몰리', '알집매트', '알집',
-  '코시나', '무브만', '지누스', '한샘', '이케아', 'IKEA',
-  '데코뷰', '오늘의집', '스코지', 'SCOZY', '퐁당빈백',
-  '리퍼니처', '아르셰', '코디', '누보', '디오니',
-];
-
-/** 제목·본문에서 업체명을 뽑는다. 못 찾으면 빈 문자열 */
-export function extractBrand(text: string): string {
-  const t = text || '';
-  // 1) [브랜드] 대괄호 표기 — 카페 공지가 이 형식을 많이 쓴다
-  const bracket = t.match(/\[([^\]]{2,12})\]/);
-  if (bracket) {
-    const b = bracket[1].trim();
-    if (!/이벤트|공지|후기|리뷰|모집|당첨|안내/.test(b)) return b;
-  }
-  // 2) 알려진 업체명
-  for (const b of BEANBAG_BRANDS) {
-    if (t.includes(b)) return b === 'Yogibo' ? '요기보' : b === 'IKEA' ? '이케아' : b === 'SCOZY' ? '스코지' : b;
-  }
-  /*
-   * 3) 제목 첫 단어 — 쇼핑 블로그 제목은 브랜드로 시작하는 관행이 있다
-   *    ("리퍼니처 오늘의 특가", "아르셰 모찌 빈백"). 목록에 없는 신규 업체를 잡는다.
-   *    제품·판촉 단어로 시작하면 브랜드가 아니므로 버린다.
-   */
-  const STOP = new RegExp(
-    '^(' + [
-      '빈백', '소파', '쇼파', '쿠션', '의자', '침대', '매트', '방석',
-      '대형', '초대형', '중형', '소형', '인용', '세트',
-      '신상', '추천', '가성비', '오늘', '이번', '최신', '정품', '국내', '해외', '무료',
-      '리뷰', '후기', '비교', '정리', '순위', '핫딜', '정보',
-      '할인', '특가', '세일', '이벤트', '공동구매', '공구', '쿠폰', '최저가',
-      '위한', '좋은', '편한', '예쁜', '저렴한', '인기', '최고', '진짜', '가장', '요즘',
-      '거실', '자취방', '원룸', '안방', '캠핑', '차박',
-      'NEW', 'new', 'BEST', 'best',
-    ].join('|') + ')$',
-  );
-  const first = (t.split(/[\s\[\]|·,]+/).find((w) => w.length >= 2) || '').replace(/[^가-힣A-Za-z0-9]/g, '');
-  /*
-   * 숫자가 섞인 토큰은 브랜드가 아니다 — "9만원대", "2024년" 같은 게 잡힌다.
-   * 단위 접미사(원대/만원/년/개월)로 끝나는 것도 버린다.
-   */
-  const looksLikeBrand =
-    first.length >= 2 && first.length <= 8 &&
-    !STOP.test(first) &&
-    !/\d/.test(first) &&
-    !/(원대|만원|년|개월|주차|인용)$/.test(first);
-  return looksLikeBrand ? first : '';
-}
+/*
+ * 추적할 경쟁사.
+ *
+ * 넓게 잡았더니 강아지빈백·라탄가구·잡화까지 끌려와 목록이 지저분해졌다.
+ * 실제로 비교 의미가 있는 업체만 둔다. 새 업체가 눈에 띄면 여기 한 줄 추가하면
+ * 그때부터 업체별 정리에 잡힌다 — 넓히는 건 쉽고, 좁히는 건 어렵다.
+ */
+export const BEANBAG_BRANDS = ['보니타', '폴리몰리'];
 
 /**
- * 가격대를 뽑는다 (만원 단위).
- * "53 → 30만", "30만원", "298,000원" 같은 표기를 본다.
- * 할인 표기가 둘이면 낮은 쪽이 판매가다.
+ * 제목·본문에서 업체명을 뽑는다. 추적 목록에 있는 것만 인정한다.
+ *
+ * 예전에 [대괄호] 표기와 제목 첫 단어로도 추론했는데, "[핫딜]", "대여",
+ * "빈백 환승", "9만원대" 같은 게 업체로 잡혀 목록이 더 지저분해졌다.
+ * 모르면 모른다고 두는 편이 낫다 — 새 경쟁사는 BEANBAG_BRANDS 에 한 줄 추가하면 된다.
  */
-export function extractPrice(text: string): number {
-  const t = String(text || '');
-  const nums: number[] = [];
-  for (const m of t.matchAll(/(\d{1,4})\s*만\s*원?/g)) {
-    const n = Number(m[1]);
-    if (n >= 3 && n <= 500) nums.push(n);
-  }
-  for (const m of t.matchAll(/(\d{1,3}(?:,\d{3})+)\s*원/g)) {
-    const n = Math.round(Number(m[1].replace(/,/g, '')) / 10000);
-    if (n >= 3 && n <= 500) nums.push(n);
-  }
-  return nums.length ? Math.min(...nums) : 0;
+export function extractBrand(text: string): string {
+  const t = text || '';
+  if (t.includes(OUR_BRAND)) return OUR_BRAND;
+  for (const b of BEANBAG_BRANDS) if (t.includes(b)) return b;
+  return '';
 }
 
 /** 할인율(%)을 뽑는다. 여러 개면 가장 큰 값 — 대표 소구 숫자일 확률이 높다 */
 export function extractDiscount(text: string): number {
   const hits = [...String(text || '').matchAll(/(\d{1,2})\s*(?:%|퍼센트|퍼)/g)].map((m) => Number(m[1]));
-  const valid = hits.filter((n) => n >= 5 && n <= 95);
+  // 하한 10% — 1~5% 는 적립률·수수료·평점 같은 무관한 숫자가 대부분이었다
+  const valid = hits.filter((n) => n >= 10 && n <= 90);
   return valid.length ? Math.max(...valid) : 0;
 }
 
@@ -267,11 +217,32 @@ export function extractCopy(text: string): string[] {
   const t = String(text || '');
   const out = new Set<string>();
   const PATTERNS = [
-    /\d{1,2}\s*(?:%|퍼센트|퍼)\s*(?:할인|세일|특가|off|OFF)?/g,
+    /(?:[1-9]\d)\s*(?:%|퍼센트|퍼)\s*(?:할인|세일|특가|off|OFF)?/g,
     /(?:위클리|주말|단독|한정|타임|시즌|오픈|런칭|리뉴얼|블프|블랙프라이데이)\s*특가/g,
     /(?:럭키드로우|경품|사은품|증정|1\+1|원플러스원|무료배송|쿠폰)/g,
     /(?:최대|역대급|단독|오늘만|마지막)\s*\S{0,6}(?:할인|특가|찬스)/g,
   ];
   for (const re of PATTERNS) for (const m of t.matchAll(re)) out.add(m[0].replace(/\s+/g, ' ').trim());
   return [...out].slice(0, 6);
+}
+
+/**
+ * 가격대를 뽑는다 (만원 단위).
+ * "53 → 30만", "30만원", "298,000원" 같은 표기를 본다.
+ * 할인 표기가 둘이면 낮은 쪽이 판매가다.
+ *
+ * 하한 5만원 — 그 아래는 배송비·부자재 금액이 섞여 들어온다.
+ */
+export function extractPrice(text: string): number {
+  const t = String(text || '');
+  const nums: number[] = [];
+  for (const m of t.matchAll(/(\d{1,4})\s*만\s*원?/g)) {
+    const n = Number(m[1]);
+    if (n >= 5 && n <= 500) nums.push(n);
+  }
+  for (const m of t.matchAll(/(\d{1,3}(?:,\d{3})+)\s*원/g)) {
+    const n = Math.round(Number(m[1].replace(/,/g, '')) / 10000);
+    if (n >= 5 && n <= 500) nums.push(n);
+  }
+  return nums.length ? Math.min(...nums) : 0;
 }

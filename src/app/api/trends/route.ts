@@ -74,10 +74,32 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
       q?: string; display?: number; start?: number; sort?: 'sim' | 'date';
-      kind?: 'image' | 'promo';
+      kind?: 'image' | 'promo' | 'brandimg';
+      brands?: string[];
     };
     const q = String(body.q || '').trim();
     if (!q) return NextResponse.json({ ok: false, error: '검색어가 필요합니다.' }, { status: 400 });
+
+    /*
+     * 업체별 대표 이미지.
+     * 블로그·카페 검색은 이미지를 주지 않는다. "이 업체가 어떤 비주얼을 쓰나" 는
+     * 업체명으로 이미지 검색을 한 번 더 돌려야 나온다. 저장하지 않고 보여주기만 한다.
+     */
+    if (body.kind === 'brandimg') {
+      const brands = (body.brands ?? []).slice(0, 8);
+      const out: Record<string, { link: string; thumbnail: string }[]> = {};
+      await Promise.all(
+        brands.map(async (b) => {
+          try {
+            const imgs = await searchImages(`${b} 빈백`, { display: 6, sort: 'sim' });
+            out[b] = imgs.map((x) => ({ link: x.link, thumbnail: x.thumbnail }));
+          } catch {
+            out[b] = [];
+          }
+        }),
+      );
+      return NextResponse.json({ ok: true, brandImages: out });
+    }
 
     // 프로모션 검색 — 블로그·카페 글. 이벤트 페이지는 끝나면 사라지지만 후기는 남는다.
     if (body.kind === 'promo') {
