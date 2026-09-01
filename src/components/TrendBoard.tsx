@@ -41,13 +41,30 @@ const PRESETS = [
   '좌식소파 인테리어', '빈백 원룸',
 ];
 
+interface Promo {
+  id?: string;
+  title: string; link: string; desc: string; date: string;
+  source: string; kind: 'blog' | 'cafe';
+  brand: string; discount: number; price: number; copy: string[];
+  isOurs?: boolean; saved?: boolean; keyword?: string; month?: string;
+}
+
+/** 이벤트·특가 검색어 — 할인 표기가 붙은 글이 잘 걸리는 조합 */
+const PROMO_PRESETS = ['빈백 할인 특가', '빈백소파 세일', '빈백 이벤트', '빈백 공동구매', '빈백 최저가'];
+
 function thisMonth(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 export default function TrendBoard() {
+  const [tab, setTab] = useState<'image' | 'promo'>('image');
   const [configured, setConfigured] = useState(true);
+  const [promos, setPromos] = useState<Promo[]>([]);
+  const [foundPromos, setFoundPromos] = useState<Promo[]>([]);
+  const [pickedPromos, setPickedPromos] = useState<Set<string>>(new Set());
+  // 요기보는 우리 브랜드라 경쟁사 분석에서 기본으로 뺀다
+  const [showOurs, setShowOurs] = useState(false);
   const [months, setMonths] = useState<string[]>([]);
   const [month, setMonth] = useState('');
   const [saved, setSaved] = useState<Saved[]>([]);
@@ -67,6 +84,7 @@ export default function TrendBoard() {
     setConfigured(j.configured);
     setMonths(j.months ?? []);
     setSaved(j.items ?? []);
+    setPromos(j.promos ?? []);
   }, []);
   useEffect(() => { load(month); }, [load, month]);
 
@@ -112,6 +130,61 @@ export default function TrendBoard() {
     }
   }
 
+  async function searchPromo() {
+    const query = q.trim();
+    if (!query) return;
+    setBusy('search'); setErr(''); setNote(''); setPickedPromos(new Set());
+    try {
+      const res = await fetch('/api/trends', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'promo', q: query, display: 40 }),
+      });
+      const j = await res.json();
+      if (!j.ok) { setErr(j.error || '검색 실패'); setFoundPromos([]); return; }
+      setFoundPromos(j.posts ?? []);
+      if (!j.posts?.length) setNote('결과가 없습니다.');
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
+  }
+
+  async function keepPromo() {
+    const picks = foundPromos.filter((p) => pickedPromos.has(p.link));
+    if (!picks.length) return;
+    setBusy('save'); setErr('');
+    try {
+      const res = await fetch('/api/trends', {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ posts: picks, month: saveMonth, keyword: q.trim() }),
+      });
+      const j = await res.json();
+      if (!j.ok) { setErr(j.error || '담기 실패'); return; }
+      setNote(`${j.saved}건 담았습니다.`);
+      setFoundPromos((cur) => cur.map((p) => (pickedPromos.has(p.link) ? { ...p, saved: true } : p)));
+      setPickedPromos(new Set());
+      load(month);
+    } finally { setBusy(null); }
+  }
+
+  async function removePromo(id: string) {
+    if (!window.confirm('이 기록을 지울까요?')) return;
+    const res = await fetch('/api/trends', {
+      method: 'DELETE', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id, kind: 'promo' }),
+    });
+    if ((await res.json()).ok) setPromos((cur) => cur.filter((x) => x.id !== id));
+  }
+
+  /** 업체별로 묶는다 — "어느 업체가 언제 얼마에 뭘 했나" 가 이 화면의 목적이다 */
+  function byBrand(list: Promo[]): [string, Promo[]][] {
+    const m = new Map<string, Promo[]>();
+    for (const p of list) {
+      if (!showOurs && p.isOurs) continue;
+      const b = p.brand || '(미상)';
+      if (!m.has(b)) m.set(b, []);
+      m.get(b)!.push(p);
+    }
+    return [...m.entries()].sort((a, b) => b[1].length - a[1].length);
+  }
+
   async function remove(id: string) {
     if (!window.confirm('이 참고 이미지를 보드에서 지울까요?')) return;
     const res = await fetch('/api/trends', {
@@ -142,6 +215,16 @@ export default function TrendBoard() {
         </div>
       )}
 
+      {/* 탭 — 이미지 보드와 이벤트 기록은 성격이 달라 화면을 나눈다 */}
+      <div className="flex gap-1.5 mb-4">
+        {([['image', '연출 이미지'], ['promo', '이벤트 · 특가']] as const).map(([v, l]) => (
+          <button key={v} onClick={() => { setTab(v); setNote(''); setErr(''); }} className="chip"
+                  style={tab === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
       {/* ── 찾기 ── */}
       <div className="card p-4 mb-4">
         <div className="label mb-2">1. 찾기</div>
@@ -149,16 +232,17 @@ export default function TrendBoard() {
           <input
             className="input flex-1" style={{ minWidth: 220 }}
             value={q} onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') search(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') (tab === 'promo' ? searchPromo() : search()); }}
             placeholder="예: 빈백 / 빈백소파 / 빈백 인테리어 — 빈백 관련 검색어를 넣으세요"
             disabled={!configured}
           />
-          <button className="btn btn-primary" onClick={search} disabled={!configured || busy === 'search' || !q.trim()}>
+          <button className="btn btn-primary" onClick={tab === 'promo' ? searchPromo : search}
+                  disabled={!configured || busy === 'search' || !q.trim()}>
             {busy === 'search' ? '찾는 중…' : '검색'}
           </button>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {PRESETS.map((p) => (
+          {(tab === 'promo' ? PROMO_PRESETS : PRESETS).map((p) => (
             <button key={p} className="chip" onClick={() => setQ(p)} disabled={!configured}>{p}</button>
           ))}
         </div>
@@ -166,8 +250,8 @@ export default function TrendBoard() {
         {err && <div className="text-[11px] mt-2" style={{ color: 'var(--danger)' }}>{err}</div>}
       </div>
 
-      {/* ── 결과에서 고르기 ── */}
-      {found.length > 0 && (
+      {/* ── 결과에서 고르기 (연출 이미지) ── */}
+      {tab === 'image' && found.length > 0 && (
         <div className="card p-4 mb-4">
           <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
             <div className="label">
@@ -213,7 +297,119 @@ export default function TrendBoard() {
         </div>
       )}
 
+      {/* ── 이벤트·특가: 검색 결과 (업체별) ── */}
+      {tab === 'promo' && foundPromos.length > 0 && (
+        <div className="card p-4 mb-4">
+          <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+            <div className="label">
+              2. 담을 것만 고르세요{' '}
+              <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
+                — 업체별로 묶었습니다. 게시일이 있으면 그 달로 정리됩니다.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] flex items-center gap-1" style={{ color: 'var(--text-mute)' }}>
+                <input type="checkbox" checked={showOurs} onChange={(e) => setShowOurs(e.target.checked)} />
+                요기보(자사) 포함
+              </label>
+              <button className="btn btn-primary text-[12px]" onClick={keepPromo}
+                      disabled={!pickedPromos.size || busy === 'save'}>
+                {busy === 'save' ? '담는 중…' : `${pickedPromos.size}건 담기`}
+              </button>
+            </div>
+          </div>
+
+          {byBrand(foundPromos).map(([brand, list]) => {
+            const ds = list.map((x) => x.discount).filter(Boolean);
+            const ps = list.map((x) => x.price).filter(Boolean);
+            return (
+              <div key={brand} className="mb-3">
+                <div className="text-[12px] font-bold mb-1.5 flex items-center gap-2 flex-wrap">
+                  <span>{brand}</span>
+                  <span className="text-[10.5px] font-normal" style={{ color: 'var(--text-mute)' }}>{list.length}건</span>
+                  {ds.length > 0 && <span className="chip" style={{ color: 'var(--warn)' }}>할인 {Math.min(...ds)}~{Math.max(...ds)}%</span>}
+                  {ps.length > 0 && <span className="chip" style={{ color: 'var(--info)' }}>{Math.min(...ps)}~{Math.max(...ps)}만원</span>}
+                </div>
+                <div className="flex flex-col gap-1">
+                  {list.map((pp) => {
+                    const on = pickedPromos.has(pp.link);
+                    return (
+                      <div key={pp.link} className="flex items-start gap-2 p-2 rounded-lg"
+                           style={{ background: on ? 'var(--accent-soft)' : 'var(--surface-2)' }}>
+                        <input type="checkbox" checked={on} className="mt-0.5"
+                               onChange={() => setPickedPromos((c) => {
+                                 const n = new Set(c);
+                                 if (n.has(pp.link)) n.delete(pp.link); else n.add(pp.link);
+                                 return n;
+                               })} />
+                        <div className="min-w-0 flex-1">
+                          <a href={pp.link} target="_blank" rel="noreferrer noopener"
+                             className="text-[11.5px] block truncate" style={{ color: 'var(--text-dim)' }}>{pp.title}</a>
+                          <div className="flex items-center gap-1.5 flex-wrap mt-0.5 text-[10px]" style={{ color: 'var(--text-mute)' }}>
+                            <span>{pp.date || '날짜없음'}</span>
+                            <span>· {pp.kind === 'cafe' ? '카페' : '블로그'}</span>
+                            {pp.discount > 0 && <span style={{ color: 'var(--warn)' }}>· {pp.discount}%</span>}
+                            {pp.price > 0 && <span style={{ color: 'var(--info)' }}>· {pp.price}만원</span>}
+                            {pp.saved && <span style={{ color: 'var(--ok)' }}>· 담김</span>}
+                          </div>
+                          {pp.copy.length > 0 && (
+                            <div className="text-[10px] mt-0.5" style={{ color: 'var(--accent)' }}>
+                              카피: {pp.copy.join(' · ')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── 이벤트·특가: 담아둔 기록 (업체별) ── */}
+      {tab === 'promo' && (
+        promos.length === 0 ? (
+          <div className="card p-8 text-center text-[13px]" style={{ color: 'var(--text-dim)' }}>
+            아직 담아둔 이벤트 기록이 없습니다. 위에서 검색해 담아보세요.
+          </div>
+        ) : (
+          <div className="card p-4">
+            <div className="label mb-2">담아둔 기록 — 업체별</div>
+            {byBrand(promos).map(([brand, list]) => (
+              <div key={brand} className="mb-3">
+                <div className="text-[12px] font-bold mb-1.5">
+                  {brand} <span className="text-[10.5px] font-normal" style={{ color: 'var(--text-mute)' }}>{list.length}건</span>
+                </div>
+                {list.map((pp) => (
+                  <div key={pp.id} className="flex items-start gap-2 p-2 rounded-lg mb-1" style={{ background: 'var(--surface-2)' }}>
+                    <div className="min-w-0 flex-1">
+                      <a href={pp.link} target="_blank" rel="noreferrer noopener"
+                         className="text-[11.5px] block truncate" style={{ color: 'var(--text-dim)' }}>{pp.title}</a>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5 text-[10px]" style={{ color: 'var(--text-mute)' }}>
+                        <span>{pp.date || pp.month}</span>
+                        {pp.discount > 0 && <span style={{ color: 'var(--warn)' }}>· {pp.discount}%</span>}
+                        {pp.price > 0 && <span style={{ color: 'var(--info)' }}>· {pp.price}만원</span>}
+                      </div>
+                      {pp.copy?.length > 0 && (
+                        <div className="text-[10px] mt-0.5" style={{ color: 'var(--accent)' }}>카피: {pp.copy.join(' · ')}</div>
+                      )}
+                    </div>
+                    <button onClick={() => removePromo(pp.id!)}
+                            style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 10 }}>
+                      삭제
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
       {/* ── 월별 보드 ── */}
+      {tab === 'image' && (
       <div className="flex items-center gap-1.5 mb-3 flex-wrap">
         <span className="label mr-1">월별</span>
         <button className="chip" onClick={() => setMonth('')}
@@ -223,8 +419,9 @@ export default function TrendBoard() {
                   style={month === m ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>{m}</button>
         ))}
       </div>
+      )}
 
-      {saved.length === 0 ? (
+      {tab === 'image' && (saved.length === 0 ? (
         <div className="card p-8 text-center text-[13px]" style={{ color: 'var(--text-dim)' }}>
           아직 담아둔 참고 이미지가 없습니다. 위에서 검색해 마음에 드는 것만 담아보세요.
         </div>
@@ -248,7 +445,7 @@ export default function TrendBoard() {
             </div>
           ))}
         </div>
-      )}
+      ))}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb, COLLECTIONS } from '@/lib/db';
-import { searchImages, naverConfigured, NaverError } from '@/lib/naver';
+import { searchImages, searchPosts, naverConfigured, NaverError } from '@/lib/naver';
 
 /**
  * 시즌 트렌드 참고 보드.
@@ -36,6 +36,10 @@ export async function GET(req: Request) {
     const q = month ? { month } : {};
     const docs = await col.find(q).sort({ collectedAt: -1 }).limit(600).toArray();
 
+    // 경쟁사 프로모션 기록 — 이미지와 성격이 달라 컬렉션을 나눴다
+    const promoCol = db.collection(COLLECTIONS.trendPromos);
+    const promos = await promoCol.find(q).sort({ date: -1, collectedAt: -1 }).limit(400).toArray();
+
     return NextResponse.json({
       ok: true,
       configured: naverConfigured(),
@@ -51,6 +55,15 @@ export async function GET(req: Request) {
         height: d.height ?? 0,
         collectedAt: d.collectedAt ? new Date(d.collectedAt).toISOString() : null,
       })),
+      promos: promos.map((d) => ({
+        id: String(d._id),
+        title: d.title, link: d.link, desc: d.desc ?? '',
+        date: d.date ?? '', source: d.source ?? '', kind: d.kind ?? 'blog',
+        keyword: d.keyword ?? '', month: d.month ?? '',
+        // 업체별 정리에 쓰이는 값들 — 빠뜨리면 화면에서 (미상)/undefined% 로 보인다
+        brand: d.brand ?? '', discount: d.discount ?? 0, price: d.price ?? 0,
+        copy: d.copy ?? [], isOurs: !!d.isOurs,
+      })),
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });
@@ -59,9 +72,23 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { q?: string; display?: number; start?: number; sort?: 'sim' | 'date' };
+    const body = (await req.json()) as {
+      q?: string; display?: number; start?: number; sort?: 'sim' | 'date';
+      kind?: 'image' | 'promo';
+    };
     const q = String(body.q || '').trim();
     if (!q) return NextResponse.json({ ok: false, error: '검색어가 필요합니다.' }, { status: 400 });
+
+    // 프로모션 검색 — 블로그·카페 글. 이벤트 페이지는 끝나면 사라지지만 후기는 남는다.
+    if (body.kind === 'promo') {
+      const posts = await searchPosts(q, { display: body.display ?? 30 });
+      const db0 = await getDb();
+      const seen = new Set(
+        (await db0.collection(COLLECTIONS.trendPromos).find({ link: { $in: posts.map((x) => x.link) } })
+          .project({ link: 1 }).toArray()).map((d) => d.link as string),
+      );
+      return NextResponse.json({ ok: true, posts: posts.map((x) => ({ ...x, saved: seen.has(x.link) })) });
+    }
 
     const items = await searchImages(q, {
       display: body.display ?? 40,
@@ -87,12 +114,33 @@ export async function PUT(req: Request) {
       month?: string;
       keyword?: string;
       items?: { link: string; thumbnail: string; title?: string; sizeWidth?: number; sizeHeight?: number }[];
+      posts?: Record<string, unknown>[] & { link?: string; date?: string }[];
     };
     const items = body.items ?? [];
-    if (!items.length) return NextResponse.json({ ok: false, error: '담을 항목이 없습니다.' }, { status: 400 });
+    const posts = body.posts ?? [];
+    if (!items.length && !posts.length) {
+      return NextResponse.json({ ok: false, error: '담을 항목이 없습니다.' }, { status: 400 });
+    }
     const month = /^\d{4}-\d{2}$/.test(body.month || '') ? body.month! : new Date().toISOString().slice(0, 7);
 
     const db = await getDb();
+
+    // 프로모션 기록 — 텍스트만 저장한다. 이미지가 아니라 "언제 누가 얼마에 뭘 했나" 가 자산이다.
+    if (posts.length) {
+      const pc = db.collection(COLLECTIONS.trendPromos);
+      let n = 0;
+      for (const x of posts) {
+        // 게시일이 있으면 그 달로 묶는다 — 수집한 달이 아니라 실제 진행 시점이 중요하다
+        const m = /^\d{4}-\d{2}/.test(x.date || '') ? x.date!.slice(0, 7) : month;
+        await pc.updateOne(
+          { link: x.link },
+          { $set: { ...x, month: m, keyword: String(body.keyword || '').slice(0, 100), collectedAt: new Date() } },
+          { upsert: true },
+        );
+        n++;
+      }
+      return NextResponse.json({ ok: true, saved: n, failed: 0, month });
+    }
     const col = db.collection(COLLECTIONS.trendImages);
     let saved = 0;
     const failed: string[] = [];
@@ -135,11 +183,12 @@ export async function PUT(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const { id } = (await req.json()) as { id?: string };
+    const { id, kind } = (await req.json()) as { id?: string; kind?: 'image' | 'promo' };
     if (!id) return NextResponse.json({ ok: false, error: 'id 가 필요합니다.' }, { status: 400 });
     const { ObjectId } = await import('mongodb');
     const db = await getDb();
-    await db.collection(COLLECTIONS.trendImages).deleteOne({ _id: new ObjectId(id) as never });
+    const target = kind === 'promo' ? COLLECTIONS.trendPromos : COLLECTIONS.trendImages;
+    await db.collection(target).deleteOne({ _id: new ObjectId(id) as never });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });
