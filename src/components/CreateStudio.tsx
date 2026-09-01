@@ -201,6 +201,12 @@ export default function CreateStudio(p: Props) {
   const [copied, setCopied] = useState<'prompt' | 'urls' | null>(null);
   const [zipping, setZipping] = useState(false);
   const [handoff, setHandoff] = useState<'busy' | 'done' | null>(null);
+  /*
+   * 생성 경과 시간.
+   * 생성이 25~40초 걸리는데 화면에 아무 변화가 없으면 멈춘 건지 도는 건지 알 수 없다.
+   * 초를 세어 보여주면 "돌고 있다"가 눈으로 확인된다.
+   */
+  const [elapsed, setElapsed] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [dry, setDry] = useState<DryRunResult | null>(null);
   /*
@@ -215,6 +221,13 @@ export default function CreateStudio(p: Props) {
   const [results, setResults] = useState<GenResult[]>([]);
   const [err, setErr] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!busy) { setElapsed(0); return; }
+    setElapsed(0);
+    const t = window.setInterval(() => setElapsed((n) => n + 1), 1000);
+    return () => window.clearInterval(t);
+  }, [busy]);
 
   const loadBalance = useCallback(async () => {
     try {
@@ -509,6 +522,45 @@ export default function CreateStudio(p: Props) {
 
   return (
     <div className="flex flex-col xl:flex-row h-full">
+      {/*
+        생성 중 오버레이.
+        생성은 25~40초 걸리는데 그동안 화면이 그대로면 도는 건지 멈춘 건지 알 수 없다.
+        화면 한가운데에서 계속 움직이는 것 + 흘러가는 초를 같이 보여준다.
+        오버레이가 화면을 덮으므로 중복 클릭도 자연히 막힌다.
+      */}
+      {busy && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center"
+             style={{ background: 'rgba(10,11,14,.82)', backdropFilter: 'blur(2px)' }}>
+          <div className="flex flex-col items-center gap-4 px-8 py-7 rounded-2xl"
+               style={{ background: 'var(--surface)', border: '1px solid var(--line-strong)', minWidth: 260 }}>
+            {/* 회전 링 — 바깥은 옅게, 한 조각만 진하게 해서 도는 게 보이도록 */}
+            <span
+              className="block animate-spin"
+              style={{
+                width: 46, height: 46, borderRadius: '50%',
+                border: '3px solid var(--line)',
+                borderTopColor: 'var(--accent)',
+                animationDuration: '0.9s',
+              }}
+            />
+            <div className="text-center">
+              <div className="text-[14px] font-bold">
+                {busy === 'gen' ? '이미지 생성 중' : '프롬프트 만드는 중'}
+              </div>
+              <div className="text-[11.5px] mt-1.5 tabular-nums" style={{ color: 'var(--text-dim)' }}>
+                {Math.floor(elapsed / 60) > 0 && `${Math.floor(elapsed / 60)}분 `}
+                {elapsed % 60}초 경과
+              </div>
+              <div className="text-[10.5px] mt-1" style={{ color: 'var(--text-mute)' }}>
+                {busy === 'gen'
+                  ? `보통 25~35초 걸립니다${samples > 1 ? ` · ${samples}장` : ''}. 창을 닫지 마세요.`
+                  : '레퍼런스를 읽고 프롬프트를 씁니다.'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── 좌: 선택 ── */}
       <div className="flex-1 min-w-0 p-4 sm:p-6 2xl:p-8 xl:overflow-y-auto">
         <header className="mb-5">
