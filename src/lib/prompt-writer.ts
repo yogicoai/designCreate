@@ -583,6 +583,17 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
         'let the pose adapt around them.',
       'Do not beautify, slim, smooth, de-age or drift toward a generic attractive face. Keep the real skin texture, ' +
         'pores and asymmetry.',
+      /*
+       * 착석 자세 — 자사몰 컷의 최소 기준.
+       * 빈백·좌식 소파는 몸이 낮게 가라앉아서, 그냥 두면 다리가 크게 벌어진 자세로 나온다.
+       * 실측에서 여성 모델이 다리를 넓게 벌린 컷이 나왔고 그대로는 자사몰에 못 쓴다.
+       * 편안함은 유지하되 자세는 단정해야 한다 — 둘은 양립한다.
+       */
+      'SEATED POSTURE — keep every pose relaxed but modest and commercially usable. Knees stay together, ' +
+        'crossed, angled to one side, or tucked up; legs may stretch forward but never splay wide apart. ' +
+        'No wide-open straddling posture, no crotch-forward framing, no upward angle between the legs. ' +
+        'Skirts and dresses fall naturally over the knees. This applies to everyone in the frame regardless ' +
+        'of how deeply the seat sinks under their weight.',
     );
   }
   return L;
@@ -710,16 +721,20 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
 
   /*
    * 브랜드 태그·라벨 처리.
-   * 베이스 사진에 요기보 봉제 태그가 찍혀 있으면 모델이 그걸 따라 그리는데,
-   * 작은 글씨라 로고가 뭉개져 나온다("yogibo" -> "qo ㅕo"). 뭉개진 로고는
-   * 로고가 없는 것보다 브랜드에 해롭다 — 배너에 그대로 쓸 수 없다.
-   * 그래서 글자를 흉내내지 말고 무지 태그로 두게 한다. 실제 로고는 후보정으로 얹는다.
+   *
+   * 처음엔 무조건 무지 태그로 비우게 했는데, 그러면 제대로 나올 기회까지 없앤다.
+   * 태그가 충분히 크게 잡힌 컷에서는 워드마크가 멀쩡히 나오기도 한다.
+   *
+   * 그래서 조건부다 — 깨끗하게 읽히면 살리고, 그 크기에서 글자꼴이 무너질 것 같으면
+   * 비운다. 절대 하면 안 되는 건 '뭉개진 글자'다 ("yogibo" -> "qo ㅕo").
+   * 없는 것보다 나쁜 건 틀린 것이다.
    */
   L.push(
-    'BRAND TAGS: if the base image shows a sewn-in fabric tag, care label or any small brand patch on the product, ' +
-      'render it as a PLAIN BLANK tag — same shape, size, position, fabric and fold, but with NO lettering, ' +
-      'no logo and no printed marks on it. Never attempt to reproduce or imitate brand text at small scale: ' +
-      'a garbled or misspelled logo is worse than no logo. The real logo is composited in afterwards.',
+    'BRAND TAGS: if the base image shows a sewn-in fabric tag or brand patch on the product, keep the tag itself — ' +
+      'same shape, size, position, fabric and fold. Reproduce its wordmark ONLY if it can be rendered cleanly and ' +
+      'legibly at the size it occupies in this frame. If the tag is too small for the letterforms to hold their shape, ' +
+      'render the tag BLANK instead, with no lettering at all. Never output distorted, misspelled, mirrored or ' +
+      'invented lettering: a garbled logo is worse than a clean blank tag.',
   );
 
   return L.join('\n');
@@ -786,13 +801,19 @@ const OPUS_SYSTEM = `너는 요기보(빈백 소파 브랜드) 자사몰의 AI �
 5. 편집 지시(EDIT)가 있으면 "이것만 바꾸고 나머지는 원본 그대로"를 가장 앞에, 가장 강하게 써라.
 6. 전 컷 공통 규칙은 빠짐없이 반영하라.
 7. 텍스트·로고·워터마크 금지 문장을 마지막에 반드시 넣어라.
-7-2. 베이스에 요기보 봉제 태그·케어라벨이 찍혀 있으면, 그 자리에 **글자 없는 무지 태그**를
-   두라고 프롬프트에 명시하라. 작은 글씨의 브랜드 로고를 흉내내면 반드시 뭉개지고,
-   뭉개진 로고는 로고가 없는 것보다 나쁘다. 실제 로고는 후보정으로 얹는다.
+7-2. 베이스에 요기보 봉제 태그·케어라벨이 찍혀 있으면, 태그 자체는 그대로 두되
+   **로고 글자는 조건부**로 지시하라. 그 크기에서 깨끗하게 읽힐 수 있으면 살리고,
+   글자꼴이 무너질 만큼 작으면 글자 없이 비우게 하라.
+   절대 나오면 안 되는 건 뭉개지거나 틀린 글자다 — 없는 것보다 나쁘다.
+   태그를 통째로 지우라고는 하지 마라. 태그가 있어야 제품이 진짜로 보인다.
 7-1. 인물마다 지정된 EXPRESSION 은 MD 가 직접 고른 값이다. 전 컷 공통 규칙에
    "항상 자연스러운 미소" 같은 문장이 있어도, **지정된 표정이 우선**이다.
    놀람·무표정·진지함·슬픔·찡그림이 지정됐다면 그대로 살리고 미소로 바꾸지 마라.
    공통 규칙의 미소 문장은 표정이 지정되지 않은 인물에게만 적용하라.
+7-3. 착석 자세는 편안하되 **단정해야** 한다. 빈백·좌식 소파는 몸이 낮게 가라앉아
+   그냥 두면 다리가 크게 벌어진 자세가 나온다. 무릎을 모으거나 꼬거나 한쪽으로 틀거나
+   접어 올린 자세로 지시하고, 다리를 넓게 벌린 자세·가랑이가 정면으로 오는 프레이밍은
+   명시적으로 금지하라. 자사몰에 걸 컷이라 이건 협상 대상이 아니다.
 8. **MD 의 한글 방향 지시는 반드시 영문으로 옮겨 프롬프트 본문에 녹여라.**
    한글을 그대로 남기지 마라. 그리고 따로 떨어진 문장으로 덧붙이지 말고, 해당하는 항목
    (장면·조명·소품·카메라·포즈)에 각각 흡수시켜라. 예: "배경을 밝은 거실로, 45도 측면에서"
