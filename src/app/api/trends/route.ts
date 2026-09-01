@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb, COLLECTIONS } from '@/lib/db';
-import { searchImages, searchPosts, naverConfigured, NaverError } from '@/lib/naver';
+import { searchImages, searchPosts, naverConfigured, NaverError, BEANBAG_BRANDS } from '@/lib/naver';
 
 /**
  * 시즌 트렌드 참고 보드.
@@ -43,6 +43,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       configured: naverConfigured(),
+      // 추적 업체 — 화면이 검색 없이 바로 이미지를 띄우는 데 쓴다
+      brands: BEANBAG_BRANDS,
       months,
       items: docs.map((d) => ({
         id: String(d._id),

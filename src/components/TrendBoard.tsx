@@ -69,6 +69,10 @@ export default function TrendBoard() {
   const [brandImgs, setBrandImgs] = useState<Record<string, Found[]>>({});
   /** 업체 이미지 중 담을 것 — 이 화면의 결과물은 결국 이미지다 */
   const [pickedBrandImgs, setPickedBrandImgs] = useState<Set<string>>(new Set());
+  const [brands, setBrands] = useState<string[]>([]);
+  const [loadingImgs, setLoadingImgs] = useState(false);
+  /** 크게 보기 팝업 — 새 창으로 튕기지 않고 이 자리에서 확인한다 */
+  const [zoom, setZoom] = useState<{ src: string; label: string; href: string } | null>(null);
   const [months, setMonths] = useState<string[]>([]);
   const [month, setMonth] = useState('');
   const [saved, setSaved] = useState<Saved[]>([]);
@@ -89,8 +93,17 @@ export default function TrendBoard() {
     setMonths(j.months ?? []);
     setSaved(j.items ?? []);
     setPromos(j.promos ?? []);
+    setBrands(j.brands ?? []);
   }, []);
   useEffect(() => { load(month); }, [load, month]);
+
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoom(null); };
+    window.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
+  }, [zoom]);
 
   async function search() {
     const query = q.trim();
@@ -133,6 +146,24 @@ export default function TrendBoard() {
       setBusy(null);
     }
   }
+
+  /*
+   * 이벤트·특가 탭을 열면 검색을 기다리지 않고 추적 업체 이미지를 먼저 띄운다.
+   * 이 화면의 주인공은 이미지다 — 빈 화면에서 검색어부터 치게 만들 이유가 없다.
+   */
+  useEffect(() => {
+    if (tab !== 'promo' || !configured) return;
+    if (!brands.length || Object.keys(brandImgs).length) return;
+    setLoadingImgs(true);
+    fetch('/api/trends', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'brandimg', brands }),
+    })
+      .then((r) => r.json())
+      .then((j) => { if (j.ok) setBrandImgs(j.brandImages ?? {}); })
+      .catch(() => {})
+      .finally(() => setLoadingImgs(false));
+  }, [tab, configured, brands, brandImgs]);
 
   async function searchPromo() {
     const query = q.trim();
@@ -332,7 +363,7 @@ export default function TrendBoard() {
       )}
 
       {/* ── 이벤트·특가: 검색 결과 (업체별) ── */}
-      {tab === 'promo' && foundPromos.length > 0 && (
+      {tab === 'promo' && (foundPromos.length > 0 || Object.keys(brandImgs).length > 0) && (
         <div className="card p-4 mb-4">
           <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
             <div className="label">
@@ -360,7 +391,14 @@ export default function TrendBoard() {
             </div>
           </div>
 
-          {byBrand(foundPromos).map(([brand, list]) => {
+          {loadingImgs && (
+            <div className="text-[11px] mb-2" style={{ color: 'var(--text-mute)' }}>업체 이미지를 불러오는 중…</div>
+          )}
+
+          {(byBrand(foundPromos).length
+            ? byBrand(foundPromos)
+            : brands.map((b) => [b, [] as Promo[]] as [string, Promo[]])
+          ).map(([brand, list]) => {
             const ds = list.map((x) => x.discount).filter(Boolean);
             const ps = list.map((x) => x.price).filter(Boolean);
             return (
@@ -388,18 +426,32 @@ export default function TrendBoard() {
                         <button key={im.link} className="rounded-lg overflow-hidden border relative block w-full"
                                 style={{ padding: 0, background: 'var(--surface-2)',
                                          borderColor: on ? 'var(--accent)' : 'var(--line)', borderWidth: on ? 2 : 1 }}
-                                onClick={() => setPickedBrandImgs((c) => {
-                                  const n = new Set(c);
-                                  if (n.has(im.link)) n.delete(im.link); else n.add(im.link);
-                                  return n;
-                                })}>
+                                onClick={() => setZoom({ src: im.thumbnail, label: brand, href: im.link })}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={im.thumbnail} alt={brand} loading="lazy"
-                               className="w-full object-cover" style={{ aspectRatio: '1/1' }} />
-                          {on && (
-                            <span className="absolute top-1 left-1 w-5 h-5 rounded-full text-[11px] flex items-center justify-center"
-                                  style={{ background: 'var(--accent)', color: '#fff' }}>✓</span>
-                          )}
+                               className="w-full object-cover" style={{ aspectRatio: '1/1', cursor: 'zoom-in' }} />
+                          {/* 담기 선택은 배지로 분리 — 이미지 클릭은 크게 보기여야 자연스럽다 */}
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPickedBrandImgs((c) => {
+                                const n = new Set(c);
+                                if (n.has(im.link)) n.delete(im.link); else n.add(im.link);
+                                return n;
+                              });
+                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.click(); }}
+                            className="absolute top-1 left-1 w-5 h-5 rounded-full text-[11px] flex items-center justify-center"
+                            style={{
+                              background: on ? 'var(--accent)' : 'rgba(0,0,0,.45)',
+                              color: '#fff', cursor: 'pointer',
+                            }}
+                            title={on ? '담기 취소' : '담을 이미지로 선택'}
+                          >
+                            {on ? '✓' : '+'}
+                          </span>
                         </button>
                       );
                     })}
@@ -509,11 +561,14 @@ export default function TrendBoard() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
           {saved.map((s) => (
             <div key={s.id}>
-              <a href={s.sourceUrl} target="_blank" rel="noreferrer noopener" title={`${s.title}\n출처 보기`}
-                 className="block rounded-lg overflow-hidden border" style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}>
+              <button onClick={() => setZoom({ src: s.thumb, label: s.keyword || s.title, href: s.sourceUrl })}
+                      title="클릭하면 크게 보기"
+                      className="block w-full rounded-lg overflow-hidden border"
+                      style={{ padding: 0, borderColor: 'var(--line)', background: 'var(--surface-2)' }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={s.thumb} alt={s.title} loading="lazy" className="w-full object-cover" style={{ aspectRatio: '1/1' }} />
-              </a>
+                <img src={s.thumb} alt={s.title} loading="lazy" className="w-full object-cover"
+                     style={{ aspectRatio: '1/1', cursor: 'zoom-in' }} />
+              </button>
               <div className="text-[9.5px] mt-1 truncate" style={{ color: 'var(--text-dim)' }}>{s.keyword || s.title}</div>
               <div className="flex items-center gap-2 text-[9px]" style={{ color: 'var(--text-mute)' }}>
                 <span>{s.month}</span>
@@ -526,6 +581,26 @@ export default function TrendBoard() {
           ))}
         </div>
       ))}
+
+      {/* 크게 보기 — 새 창으로 튕기면 흐름이 끊긴다. 출처로 가는 길은 팝업 안에 둔다. */}
+      {zoom && (
+        <div onClick={() => setZoom(null)}
+             className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 gap-3"
+             style={{ background: 'rgba(0,0,0,.88)', cursor: 'zoom-out' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={zoom.src} alt={zoom.label} className="max-w-[92vw] max-h-[80vh] object-contain rounded-lg" />
+          <div className="text-[12px]" style={{ color: '#c8ccd4' }}>{zoom.label}</div>
+          <a href={zoom.href} target="_blank" rel="noreferrer noopener" onClick={(e) => e.stopPropagation()}
+             className="px-3 py-1.5 rounded-lg text-[12px]"
+             style={{ background: 'rgba(255,255,255,.14)', color: '#fff', textDecoration: 'none' }}>
+            출처 사이트 열기 ↗
+          </a>
+          <button onClick={(e) => { e.stopPropagation(); setZoom(null); }}
+                  className="fixed top-5 right-6 w-10 h-10 rounded-full text-[20px] leading-none"
+                  style={{ background: 'rgba(255,255,255,.14)', color: '#fff', border: 'none', cursor: 'pointer' }}
+                  aria-label="닫기">✕</button>
+        </div>
+      )}
     </div>
   );
 }
