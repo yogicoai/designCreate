@@ -71,7 +71,11 @@ export async function measureProductColor(
 
 /**
  * 생성 비율에서 목표 픽셀로 크롭한다.
- * 중앙 크롭 — 프롬프트가 이미 "가장자리에 중요한 것 두지 말라"고 경고하고 있으므로 이게 맞다.
+ *
+ * 중앙 크롭이 아니라 **attention 크롭**을 쓴다 — 크롭 창이 얼굴·피사체가 있는 쪽을
+ * 따라간다. 중앙 고정으로 잘랐더니 위쪽에 선 인물의 머리가 날아가는 사고가 실제로
+ * 났다 (와이드 배너에서 서 있는 아이들 머리 잘림). attention 이 실패하면 중앙 폴백.
+ *
  * 가변 높이(이벤트 페이지 등)는 폭만 맞추고 높이는 그대로 둔다.
  */
 export async function cropToSize(
@@ -89,9 +93,17 @@ export async function cropToSize(
     return { buffer: out, width: m.width ?? width, height: m.height ?? 0 };
   }
 
-  const out = await sharp(buffer)
-    .resize(width, height, { fit: 'cover', position: 'centre' })
-    .jpeg({ quality: 92 })
-    .toBuffer();
-  return { buffer: out, width, height };
+  try {
+    const out = await sharp(buffer)
+      .resize(width, height, { fit: 'cover', position: sharp.strategy.attention })
+      .jpeg({ quality: 92 })
+      .toBuffer();
+    return { buffer: out, width, height };
+  } catch {
+    const out = await sharp(buffer)
+      .resize(width, height, { fit: 'cover', position: 'centre' })
+      .jpeg({ quality: 92 })
+      .toBuffer();
+    return { buffer: out, width, height };
+  }
 }

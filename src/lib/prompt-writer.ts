@@ -439,14 +439,20 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
 
   L.push(compositionFor(spec));
 
-  if (spec.size.retention < 0.85) {
+  if (spec.size.retention < 0.97) {
+    const keepPct = Math.max(50, Math.round(spec.size.retention * 100) - 6); // 여유 6%p
+    const axis = spec.size.cropAxis === 'vertical' ? 'height' : 'width';
+    const edges = spec.size.cropAxis === 'vertical' ? 'top and bottom edges' : 'left and right edges';
     L.push(
-      `IMPORTANT FRAMING: the delivered image is cropped from ${spec.size.genAspect} down to ` +
-        `${spec.size.width}x${spec.size.height} — only ${Math.round(spec.size.retention * 100)}% of the ` +
-        `${spec.size.cropAxis === 'vertical' ? 'height' : 'width'} survives. Compose so that nothing essential sits near the ` +
-        `${spec.size.cropAxis === 'vertical' ? 'top or bottom' : 'left or right'} edge.`,
+      `CROP-SAFE FRAMING (critical): the delivered image is cropped from ${spec.size.genAspect} down to ` +
+        `${spec.size.width}x${spec.size.height} — only the central ${Math.round(spec.size.retention * 100)}% of the ${axis} survives. ` +
+        `Keep EVERY person — including full heads with clear space above the hair — and the entire product inside the central ${keepPct}% ${axis} band. ` +
+        `Nothing important may touch the ${edges}. Never place a standing person's head near the top edge; ` +
+        `if space is tight, make the people SMALLER rather than letting anything be cut off.`,
     );
   }
+  // 크롭이 없어도 머리 잘림은 절대 금지 — 상단 여백은 항상 확보한다
+  L.push('HEADROOM: every head must be fully inside the frame with visible margin above the hair. Never crop a head, hand or foot at any edge.');
 
   const vars = (spec.variations ?? []).filter((v) => v.hint);
   if (vars.length) {
