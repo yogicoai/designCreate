@@ -54,11 +54,13 @@ export interface UploadedRefSpec {
 }
 
 /** role=base 일 때 무엇을 바꿀지 */
-export type EditTarget = 'face' | 'person' | 'outfit' | 'product-color' | 'background' | 'text-removal';
+export type EditTarget = 'face' | 'person' | 'add-person' | 'outfit' | 'product-color' | 'background' | 'text-removal';
 
 const EDIT_TARGET_EN: Record<EditTarget, string> = {
   face: 'replace ONLY the face and hair of each specified person with the supplied model identity — keep body, pose, outfit, product and background untouched',
   person: 'replace each specified person entirely with the supplied model (face, hair, body proportions and outfit) while keeping their pose, the products and the background exactly as they are',
+  // 사진에 사람이 없을 때 — 인물을 새로 합성해 앉힌다 (기존 가구·공간은 그대로)
+  'add-person': 'ADD the specified people into the scene, seated naturally on the existing bean bags / seating already in the photo — one person per seat, counting seats from the LEFT. Keep the room, furniture, camera and lighting exactly as they are; the fabric must visibly compress under each body, and shadows, perspective and colour temperature must match the photo so the people look photographed in place, not pasted',
   outfit: 'change only the clothing to the specified outfit — keep the face, hair, pose, product and background untouched',
   'product-color': 'recolour only the product to the specified official colour, keeping its existing shading, folds and highlights',
   background: 'replace only the background and surrounding space — keep the people and the product exactly as they are',
@@ -417,8 +419,10 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
     L.push('');
   } else if (hasBackground) {
     L.push(
-      'Reproduce the supplied background exactly — same space, same architecture and furnishings, same lighting direction ' +
-        'and colour temperature — then place the product and people described below into that space, lit consistently with it.',
+      'Reproduce the supplied background exactly — same space, same architecture, same lighting direction and colour temperature — ' +
+        'then place the product and people described below into that space, lit consistently with it. ' +
+        'REMOVE or replace any existing seating (bean bags, sofas, cushions) that competes with the specified product; ' +
+        'the specified product must be the only seating in frame.',
     );
     L.push('');
   }

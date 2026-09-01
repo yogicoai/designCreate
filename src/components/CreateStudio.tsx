@@ -33,11 +33,12 @@ interface UploadedRef { url: string; title: string; role: RefRole }
 /** 선택된 모델 1명 — 순서가 곧 "사진 왼쪽부터" 배정 순서다 */
 interface TalentPick { code: string; expression: string; outfitCode: string }
 
-type EditTarget = 'face' | 'person' | 'outfit' | 'product-color' | 'background' | 'text-removal';
+type EditTarget = 'face' | 'person' | 'add-person' | 'outfit' | 'product-color' | 'background' | 'text-removal';
 
 const EDIT_TARGETS: { value: EditTarget; label: string; desc: string }[] = [
   { value: 'face', label: '얼굴만 교체', desc: '몸·포즈·의상·배경 유지, 얼굴+헤어만 우리 모델로' },
   { value: 'person', label: '인물 전체 교체', desc: '포즈는 유지하고 사람을 통째로 우리 모델로' },
+  { value: 'add-person', label: '인물 추가 (앉히기)', desc: '사람 없는 사진에 우리 모델을 기존 빈백·좌석에 앉혀 합성. 공간·가구는 그대로' },
   { value: 'product-color', label: '제품 리컬러', desc: '제품 색만 공식 컬러로' },
   { value: 'outfit', label: '의상만 교체', desc: '얼굴·포즈 유지, 옷만' },
   { value: 'background', label: '배경만 교체', desc: '인물·제품 유지, 공간만' },
@@ -462,9 +463,11 @@ export default function CreateStudio(p: Props) {
                     );
                   })}
                 </div>
-                {editTargets.includes('face') || editTargets.includes('person') ? (
+                {editTargets.includes('face') || editTargets.includes('person') || editTargets.includes('add-person') ? (
                   <div className="text-[10.5px] mt-2" style={{ color: 'var(--text-dim)' }}>
-                    교체할 모델을 아래 ④에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.
+                    {editTargets.includes('add-person')
+                      ? '앉힐 모델을 아래 ④에서 고르세요. 사진 왼쪽 좌석부터 ①②③④ 순서로 앉습니다. 제품(③)은 비워두세요 — 사진의 빈백을 그대로 씁니다.'
+                      : '교체할 모델을 아래 ④에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.'}
                   </div>
                 ) : null}
               </div>
