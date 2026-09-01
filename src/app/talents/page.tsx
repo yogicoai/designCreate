@@ -137,7 +137,7 @@ export default async function TalentsPage() {
                                 src={url}
                                 alt={ex.kr}
                                 caption={`${cat} ${t.slot} · ${ex.kr} — ${ex.en}`}
-                                className="w-[64px] rounded-lg border object-cover"
+                                className="w-[96px] rounded-lg border object-cover"
                                 style={{ aspectRatio: '9/10', borderColor: 'var(--line-strong)', background: 'var(--surface-2)' }}
                               />
                               <div className="text-[9.5px] mt-1" style={{ color: 'var(--text-mute)' }}>{ex.kr}</div>

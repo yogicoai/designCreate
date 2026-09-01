@@ -625,17 +625,20 @@ export default function CreateStudio(p: Props) {
                       </div>
 
                       {/* 2행 — 표정: 시트에서 잘라둔 표정컷 썸네일 (없으면 텍스트 칩) */}
-                      <div className="flex items-center gap-1 mb-1.5 flex-wrap">
-                        <span className="label w-[30px] shrink-0">표정</span>
+                      <div className="label mb-1">표정</div>
+                      <div className="flex items-start gap-1.5 mb-2 flex-wrap">
                         {p.expressions.map((ex) => {
                           const url = t.expressionCrops?.[ex.id];
                           const on = pick.expression === ex.id;
                           return url ? (
-                            <button key={ex.id} onClick={() => setExpr(ex.id)} title={ex.kr}
-                                    className="rounded-md overflow-hidden shrink-0 border" style={{ width: 36, height: 40, padding: 0, background: 'var(--surface)', ...sel(on) }}>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={url} alt={ex.kr} loading="lazy" className="w-full h-full object-cover" />
-                            </button>
+                            <div key={ex.id} className="text-center shrink-0">
+                              <button onClick={() => setExpr(ex.id)} title={ex.kr}
+                                      className="rounded-lg overflow-hidden border block" style={{ width: 78, height: 86, padding: 0, background: 'var(--surface)', ...sel(on) }}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={url} alt={ex.kr} loading="lazy" className="w-full h-full object-cover" />
+                              </button>
+                              <div className="text-[9.5px] mt-0.5" style={{ color: on ? 'var(--accent)' : 'var(--text-mute)' }}>{ex.kr}</div>
+                            </div>
                           ) : (
                             <button key={ex.id} onClick={() => setExpr(ex.id)} className="chip"
                                     style={on ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
@@ -646,8 +649,8 @@ export default function CreateStudio(p: Props) {
                       </div>
 
                       {/* 3행 — 의상: 컨셉 이미지 썸네일 */}
-                      <div className="flex items-center gap-1 flex-wrap">
-                        <span className="label w-[30px] shrink-0">의상</span>
+                      <div className="label mb-1">의상</div>
+                      <div className="flex items-start gap-1.5 flex-wrap">
                         <button onClick={() => setOutfit('')} className="chip"
                                 style={!pick.outfitCode ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
                           자동
@@ -655,11 +658,14 @@ export default function CreateStudio(p: Props) {
                         {t.outfits.map((o) => {
                           const on = pick.outfitCode === o.code;
                           return (
-                            <button key={o.code} onClick={() => setOutfit(o.code)} title={`${o.code} · ${o.desc}`}
-                                    className="rounded-md overflow-hidden shrink-0 border" style={{ width: 36, height: 46, padding: 0, background: 'var(--surface)', ...sel(on) }}>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={o.imageUrl} alt={o.desc} loading="lazy" className="w-full h-full object-cover object-top" />
-                            </button>
+                            <div key={o.code} className="text-center shrink-0" style={{ width: 66 }}>
+                              <button onClick={() => setOutfit(o.code)} title={`${o.code} · ${o.desc}`}
+                                      className="rounded-lg overflow-hidden border block" style={{ width: 66, height: 86, padding: 0, background: 'var(--surface)', ...sel(on) }}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={o.imageUrl} alt={o.desc} loading="lazy" className="w-full h-full object-cover object-top" />
+                              </button>
+                              <div className="text-[9px] mt-0.5 truncate" style={{ color: on ? 'var(--accent)' : 'var(--text-mute)' }}>{o.desc}</div>
+                            </div>
                           );
                         })}
                       </div>
