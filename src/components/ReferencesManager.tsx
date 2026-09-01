@@ -161,7 +161,9 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
    * 삭제·숨김으로 개수가 줄어 현재 페이지가 비면 마지막 페이지로 당겨온다
    * (마지막 항목을 지우고 빈 화면만 남는 걸 막는다).
    */
-  const PER_PAGE = 20;
+  // 한 줄 6개 × 3줄 = 18개. 줄이 딱 떨어져야 마지막 줄이 비어 보이지 않는다.
+  // 그래서 그리드도 넓은 화면에서 6열로 고정한다 (8열이면 3줄로 안 떨어진다).
+  const PER_PAGE = 18;
   const totalPages = Math.max(1, Math.ceil(matched.length / PER_PAGE));
   const current = Math.min(page, totalPages);
   const shown = matched.slice((current - 1) * PER_PAGE, current * PER_PAGE);
@@ -271,7 +273,7 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
           {items.length === 0 ? '아직 등록된 레퍼런스가 없습니다.' : '이 분류에는 항목이 없습니다.'}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 2xl:grid-cols-8 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
           {shown.map((r) => (
             <div key={r.url}>
               <div className="relative">
