@@ -24,6 +24,8 @@ interface Props {
   references: ReferenceDoc[];
   /** 프롬프트 작성 모드 — local(템플릿·무과금) / opus(라이브, 확인에도 소액 과금) */
   promptMode: 'local' | 'opus';
+  /** 로컬 개발 여부. 대화로 넘기는 버튼은 여기서만 보인다 */
+  localMode: boolean;
 }
 
 type RefRole = 'style' | 'base' | 'background';
@@ -198,6 +200,7 @@ export default function CreateStudio(p: Props) {
   const [uploadNote, setUploadNote] = useState('');
   const [copied, setCopied] = useState<'prompt' | 'urls' | null>(null);
   const [zipping, setZipping] = useState(false);
+  const [handoff, setHandoff] = useState<'busy' | 'done' | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dry, setDry] = useState<DryRunResult | null>(null);
   /*
@@ -321,6 +324,34 @@ export default function CreateStudio(p: Props) {
     if ((await res.json()).ok) {
       setSizes((cur) => cur.filter((s) => s.value !== value));
       setSizeValue('1000x1000');
+    }
+  }
+
+  /*
+   * 현재 선택을 그대로 조립해 handoffs 에 남긴다.
+   * 화면의 선택값은 브라우저 상태라 대화 쪽에서 볼 수 없다 — 이걸 눌러 남겨두면
+   * "방금 고른 걸로 뽑아줘" 한마디로 끝난다. 로컬에서만 보인다.
+   */
+  async function leaveHandoff() {
+    setHandoff('busy'); setErr('');
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...payload(true), handoff: true }),
+      });
+      const json = await res.json();
+      if (!json.ok) { setErr(json.error || '실패'); setHandoff(null); return; }
+      setDry({
+        prompt: json.prompt, promptMode: json.promptMode, refs: json.refs,
+        aspect: json.aspect, target: json.target,
+        usage: json.usage ?? null, promptCost: json.promptCost ?? null,
+      });
+      setPromptText(json.prompt); setPromptEdited(false);
+      setHandoff('done');
+      window.setTimeout(() => setHandoff(null), 4000);
+    } catch (e) {
+      setErr((e as Error).message); setHandoff(null);
     }
   }
 
@@ -1189,10 +1220,28 @@ ${c.spec}`}>
           <button className="btn" onClick={() => run(true)} disabled={!!busy}>
             {busy === 'dry'
               ? '만드는 중…'
-              : p.promptMode === 'opus'
-                ? '프롬프트 확인 (Opus · 약 ₩50)'
+              : writer === 'opus'
+                ? '프롬프트 확인 (Opus 작성 · 소액 과금)'
                 : '프롬프트 확인 (무료)'}
           </button>
+
+          {/*
+            대화로 넘기기 — 로컬 전용.
+            화면에서 고른 값은 브라우저 상태라 대화 쪽에서 볼 수 없다. 이 버튼이
+            프롬프트·참조 순서·선택값을 handoffs 에 남겨서, 말로 다시 설명할 필요를 없앤다.
+          */}
+          {p.localMode && (
+            <button className="btn" onClick={leaveHandoff} disabled={!!busy || handoff === 'busy'}
+                    title="프롬프트와 지금 고른 값(모델·표정·의상·규격·레퍼런스)을 저장합니다. 대화에서 그대로 읽어 힉스필드로 뽑을 수 있습니다."
+                    style={handoff === 'done' ? { borderColor: 'var(--ok)', color: 'var(--ok)' } : {}}>
+              {handoff === 'busy' ? '남기는 중…' : handoff === 'done' ? '남겼습니다 ✓' : '힉스필드용으로 남기기'}
+            </button>
+          )}
+          {p.localMode && handoff === 'done' && (
+            <div className="text-[10px] px-1" style={{ color: 'var(--ok)' }}>
+              저장했습니다. 대화에서 &quot;방금 남긴 걸로 뽑아줘&quot; 라고 하시면 됩니다.
+            </div>
+          )}
           {/*
             엔진 선택은 화면에서 뺐다.
             힉스필드는 앱이 쓰는 API 키에 크레딧이 없어 어차피 못 쓰고(대화용 MCP 계정과 지갑이 다르다),

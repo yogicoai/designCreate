@@ -506,9 +506,19 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
     if (t.expression) {
       const exprIdx = refs.findIndex((r) => r.kind === 'talent' && r.personIndex === i + 1 && r.sub === 'expr');
       const sheetIdx = refs.findIndex((r) => r.kind === 'talent' && r.personIndex === i + 1 && r.sub === 'sheet');
-      if (exprIdx >= 0) L.push(`  EXPRESSION: ${t.expression.en} — match the expression in the ${ORDINALS[exprIdx]} image exactly.`);
-      else if (sheetIdx >= 0) L.push(`  EXPRESSION: ${t.expression.en} — use that panel from the expression sheet (the ${ORDINALS[sheetIdx]} image).`);
-      else L.push(`  EXPRESSION: ${t.expression.en}.`);
+      /*
+       * 미소가 아닌 표정(놀람·무표정·진지함·슬픔·찡그림)은 공통 규칙과 충돌한다.
+       * 하우스 룰에 "모델은 항상 자연스러운 미소" 가 있어서, MD 가 '놀람'을 골라도
+       * 결과가 미소로 나온다 — 실측으로 확인된 문제다.
+       * MD 가 명시적으로 고른 표정이 공통 규칙을 이겨야 한다.
+       */
+      const isSmile = /smile|grin/i.test(t.expression.en);
+      const beatsHouseRule = isSmile
+        ? ''
+        : ' This is a deliberate art-direction choice and OVERRIDES any general instruction to smile — do not substitute a smile here.';
+      if (exprIdx >= 0) L.push(`  EXPRESSION: ${t.expression.en} — match the expression in the ${ORDINALS[exprIdx]} image exactly.${beatsHouseRule}`);
+      else if (sheetIdx >= 0) L.push(`  EXPRESSION: ${t.expression.en} — use that panel from the expression sheet (the ${ORDINALS[sheetIdx]} image).${beatsHouseRule}`);
+      else L.push(`  EXPRESSION: ${t.expression.en}.${beatsHouseRule}`);
     }
     /*
      * 편집(인물/의상 교체)일 때는 "베이스 옷을 갈아입힌다"를 명시해야 한다.
@@ -743,6 +753,10 @@ const OPUS_SYSTEM = `너는 요기보(빈백 소파 브랜드) 자사몰의 AI �
 5. 편집 지시(EDIT)가 있으면 "이것만 바꾸고 나머지는 원본 그대로"를 가장 앞에, 가장 강하게 써라.
 6. 전 컷 공통 규칙은 빠짐없이 반영하라.
 7. 텍스트·로고·워터마크 금지 문장을 마지막에 반드시 넣어라.
+7-1. 인물마다 지정된 EXPRESSION 은 MD 가 직접 고른 값이다. 전 컷 공통 규칙에
+   "항상 자연스러운 미소" 같은 문장이 있어도, **지정된 표정이 우선**이다.
+   놀람·무표정·진지함·슬픔·찡그림이 지정됐다면 그대로 살리고 미소로 바꾸지 마라.
+   공통 규칙의 미소 문장은 표정이 지정되지 않은 인물에게만 적용하라.
 8. **MD 의 한글 방향 지시는 반드시 영문으로 옮겨 프롬프트 본문에 녹여라.**
    한글을 그대로 남기지 마라. 그리고 따로 떨어진 문장으로 덧붙이지 말고, 해당하는 항목
    (장면·조명·소품·카메라·포즈)에 각각 흡수시켜라. 예: "배경을 밝은 거실로, 45도 측면에서"

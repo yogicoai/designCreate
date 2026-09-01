@@ -41,6 +41,8 @@ export default async function CreatePage() {
       baseCuts={baseCuts}
       references={references}
       promptMode={(process.env.PROMPT_MODE || 'opus') === 'opus' && process.env.ANTHROPIC_API_KEY ? 'opus' : 'local'}
+      /* 넘기기 버튼은 로컬 전용 — MD 화면에 나올 기능이 아니다 */
+      localMode={process.env.NODE_ENV !== 'production'}
     />
   );
 }

@@ -95,6 +95,12 @@ interface Body {
    * 로컬에서 대화로 뽑은 프롬프트를 그대로 붙여넣는 용도.
    */
   promptOverride?: string;
+  /**
+   * 조립 결과를 handoffs 컬렉션에 남긴다 (로컬 전용).
+   * 화면의 선택값은 브라우저 상태라 대화 쪽에서 볼 수 없다 — 이걸 남겨야
+   * "방금 고른 걸로 힉스필드로 뽑아줘"가 성립한다.
+   */
+  handoff?: boolean;
   sizeValue?: string;
   /** sizeValue='custom' 일 때 직접 지정한 규격 */
   customSize?: { width: number; height: number };
@@ -358,6 +364,38 @@ export async function POST(req: Request) {
 
     const written = await writePrompt(spec, { mode: body.promptMode, manualPrompt: body.promptOverride });
 
+    /*
+     * 넘기기 기록 — 프롬프트 + 참조 순서 + 화면에서 고른 값 원본을 통째로 남긴다.
+     * 배포에서는 남기지 않는다: MD 용 기능이 아니고, 쌓아둘 이유도 없다.
+     */
+    let handoffId: string | null = null;
+    if (body.dryRun && body.handoff && process.env.NODE_ENV !== 'production') {
+      const r = await db.collection('handoffs').insertOne({
+        createdAt: new Date(),
+        prompt: written.prompt,
+        promptMode: written.mode,
+        refs: written.refs.map((x) => ({
+          kind: x.kind, title: x.title, url: x.url ?? '', swatchHex: x.swatchHex ?? '', role: x.role,
+        })),
+        aspect: size.genAspect,
+        target: { width: size.width, height: size.height },
+        sizeLabel: size.label,
+        // 화면에서 고른 값 그대로 — 나중에 무엇을 골랐는지 되살릴 수 있어야 한다
+        selection: {
+          mode: body.mode ?? null,
+          editTargets: body.editTargets ?? [],
+          preservation: body.preservation ?? null,
+          talents: body.talents ?? [],
+          products: body.products ?? (body.line ? [{ line: body.line, colorKey: body.colorKey }] : []),
+          uploadedRefs: body.uploadedRefs ?? [],
+          direction: body.direction ?? '',
+          sizeValue: body.sizeValue ?? '',
+        },
+        used: false,
+      });
+      handoffId = String(r.insertedId);
+    }
+
     if (body.dryRun) {
       return NextResponse.json({
         ok: true,
@@ -370,6 +408,7 @@ export async function POST(req: Request) {
         elementId: color?.elementId ?? null,
         usage: written.usage ?? null,
         promptCost: promptCostFromUsage(written.usage),
+        ...(handoffId ? { handoffId } : {}),
       });
     }
 
