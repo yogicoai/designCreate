@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import type { ProductDoc, TalentDoc, PoseRefDoc, ExpressionDoc } from '@/lib/types';
-import type { SizePresetDoc, VariationDoc, PreservationDoc, ReferenceDoc } from '@/lib/queries';
+import type { SizePresetDoc, PreservationDoc, ReferenceDoc } from '@/lib/queries';
 import { shrinkForUpload, formatBytes } from '@/lib/client-image';
 import Zoomable from '@/components/Zoomable';
 
@@ -17,7 +17,6 @@ interface Props {
   talents: WithId<TalentDoc>[];
   poses: WithId<PoseRefDoc>[];
   sizes: WithId<SizePresetDoc>[];
-  variations: WithId<VariationDoc>[];
   preservations: WithId<PreservationDoc>[];
   expressions: WithId<ExpressionDoc>[];
   baseCuts: BaseCut[];
@@ -140,12 +139,10 @@ export default function CreateStudio(p: Props) {
   const [showLibrary, setShowLibrary] = useState(false);
   const [preservation, setPreservation] = useState('similar');
   const [editTargets, setEditTargets] = useState<EditTarget[]>([]);
-  const [variationIds, setVariationIds] = useState<Record<string, string>>({});
   const [direction, setDirection] = useState('');
   const [samples, setSamples] = useState(1);
   /** 품질 티어 — 초안은 Flash 로 싸게 돌려보고, 확정본만 Pro 로 */
   const [tier, setTier] = useState<'pro' | 'draft'>('pro');
-  const [showStaging, setShowStaging] = useState(false);
 
   const [uploadNote, setUploadNote] = useState('');
   const [copied, setCopied] = useState<'prompt' | 'urls' | null>(null);
@@ -215,12 +212,6 @@ export default function CreateStudio(p: Props) {
     for (const s of sizes) { if (!m.has(s.group)) m.set(s.group, []); m.get(s.group)!.push(s); }
     return [...m.entries()];
   }, [sizes]);
-
-  const varAxes = useMemo(() => {
-    const m = new Map<string, WithId<VariationDoc>[]>();
-    for (const v of p.variations) { if (!m.has(v.axis)) m.set(v.axis, []); m.get(v.axis)!.push(v); }
-    return [...m.entries()];
-  }, [p.variations]);
 
   function togglePick(code: string) {
     setPicks((cur) => {
@@ -300,7 +291,6 @@ export default function CreateStudio(p: Props) {
       ...(uploads.length ? { uploadedRefs: uploads, preservation } : {}),
       ...(hasBaseUpload && editTargets.length ? { editTargets } : {}),
       engine,
-      variationIds: Object.values(variationIds).filter((v) => v && !v.endsWith(':auto')),
       ...(direction.trim() ? { direction: direction.trim() } : {}),
       tier,
     };
@@ -907,28 +897,16 @@ ${c.spec}`}>
           </Section>
           )}
 
-          {/* ⑥ 연출 */}
-          <Section n={flow === "ref" ? "5" : "5"} title="연출" hint="비워두면 레퍼런스와 베이스를 따라갑니다."
-                   right={<button className="btn btn-ghost text-[11px]" onClick={() => setShowStaging((v) => !v)}>{showStaging ? '접기' : '펼치기'}</button>}>
-            {showStaging && (
-              <div className="grid sm:grid-cols-2 gap-2">
-                {varAxes.map(([axis, list]) => (
-                  <div key={axis}>
-                    <div className="label mb-1">{list[0].axisLabel}</div>
-                    <select className="input" value={variationIds[axis] ?? ''} onChange={(e) => setVariationIds((v) => ({ ...v, [axis]: e.target.value }))}>
-                      <option value="">— 지정 안 함 —</option>
-                      {list.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-                    </select>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Section>
+          {/*
+            연출(카메라·조명·인물구성) 드롭다운은 뺐다 — 5개를 따로 고르는 것보다
+            방향 지시에 한 줄로 쓰는 편이 자연스럽고 헷갈리지 않는다.
+            (variation_options 데이터는 남아 있어 필요하면 되살릴 수 있다)
+          */}
 
-          {/* ⑦ 방향 지시 */}
-          <Section n="6" title="방향 지시" hint="한글로 편하게 적으면 됩니다. 예: 배경을 밝은 거실로, 랩탑 들고 있게">
+          {/* ⑤ 방향 지시 */}
+          <Section n={flow === "ref" ? "5" : "5"} title="방향 지시" hint="한글로 편하게 적으면 됩니다. 카메라 각도·조명·인물 구성도 여기에 함께 적으세요.">
             <textarea className="input" rows={3} value={direction} onChange={(e) => setDirection(e.target.value)}
-                      placeholder="예: 창가 자연광이 드는 아늑한 거실, 옆에 작은 화분" />
+                      placeholder="예: 창가 자연광이 드는 아늑한 거실, 45도 측면에서, 옆에 작은 화분" />
           </Section>
         </div>
       </div>

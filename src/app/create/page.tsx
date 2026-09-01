@@ -1,18 +1,17 @@
 import CreateStudio from '@/components/CreateStudio';
 import {
   getProducts, getTalents, getPoseRefs, getSizePresets,
-  getVariationOptions, getPreservationModes, getExpressions, getCuts, getReferences,
+  getPreservationModes, getExpressions, getCuts, getReferences,
 } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CreatePage() {
-  const [products, talents, poses, sizes, variations, preservations, expressions, recentCuts, references] = await Promise.all([
+  const [products, talents, poses, sizes, preservations, expressions, recentCuts, references] = await Promise.all([
     getProducts(),
     getTalents(),
     getPoseRefs(),
     getSizePresets(),
-    getVariationOptions(),
     getPreservationModes(),
     getExpressions(),
     getCuts({ limit: 400 }),
@@ -37,7 +36,6 @@ export default async function CreatePage() {
       talents={talents}
       poses={poses}
       sizes={sizes}
-      variations={variations}
       preservations={preservations}
       expressions={expressions}
       baseCuts={baseCuts}

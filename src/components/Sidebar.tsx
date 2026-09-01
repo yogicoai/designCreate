@@ -27,7 +27,6 @@ const NAV = [
       { href: '/products', label: '제품 · 컬러', icon: '▤' },
       { href: '/talents', label: '전속 모델', icon: '☺' },
       { href: '/poses', label: '포즈 레퍼런스', icon: '▥' },
-      { href: '/rules', label: '생성 규칙', icon: '✓' },
     ],
   },
 ];
