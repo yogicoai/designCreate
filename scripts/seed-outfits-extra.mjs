@@ -20,7 +20,7 @@ const EXTRA = [
   { talent: 'W_A', code: 'A_W_C_03', file: 'A_W_C_03.jpg', desc: '블랙 래시가드 스윔원피스', descEn: 'a black long-sleeve rash-guard swim dress' },
   { talent: 'W_B', code: 'B_W_C_03', file: 'B_W_C_03.jpg', desc: '그레이 오버블레이저+셔츠+스커트', descEn: 'an oversized grey blazer over a pale blue shirt with a grey mini skirt' },
   { talent: 'W_B', code: 'B_W_C_04', file: 'B_W_C_04.jpg', desc: '화이트 크롭탑+블랙 스윔하의', descEn: 'a white cropped top with black swim bottoms' },
-  { talent: 'W_B', code: 'B_W_C_05', file: 'B_W_A_C.jpg', desc: '그레이 티+데님 버뮤다', descEn: 'a grey tee with light-wash denim bermuda shorts and white socks' },
+  // B_W_A_C.jpg 는 B_W_C_01(그레이 티+데님 쇼츠)과 같은 옷 — 중복이라 등록하지 않는다
   { talent: 'M_A', code: 'A_M_C_04', file: 'A_M_C_04.jpg', desc: '화이트 티+그레이 와이드슬랙스', descEn: 'a plain white tee with light grey wide-leg trousers' },
   { talent: 'M_A', code: 'A_M_C_05', file: 'A_M_C_05.jpg', desc: '블랙 수트+타이', descEn: 'a black suit with a white shirt and a slim black tie' },
   { talent: 'M_A', code: 'A_M_C_06', file: 'A_M_C_06.jpg', desc: '그래픽 탱크+네이비 보드쇼츠', descEn: 'a sleeveless graphic tank top with navy board shorts' },
