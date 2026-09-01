@@ -77,22 +77,26 @@ export async function POST(req: Request) {
       kind?: 'image' | 'promo' | 'brandimg';
       brands?: string[];
     };
-    const q = String(body.q || '').trim();
-    if (!q) return NextResponse.json({ ok: false, error: '검색어가 필요합니다.' }, { status: 400 });
-
     /*
      * 업체별 대표 이미지.
      * 블로그·카페 검색은 이미지를 주지 않는다. "이 업체가 어떤 비주얼을 쓰나" 는
      * 업체명으로 이미지 검색을 한 번 더 돌려야 나온다. 저장하지 않고 보여주기만 한다.
+     *
+     * 검색어(q) 검증보다 **앞**에 둔다 — 이 분기는 brands 만 쓰고 q 를 쓰지 않는다.
+     * 뒤에 뒀다가 400 "검색어가 필요합니다" 로 막혀 이미지가 아예 안 떴다.
      */
     if (body.kind === 'brandimg') {
       const brands = (body.brands ?? []).slice(0, 8);
-      const out: Record<string, { link: string; thumbnail: string }[]> = {};
+      const out: Record<string, { link: string; thumbnail: string; title: string; sizeWidth: number; sizeHeight: number }[]> = {};
       await Promise.all(
         brands.map(async (b) => {
           try {
-            const imgs = await searchImages(`${b} 빈백`, { display: 6, sort: 'sim' });
-            out[b] = imgs.map((x) => ({ link: x.link, thumbnail: x.thumbnail }));
+            // 이 화면의 주인공은 이미지다 — 넉넉히 가져온다
+            const imgs = await searchImages(`${b} 빈백`, { display: 18, sort: 'sim' });
+            out[b] = imgs.map((x) => ({
+              link: x.link, thumbnail: x.thumbnail, title: x.title,
+              sizeWidth: x.sizeWidth, sizeHeight: x.sizeHeight,
+            }));
           } catch {
             out[b] = [];
           }
@@ -100,6 +104,9 @@ export async function POST(req: Request) {
       );
       return NextResponse.json({ ok: true, brandImages: out });
     }
+
+    const q = String(body.q || '').trim();
+    if (!q) return NextResponse.json({ ok: false, error: '검색어가 필요합니다.' }, { status: 400 });
 
     // 프로모션 검색 — 블로그·카페 글. 이벤트 페이지는 끝나면 사라지지만 후기는 남는다.
     if (body.kind === 'promo') {

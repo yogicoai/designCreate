@@ -66,7 +66,9 @@ export default function TrendBoard() {
   // 요기보는 우리 브랜드라 경쟁사 분석에서 기본으로 뺀다
   const [showOurs, setShowOurs] = useState(false);
   /** 업체별 대표 이미지 — 검색 후 한 번 더 불러온다 (저장하지 않음) */
-  const [brandImgs, setBrandImgs] = useState<Record<string, { link: string; thumbnail: string }[]>>({});
+  const [brandImgs, setBrandImgs] = useState<Record<string, Found[]>>({});
+  /** 업체 이미지 중 담을 것 — 이 화면의 결과물은 결국 이미지다 */
+  const [pickedBrandImgs, setPickedBrandImgs] = useState<Set<string>>(new Set());
   const [months, setMonths] = useState<string[]>([]);
   const [month, setMonth] = useState('');
   const [saved, setSaved] = useState<Saved[]>([]);
@@ -173,6 +175,25 @@ export default function TrendBoard() {
       setNote(`${j.saved}건 담았습니다.`);
       setFoundPromos((cur) => cur.map((p) => (pickedPromos.has(p.link) ? { ...p, saved: true } : p)));
       setPickedPromos(new Set());
+      load(month);
+    } finally { setBusy(null); }
+  }
+
+  /** 업체 이미지를 월별 이미지 보드로 담는다 — 두 탭을 잇는 지점 */
+  async function keepBrandImgs() {
+    const all = Object.values(brandImgs).flat();
+    const picks = all.filter((x) => pickedBrandImgs.has(x.link));
+    if (!picks.length) return;
+    setBusy('save'); setErr('');
+    try {
+      const res = await fetch('/api/trends', {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ items: picks, month: saveMonth, keyword: q.trim() || '경쟁사' }),
+      });
+      const j = await res.json();
+      if (!j.ok) { setErr(j.error || '담기 실패'); return; }
+      setNote(`이미지 ${j.saved}장을 ${j.month} 보드에 담았습니다.`);
+      setPickedBrandImgs(new Set());
       load(month);
     } finally { setBusy(null); }
   }
@@ -315,9 +336,9 @@ export default function TrendBoard() {
         <div className="card p-4 mb-4">
           <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
             <div className="label">
-              2. 담을 것만 고르세요{' '}
+              2. 업체별 — 이미지를 골라 담으세요{' '}
               <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
-                — 업체별로 묶었습니다. 게시일이 있으면 그 달로 정리됩니다.
+                — 담은 이미지는 &apos;연출 이미지&apos; 탭의 월별 보드로 갑니다.
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -325,9 +346,16 @@ export default function TrendBoard() {
                 <input type="checkbox" checked={showOurs} onChange={(e) => setShowOurs(e.target.checked)} />
                 요기보(자사) 포함
               </label>
-              <button className="btn btn-primary text-[12px]" onClick={keepPromo}
+              <span className="text-[11px]" style={{ color: 'var(--text-mute)' }}>월</span>
+              <input className="input py-1 text-[11px]" style={{ width: 96 }} value={saveMonth}
+                     onChange={(e) => setSaveMonth(e.target.value)} placeholder="YYYY-MM" />
+              <button className="btn btn-primary text-[12px]" onClick={keepBrandImgs}
+                      disabled={!pickedBrandImgs.size || busy === 'save'}>
+                {busy === 'save' ? '담는 중…' : `이미지 ${pickedBrandImgs.size}장 담기`}
+              </button>
+              <button className="btn text-[12px]" onClick={keepPromo}
                       disabled={!pickedPromos.size || busy === 'save'}>
-                {busy === 'save' ? '담는 중…' : `${pickedPromos.size}건 담기`}
+                글 {pickedPromos.size}건
               </button>
             </div>
           </div>
@@ -353,18 +381,35 @@ export default function TrendBoard() {
                   ) : null;
                 })()}
                 {(brandImgs[brand] ?? []).length > 0 && (
-                  <div className="flex gap-1.5 mb-1.5 overflow-x-auto pb-1">
-                    {(brandImgs[brand] ?? []).map((im) => (
-                      <a key={im.link} href={im.link} target="_blank" rel="noreferrer noopener" className="shrink-0">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={im.thumbnail} alt={brand} loading="lazy"
-                             className="rounded-lg border object-cover"
-                             style={{ width: 74, height: 74, borderColor: 'var(--line)' }} />
-                      </a>
-                    ))}
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-2">
+                    {(brandImgs[brand] ?? []).map((im) => {
+                      const on = pickedBrandImgs.has(im.link);
+                      return (
+                        <button key={im.link} className="rounded-lg overflow-hidden border relative block w-full"
+                                style={{ padding: 0, background: 'var(--surface-2)',
+                                         borderColor: on ? 'var(--accent)' : 'var(--line)', borderWidth: on ? 2 : 1 }}
+                                onClick={() => setPickedBrandImgs((c) => {
+                                  const n = new Set(c);
+                                  if (n.has(im.link)) n.delete(im.link); else n.add(im.link);
+                                  return n;
+                                })}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={im.thumbnail} alt={brand} loading="lazy"
+                               className="w-full object-cover" style={{ aspectRatio: '1/1' }} />
+                          {on && (
+                            <span className="absolute top-1 left-1 w-5 h-5 rounded-full text-[11px] flex items-center justify-center"
+                                  style={{ background: 'var(--accent)', color: '#fff' }}>✓</span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
-                <div className="flex flex-col gap-1">
+                <details>
+                  <summary className="text-[10.5px] cursor-pointer mb-1" style={{ color: 'var(--text-mute)' }}>
+                    관련 글 {list.length}건 보기
+                  </summary>
+                  <div className="flex flex-col gap-1">
                   {list.map((pp) => {
                     const on = pickedPromos.has(pp.link);
                     return (
@@ -395,7 +440,8 @@ export default function TrendBoard() {
                       </div>
                     );
                   })}
-                </div>
+                  </div>
+                </details>
               </div>
             );
           })}
