@@ -37,6 +37,7 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const [filter, setFilter] = useState<string>('');
+  const [page, setPage] = useState(1);
   /** 등록할 때 적용할 분류 — 고르기 전에는 파일창을 열지 않는다 */
   const [uploadCategory, setUploadCategory] = useState<string>('');
   const fileInput = useRef<HTMLInputElement>(null);
@@ -69,6 +70,8 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
             { url: json.url, title: json.title, width: json.width, height: json.height, category: json.category ?? null, tags: [], source: 'upload', createdAt: new Date().toISOString() },
             ...cur.filter((x) => x.url !== json.url),
           ]);
+          // 새로 올린 건 맨 앞에 붙는다 — 3페이지를 보고 있었다면 안 보인다
+          setPage(1);
         } else setErr(json.error || '업로드 실패');
       }
     } finally {
@@ -150,7 +153,45 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
   }
 
   const categories = [...new Set(items.map((x) => x.category).filter(Boolean))] as string[];
-  const shown = filter ? items.filter((x) => x.category === filter) : items;
+  const matched = filter ? items.filter((x) => x.category === filter) : items;
+
+  /*
+   * 게시판식 페이지네이션 — 한 번에 20개.
+   * 레퍼런스가 쌓이면 한 화면에 다 뿌리는 게 느리고 찾기도 어렵다.
+   * 삭제·숨김으로 개수가 줄어 현재 페이지가 비면 마지막 페이지로 당겨온다
+   * (마지막 항목을 지우고 빈 화면만 남는 걸 막는다).
+   */
+  const PER_PAGE = 20;
+  const totalPages = Math.max(1, Math.ceil(matched.length / PER_PAGE));
+  const current = Math.min(page, totalPages);
+  const shown = matched.slice((current - 1) * PER_PAGE, current * PER_PAGE);
+
+  /** 1234 … 형태로 보여줄 페이지 번호 (최대 10개 창) */
+  function pageWindow(): number[] {
+    const WINDOW = 10;
+    let start = Math.max(1, current - Math.floor(WINDOW / 2));
+    const end = Math.min(totalPages, start + WINDOW - 1);
+    start = Math.max(1, end - WINDOW + 1);
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }
+
+  const pageBtn = (label: string, to: number, disabled: boolean, active = false) => (
+    <button
+      key={label + to}
+      onClick={() => !disabled && setPage(to)}
+      disabled={disabled}
+      className="min-w-[30px] h-[30px] px-2 rounded-lg text-[12px] tabular-nums"
+      style={{
+        border: '1px solid ' + (active ? 'var(--accent)' : 'var(--line)'),
+        background: active ? 'var(--accent-soft)' : 'transparent',
+        color: active ? 'var(--accent)' : disabled ? 'var(--text-mute)' : 'var(--text-dim)',
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.4 : 1,
+      }}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <div>
@@ -192,16 +233,36 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
       {categories.length > 0 && (
         <div className="flex items-center gap-1.5 mb-4 flex-wrap">
           <span className="label mr-1">분류</span>
-          <button className="chip" onClick={() => setFilter('')}
+          <button className="chip" onClick={() => { setFilter(''); setPage(1); }}
                   style={!filter ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
             전체 ({items.length})
           </button>
           {categories.map((c) => (
-            <button key={c} className="chip" onClick={() => setFilter(c === filter ? '' : c)}
+            <button key={c} className="chip" onClick={() => { setFilter(c === filter ? '' : c); setPage(1); }}
                     style={filter === c ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
               {CATEGORY_KR[c] ?? c} ({items.filter((x) => x.category === c).length})
             </button>
           ))}
+        </div>
+      )}
+
+      {/* 지금 몇 번째를 보고 있는지 — 게시판이면 이게 있어야 길을 잃지 않는다 */}
+      {matched.length > 0 && (
+        <div className="flex items-baseline justify-between mb-2">
+          <span className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
+            총 <b style={{ color: 'var(--text-dim)' }}>{matched.length}</b>개
+            {totalPages > 1 && (
+              <>
+                {' · '}
+                {(current - 1) * PER_PAGE + 1}–{Math.min(current * PER_PAGE, matched.length)} 표시
+              </>
+            )}
+          </span>
+          {totalPages > 1 && (
+            <span className="text-[11.5px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
+              {current} / {totalPages} 페이지
+            </span>
+          )}
         </div>
       )}
 
@@ -268,6 +329,17 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 페이지 번호 — 1 2 3 4 … */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-1 mt-5 flex-wrap">
+          {pageBtn('«', 1, current === 1)}
+          {pageBtn('‹', current - 1, current === 1)}
+          {pageWindow().map((n) => pageBtn(String(n), n, false, n === current))}
+          {pageBtn('›', current + 1, current === totalPages)}
+          {pageBtn('»', totalPages, current === totalPages)}
         </div>
       )}
     </div>
