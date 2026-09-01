@@ -90,6 +90,11 @@ interface Body {
   products?: { line: string; colorKey?: string; placement?: string }[];
   /** 프롬프트 작성 방식 — 미지정이면 서버 기본값(PROMPT_MODE) */
   promptMode?: 'local' | 'opus';
+  /**
+   * 사람이 직접 쓴 프롬프트. 오면 템플릿도 Opus 도 타지 않는다 (무과금).
+   * 로컬에서 대화로 뽑은 프롬프트를 그대로 붙여넣는 용도.
+   */
+  promptOverride?: string;
   sizeValue?: string;
   /** sizeValue='custom' 일 때 직접 지정한 규격 */
   customSize?: { width: number; height: number };
@@ -351,7 +356,7 @@ export async function POST(req: Request) {
       houseRules: activeRules.map((r) => r.en).filter(Boolean),
     };
 
-    const written = await writePrompt(spec, body.promptMode);
+    const written = await writePrompt(spec, { mode: body.promptMode, manualPrompt: body.promptOverride });
 
     if (body.dryRun) {
       return NextResponse.json({
@@ -415,7 +420,7 @@ export async function POST(req: Request) {
     if (usedRefs.length !== written.refs.length) {
       // 참조가 빠지면 FIRST/SECOND 번호가 어긋난다 — 프롬프트를 다시 쓴다
       console.warn(`[generate] 참조 ${written.refs.length - usedRefs.length}장 누락 — 프롬프트 재작성`);
-      const redone = await writePrompt(spec, body.promptMode);
+      const redone = await writePrompt(spec, { mode: body.promptMode, manualPrompt: body.promptOverride });
       written.prompt = redone.prompt;
     }
 
@@ -450,6 +455,19 @@ export async function POST(req: Request) {
       } catch (e) {
         const err = e as GeminiError & HiggsfieldError;
         results.push({ ok: false, error: err.message, blockReason: err.blockReason ?? null, status: err.status ?? null });
+        /*
+         * 힉스필드가 크레딧 부족을 내면 표시 잔액을 0 으로 못박는다.
+         * 앱이 쓰는 API 키와 MCP 계정은 지갑이 달라서, MCP 잔액을 기준값으로 넣어두면
+         * 화면은 "2,386 크레딧 남음"이라 말하는데 생성은 403 으로 죽는다.
+         * 한 번 겪은 일이라, 실패를 본 즉시 화면이 거짓말을 멈추게 한다.
+         */
+        if (engine === 'higgs' && /not enough credits|insufficient/i.test(err.message || '')) {
+          await usageCol.updateOne(
+            { _id: 'higgs-image' as never },
+            { $set: { baseline: 0, count: 0, depleted: true, lastErrorAt: new Date() } },
+            { upsert: true },
+          );
+        }
         if (err.status === 422 || err.quotaExhausted) break; // 같은 요청은 같은 이유로 또 막힌다
         continue;
       }

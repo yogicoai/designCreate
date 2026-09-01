@@ -1,5 +1,6 @@
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
+import { loadReference, colorSwatch } from './gemini';
 
 /**
  * 생성 프롬프트 작성기.
@@ -695,30 +696,72 @@ const OPUS_SYSTEM = `너는 요기보(빈백 소파 브랜드) 자사몰의 AI �
 export interface WriteResult {
   prompt: string;
   refs: RefSlot[];
-  mode: 'local' | 'opus';
+  /** manual = 사람이 써서 붙여넣은 프롬프트. 아무 API 도 호출하지 않는다 (무과금) */
+  mode: 'local' | 'opus' | 'manual';
   usage?: { input_tokens: number; output_tokens: number };
+}
+
+export interface WriteOptions {
+  /** 'local' | 'opus' — 미지정이면 서버 env(PROMPT_MODE) */
+  mode?: 'local' | 'opus';
+  /**
+   * 사람이 직접 쓴 프롬프트. 오면 이게 무조건 이긴다 — 템플릿도 Opus 도 타지 않는다.
+   * 참조 이미지 목록은 그대로 조립하므로 FIRST/SECOND 순서는 유지된다.
+   */
+  manualPrompt?: string;
 }
 
 /**
  * 프롬프트를 만든다. PROMPT_MODE=opus 이고 키가 있으면 Opus 가 쓰고, 아니면 템플릿으로 조립한다.
  * Opus 호출이 실패하면 템플릿으로 떨어진다 — 프롬프트를 못 만들어 생성이 막히는 것이 가장 나쁘다.
  */
-export async function writePrompt(spec: GenerationSpec, override?: 'local' | 'opus'): Promise<WriteResult> {
+export async function writePrompt(spec: GenerationSpec, opts: WriteOptions = {}): Promise<WriteResult> {
   const refs = buildReferences(spec);
+
+  // 사람이 쓴 프롬프트가 최우선. 로컬에서 무과금으로 최고 품질을 쓰는 길이다.
+  const manual = opts.manualPrompt?.trim();
+  if (manual) return { prompt: manual, refs, mode: 'manual' };
+
   // 키가 있으면 기본이 Opus 다. 장당 ~₩60 은 품질 대비 감수할 값이고,
   // 손으로 쓴 프롬프트 수준이 나오는 지점이 바로 여기다.
   // 로컬 개발만 .env.local 의 PROMPT_MODE=local 로 명시적으로 끈다.
   // 컷 단위 override 가 오면 그게 이긴다 (화면의 프롬프트 작성 토글).
-  const wantOpus = (override ?? process.env.PROMPT_MODE ?? 'opus') === 'opus' && !!process.env.ANTHROPIC_API_KEY;
+  const wantOpus = (opts.mode ?? process.env.PROMPT_MODE ?? 'opus') === 'opus' && !!process.env.ANTHROPIC_API_KEY;
 
   if (!wantOpus) return { prompt: buildPromptLocal(spec, refs), refs, mode: 'local' };
 
   try {
     const client = new Anthropic();
-    // 참조는 전부 공개 URL 이라 URL 소스로 그대로 넘긴다 (base64 인코딩 불필요).
-    const imageBlocks = refs
-      .filter((r) => r.url)
-      .map((r) => ({ type: 'image' as const, source: { type: 'url' as const, url: r.url! } }));
+    /*
+     * 참조 이미지는 **우리가 받아서** base64 로 넘긴다.
+     * URL 소스로 넘기면 Anthropic 서버가 cafe24 를 직접 받아오는데, 거기서 타임아웃이 나면
+     *   400 "The request timed out while trying to download the file"
+     * 로 통째로 실패하고 템플릿으로 폴백된다 — 이미지 생성비는 그대로 나가면서
+     * 프롬프트만 예전 품질로 돌아가는 최악의 조합이다. 우리가 받아오면 재시도도 우리 몫이다.
+     *
+     * 겸사겸사 768px 로 줄인다. Opus 가 할 일은 조명 방향·재질·구도를 읽는 것이지
+     * 얼굴 픽셀을 세는 게 아니다 (그건 나노바나나가 1024~1600px 원본으로 한다).
+     * 입력 토큰이 줄어 프롬프트 원가도 같이 내려간다.
+     *
+     * 스와치도 이제 함께 보낸다. 예전에는 URL 이 없어 빠졌는데, 그러면 Opus 가
+     * 보지도 않은 이미지를 'the SIXTH image swatch' 라고 지칭하게 된다.
+     */
+    const OPUS_MAX_SIDE = 768;
+    const loaded = await Promise.all(
+      refs.map(async (r) => {
+        if (r.url) return loadReference(r.url, OPUS_MAX_SIDE);
+        if (r.swatchHex) return colorSwatch(r.swatchHex);
+        return null;
+      }),
+    );
+    const imageBlocks = loaded
+      .filter((img): img is NonNullable<typeof img> => !!img)
+      .map((img) => ({
+        type: 'image' as const,
+        source: { type: 'base64' as const, media_type: img.mimeType as 'image/jpeg' | 'image/png', data: img.data },
+      }));
+    // 한 장도 못 받아오면 Opus 에게 텍스트만 주는 셈이라 템플릿과 다를 게 없다
+    if (!imageBlocks.length && refs.length) throw new Error('참조 이미지를 한 장도 받아오지 못했습니다.');
 
     const res = await client.messages.create({
       model: process.env.ANTHROPIC_MODEL || 'claude-opus-5',

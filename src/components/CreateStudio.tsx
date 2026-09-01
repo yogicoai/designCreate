@@ -164,7 +164,9 @@ export default function CreateStudio(p: Props) {
    *   ref    = 가진 사진으로 제작 (사진이 출발점)
    *   direct = 자산으로 직접 제작 (제품·모델·포즈 조합이 출발점)
    */
-  const [flow, setFlow] = useState<'ref' | 'direct'>('direct');
+  // 기본은 '레퍼런스로 제작하기'. 실무에서 압도적으로 이쪽이 많고,
+  // 레퍼런스를 깔고 시작하는 편이 결과도 안정적이다.
+  const [flow, setFlow] = useState<'ref' | 'direct'>('ref');
   const [engine, setEngine] = useState<'gemini' | 'higgs'>('gemini');
   const [balance, setBalance] = useState<{ gemini?: { count: number; limit: number; remaining: number }; higgs?: { credits?: number | null; configured?: boolean; perImage?: number; estimated?: boolean } } | null>(null);
   const [mode, setMode] = useState<'thumbnail' | 'banner'>('thumbnail');
@@ -203,6 +205,14 @@ export default function CreateStudio(p: Props) {
   const [zipping, setZipping] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dry, setDry] = useState<DryRunResult | null>(null);
+  /*
+   * 프롬프트 직접 편집.
+   * 앱은 이 대화에 접근할 수 없다 — 프롬프트가 필요하면 API 를 호출하고 돈을 낸다.
+   * 그래서 사람이 쓴 프롬프트를 붙여넣는 길을 열어둔다.
+   * 로컬에서 대화로 뽑은 프롬프트를 그대로 쓰면 무과금으로 최고 품질이 나온다.
+   */
+  const [promptText, setPromptText] = useState('');
+  const [promptEdited, setPromptEdited] = useState(false);
   const [busy, setBusy] = useState<'dry' | 'gen' | null>(null);
   const [results, setResults] = useState<GenResult[]>([]);
   const [err, setErr] = useState('');
@@ -377,7 +387,9 @@ export default function CreateStudio(p: Props) {
       ...(direction.trim() ? { direction: direction.trim() } : {}),
       tier,
       // promptMode 는 보내지 않는다 — 서버 env 가 유일한 결정권자여야
-      // 클라이언트가 과금 모드를 강제로 켤 수 없다
+      // 클라이언트가 과금 모드를 강제로 켤 수 없다.
+      // 단 사람이 직접 쓴 프롬프트는 예외 — 이건 과금을 늘리는 게 아니라 없애는 방향이다
+      ...(promptEdited && promptText.trim() ? { promptOverride: promptText.trim() } : {}),
     };
   }
 
@@ -396,6 +408,8 @@ export default function CreateStudio(p: Props) {
       else {
         setResults(json.results ?? []);
         if (json.prompt) setDry({ prompt: json.prompt, promptMode: json.promptMode, refs: json.refs, aspect: json.aspect, target: json.target, usage: json.usage ?? null, promptCost: json.promptCost ?? null });
+          setPromptText(json.prompt);
+          setPromptEdited(false);
         if (!json.ok) setErr(json.results?.find((r: GenResult) => r.error)?.error || '생성 실패');
       }
     } catch (e) {
@@ -1125,18 +1139,36 @@ ${c.spec}`}>
         {dry?.prompt && (
           <div className="card p-3 mb-4" style={{ borderColor: 'var(--accent-dim)' }}>
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-[13px] font-bold">프롬프트 <span className="font-normal" style={{ color: 'var(--text-mute)' }}>({dry.promptMode})</span></h2>
+              <h2 className="text-[13px] font-bold">
+                프롬프트{' '}
+                <span className="font-normal" style={{ color: 'var(--text-mute)' }}>
+                  ({promptEdited ? '직접 입력' : dry.promptMode})
+                </span>
+              </h2>
               <span className="text-[10px]" style={{ color: 'var(--text-mute)' }}>{dry.aspect ?? ''}</span>
             </div>
+            {/* 읽기 전용이 아니다 — 고쳐 쓰거나 통째로 붙여넣으면 그대로 생성에 쓰인다 */}
             <textarea
-              readOnly
-              value={dry.prompt}
-              onFocus={(e) => e.currentTarget.select()}
+              value={promptText}
+              onChange={(e) => { setPromptText(e.target.value); setPromptEdited(true); }}
+              placeholder="여기에 프롬프트를 붙여넣으면 그대로 생성에 쓰입니다."
               className="input font-mono text-[10px] leading-relaxed"
               style={{ height: 150, resize: 'vertical' }}
             />
+            {promptEdited && (
+              <div className="text-[10px] mt-1.5 px-0.5 leading-relaxed" style={{ color: 'var(--ok)' }}>
+                이 프롬프트가 그대로 들어갑니다 — 템플릿도 Opus 도 타지 않습니다 <b>(프롬프트 무과금)</b>.
+                참조 이미지 순서는 아래 목록 그대로이니 FIRST/SECOND 지칭을 맞춰 쓰세요.
+              </div>
+            )}
             <div className="flex gap-1.5 mt-2 flex-wrap">
               <button className="btn text-[11px]" onClick={() => copyText('prompt')}>{copied === 'prompt' ? '복사됨 ✓' : '프롬프트 복사'}</button>
+              {promptEdited && (
+                <button className="btn text-[11px]"
+                        onClick={() => { setPromptText(dry.prompt); setPromptEdited(false); }}>
+                  되돌리기
+                </button>
+              )}
               <button className="btn text-[11px]" onClick={() => copyText('urls')}>{copied === 'urls' ? '복사됨 ✓' : '참조 URL 복사'}</button>
               <button className="btn text-[11px]" onClick={downloadTestKit} disabled={zipping}>{zipping ? '묶는 중…' : '테스트 키트 ZIP'}</button>
             </div>

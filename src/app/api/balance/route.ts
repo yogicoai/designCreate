@@ -46,6 +46,14 @@ export async function GET() {
         credits: baseline != null ? Math.max(0, baseline - spent) : null,
         estimated: true,
         syncedAt: h?.syncedAt ?? null,
+        /*
+         * 이 앱이 쓰는 API 키의 지갑이 크레딧 부족(403)을 낸 적이 있는지.
+         * 중요한 이유: MCP 계정과 API 키는 크레딧 지갑이 다르다. MCP 쪽 잔액을
+         * 기준값으로 넣어두면 화면은 "크레딧 넉넉함"이라 말하는데 생성은 403 으로 죽는다.
+         * 실제로 그렇게 한 번 속았으므로 상태를 따로 들고 있는다.
+         */
+        depleted: !!h?.depleted,
+        lastErrorAt: h?.lastErrorAt ?? null,
       };
     } else {
       out.higgs = { configured: false };
