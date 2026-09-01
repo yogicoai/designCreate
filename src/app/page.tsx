@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import Zoomable from '@/components/Zoomable';
+import DashboardCut from '@/components/DashboardCut';
 import { getOverview, getCuts } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
@@ -69,38 +69,26 @@ export default async function DashboardPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 2xl:grid-cols-6 gap-2.5">
               {recent.map((c) => {
                 const label = c.line ? `${c.line} · ${c.colorName}` : (c.title || c.spec || '생성 컷');
+                const meta = [
+                  String(c.createdAt).slice(0, 10),
+                  c.width && c.height ? `${c.width}×${c.height}` : '',
+                  typeof c.deltaE === 'number' ? `ΔE ${c.deltaE}` : '',
+                  c.aiModel ?? '',
+                ].filter(Boolean).join(' · ');
                 return (
-                  <div key={c.id}>
-                    {/*
-                      방금 뽑은 컷을 확인하러 온 것이지 갤러리를 뒤지러 온 게 아니다.
-                      그래서 클릭은 그 자리에서 크게 보여주고 닫히면 끝 — 화면을 떠나지 않는다.
-                      갤러리로 가고 싶으면 위의 '전체 보기'가 있다.
-                    */}
-                    <Zoomable
-                      src={c.url}
-                      alt={c.spec}
-                      className="w-full aspect-square object-cover rounded-lg border transition-colors"
-                      style={{ borderColor: 'var(--accent-dim)', background: 'var(--surface-2)' }}
-                      caption={[
-                        c.title && c.title !== label ? `${label} — ${c.title}` : label,
-                        [
-                          String(c.createdAt).slice(0, 10),
-                          c.width && c.height ? `${c.width}×${c.height}` : '',
-                          typeof c.deltaE === 'number' ? `ΔE ${c.deltaE}` : '',
-                          c.aiModel ?? '',
-                        ]
-                          .filter(Boolean)
-                          .join(' · '),
-                      ]
-                        .filter(Boolean)
-                        .join('\n')}
-                    />
-                    <div className="mt-1.5 text-[11px] truncate" style={{ color: 'var(--text-dim)' }}>{label}</div>
-                    <div className="text-[9.5px]" style={{ color: 'var(--text-mute)' }}>
-                      {String(c.createdAt).slice(0, 10)}
-                      {typeof c.deltaE === 'number' && <span> · ΔE {c.deltaE}</span>}
-                    </div>
-                  </div>
+                  <DashboardCut
+                    key={c.id}
+                    id={c.id}
+                    url={c.url}
+                    label={label}
+                    sub={[String(c.createdAt).slice(0, 10), typeof c.deltaE === 'number' ? `ΔE ${c.deltaE}` : '']
+                      .filter(Boolean)
+                      .join(' · ')}
+                    caption={[c.title && c.title !== label ? `${label} — ${c.title}` : label, meta]
+                      .filter(Boolean)
+                      .join('\n')}
+                    source={c.source}
+                  />
                 );
               })}
             </div>

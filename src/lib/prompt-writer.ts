@@ -340,9 +340,18 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
   }
 
 
-  // 의상 크롭 (얼굴 제거본) — 자리가 남을 때만. 원본(imageUrl)은 절대 넣지 않는다:
-  // 레퍼 속 모델 얼굴이 결과에 섞이는 사고가 실측으로 확인돼 있다.
+  /*
+   * 의상 크롭 (얼굴 제거본) — 자리가 남을 때만. 원본(imageUrl)은 절대 넣지 않는다:
+   * 레퍼 속 모델 얼굴이 결과에 섞이는 사고가 실측으로 확인돼 있다.
+   *
+   * 인물이 3인 이상이면 크롭을 아예 넣지 않는다. 참조 예산은 유한한데
+   * 얼굴은 이미지가 없으면 못 살리고, 옷은 문장으로도 충분히 지정된다
+   * ("an ivory ringer tee with grey shorts"). 4인 × 의상크롭을 넣었다가
+   * 참조가 9장이 되면 얼굴 가중치가 다시 무너진다 — 얼굴엔 이미지, 옷은 텍스트.
+   */
+  const outfitCropAllowed = talents.filter((t) => !t.freeform).length < 3;
   talents.forEach((t, i) => {
+    if (!outfitCropAllowed) return;
     if (!t.outfit?.cropUrl) return;
     if (slots.length >= MAX_REFS - 1) return; // 스와치 자리는 남겨둔다
     slots.push({
@@ -501,8 +510,16 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
       else if (sheetIdx >= 0) L.push(`  EXPRESSION: ${t.expression.en} — use that panel from the expression sheet (the ${ORDINALS[sheetIdx]} image).`);
       else L.push(`  EXPRESSION: ${t.expression.en}.`);
     }
-    if (t.outfit) L.push(`  OUTFIT: ${t.outfit.descEn || t.outfit.desc} (${t.outfit.code}), barefoot unless stated otherwise.`);
-    else if (t.outfitFree) L.push(`  OUTFIT: ${t.outfitFree}, barefoot unless stated otherwise.`);
+    /*
+     * 편집(인물/의상 교체)일 때는 "베이스 옷을 갈아입힌다"를 명시해야 한다.
+     * 안 그러면 모델이 베이스의 옷을 그대로 두고 지정 의상을 무시한다.
+     */
+    const swaps = (spec.editTargets ?? []).some((x) => x === 'person' || x === 'outfit');
+    const overrideNote = swaps
+      ? ' This REPLACES whatever the person in the base image is wearing — do not keep the base garment.'
+      : '';
+    if (t.outfit) L.push(`  OUTFIT: ${t.outfit.descEn || t.outfit.desc} (${t.outfit.code}), barefoot unless stated otherwise.${overrideNote}`);
+    else if (t.outfitFree) L.push(`  OUTFIT: ${t.outfitFree}, barefoot unless stated otherwise.${overrideNote}`);
   });
 
   if (multi) {
@@ -525,6 +542,10 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
         'For every person that has an identity sheet, that sheet is absolute ground truth. The rendered face must be ' +
         'unmistakably the SAME person: same skull and jaw shape, same cheekbones, same eye shape and spacing, same nose, ' +
         'same lips, same hairline and hair texture.',
+      // 실패 사례: 시트는 중간길이 곱슬인데 베이스 인물의 짧은 머리가 그대로 남았다.
+      // 얼굴만 말하면 모델이 머리는 베이스에서 가져온다 — 머리를 따로 못박는다.
+      'HAIR COMES FROM THE SHEET, NOT FROM THE BASE: length, cut, parting, volume, curl or straightness and colour ' +
+        'must all match the identity sheet. Never keep the haircut of the person being replaced.',
       'DO NOT AVERAGE. Never blend the sheet face with whatever face is already in the base image — the base face is to be ' +
         'discarded completely and rebuilt from the sheet. A result that looks like a mix of the two is a failure.',
       'AGE IS LOCKED to what the sheet and the stated age say. Do not age a person up or down to suit the body, pose, ' +
