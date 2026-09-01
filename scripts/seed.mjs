@@ -558,3 +558,5 @@ console.log('
 ⚠️ products/talents 를 통째로 교체했으므로 영문 표기(nameEn/identityEn/descEn)와');
 console.log('   house_rules 분류가 초기화됩니다. 이어서 반드시 실행하세요:');
 console.log('   node scripts/seed-english.mjs  &&  node scripts/make-outfit-crops.mjs');
+console.log('   node scripts/make-expression-crops.mjs');
+console.log('   node scripts/backfill-shape-views.mjs   # 6개 라인의 유일한 사진 형태 참조');

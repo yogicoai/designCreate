@@ -40,7 +40,9 @@ export default async function CreatePage() {
       expressions={expressions}
       baseCuts={baseCuts}
       references={references}
-      promptMode={(process.env.PROMPT_MODE || 'local') === 'opus' ? 'opus' : 'local'}
+      promptMode={(process.env.PROMPT_MODE || 'opus') === 'opus' && process.env.ANTHROPIC_API_KEY ? 'opus' : 'local'}
+      /* 키가 없으면 화면에서 Opus 를 켤 수 없게 한다 — 켜봐야 매번 실패 후 템플릿 폴백이다 */
+      opusAvailable={!!process.env.ANTHROPIC_API_KEY}
     />
   );
 }

@@ -80,10 +80,36 @@ const EDIT_TOUCHES: Record<EditTarget, string[]> = {
   'text-removal': ['the overlaid text'],
 };
 
+export interface ProductSpec {
+  line: string;
+  shape: string;
+  negative: string;
+  modes: string;
+  dims: { w?: number; d?: number; h?: number; weight?: number };
+  scalePrompt: string;
+  color?: { name: string; nameEn: string; hex: string };
+  /** product_items.notes 의 "연출:" 영문 지침 — 있으면 modes 대신 쓴다 (실제 판매 데이터 기준) */
+  staging?: string;
+  /**
+   * 공식 제품 뷰 (360에서 뽑은 단일 각도 실사) — 형태·비례 앵커의 정본.
+   * colorMatched=false 면 같은 라인의 다른 색 뷰(형태만 참고, 색은 스와치가 잡는다).
+   */
+  views?: { angle: string; url: string; colorMatched: boolean }[];
+  /** 화면상 위치 — 'left' | 'centre' | 'right' | 'back' 등. 다중 배치에서 색·형태를 못박는다 */
+  placement?: string;
+}
+
 export interface TalentSpec {
   code: string;
   category: string;
   slot: string;
+  /**
+   * 자유 서술 인물 — 전속 모델이 아닌 경우 (예: 한국인 중년 남성).
+   * true 면 참조 이미지(대표컷·표정컷)가 없고 identityEn 서술만으로 생성한다.
+   */
+  freeform?: boolean;
+  /** 화면상 위치 — 다중 인물에서 누가 어디 앉는지 못박는다 */
+  placement?: string;
   /** 영문 아이덴티티 — 프롬프트에 그대로 들어간다 */
   identityEn: string;
   /** 영문 체형 서술 (제품 대비 상대 크기 포함) */
@@ -100,6 +126,8 @@ export interface TalentSpec {
   /** 사용할 표정 패널 */
   expression?: { kr: string; en: string };
   outfit?: { code: string; desc: string; descEn: string; cropUrl?: string };
+  /** 자유 서술 의상 — 전속 의상을 안 쓸 때 (예: 'a charcoal knit sweater and grey trousers') */
+  outfitFree?: string;
 }
 
 export interface GenerationSpec {
@@ -133,23 +161,11 @@ export interface GenerationSpec {
   /** 등장 인물 — 여러 명이면 **사진 왼쪽부터** person 1, 2, 3… 순서로 배정 */
   talents?: TalentSpec[];
 
-  /** 제품 */
-  product?: {
-    line: string;
-    shape: string;
-    negative: string;
-    modes: string;
-    dims: { w?: number; d?: number; h?: number; weight?: number };
-    scalePrompt: string;
-    color?: { name: string; nameEn: string; hex: string };
-    /** product_items.notes 의 "연출:" 영문 지침 — 있으면 modes 대신 쓴다 (실제 판매 데이터 기준) */
-    staging?: string;
-    /**
-     * 공식 제품 뷰 (360에서 뽑은 단일 각도 실사) — 형태·비례 앵커의 정본.
-     * colorMatched=false 면 같은 라인의 다른 색 뷰(형태만 참고, 색은 스와치가 잡는다).
-     */
-    views?: { angle: string; url: string; colorMatched: boolean }[];
-  };
+  /**
+   * 제품 — 한 컷에 여러 종을 배치할 수 있다 (예: 왼쪽 Lounger · 가운데 Max · 오른쪽 Pod).
+   * 순서는 화면 왼쪽부터. placement 로 위치를 못박으면 색이 뒤섞이지 않는다.
+   */
+  products?: ProductSpec[];
 
   size: SizeSpec;
 
@@ -227,8 +243,12 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
    */
   const talents = spec.talents ?? [];
   talents.forEach((t, i) => {
+    if (t.freeform) return; // 자유 서술 인물은 참조 이미지가 없다 — 텍스트로만 지정
     const multi = talents.length > 1;
-    const who = multi ? `PERSON ${i + 1} (counting people from the LEFT of the base image)` : 'the model';
+    // 명시 위치가 있으면 그걸 쓴다 — '왼쪽부터 N번째'와 'centre' 가 동시에 붙으면 서로 모순된다
+    const who = multi
+      ? `PERSON ${i + 1}${t.placement ? ` (${wherePhrase(t.placement)})` : ' (counting people from the LEFT of the base image)'}`
+      : 'the model';
     const n = multi ? `${i + 1} ` : '';
     const ident: { url?: string; title: string; role: string; sub: 'rep' | 'expr' | 'sheet' }[] = [
       {
@@ -292,14 +312,18 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
 
     // 공식 제품 뷰 — 형태가 어긋나는 사고의 직접 대응.
     // 눌림 레퍼는 "앉은 뒤의 변형"을, 공식 뷰는 "제품 자체의 형태·비례"를 잡는다.
-    for (const v of spec.product?.views ?? []) {
+    for (const { p, v } of (spec.products ?? []).flatMap((p) => (p.views ?? []).map((v) => ({ p, v })))) {
       slots.push({
         kind: 'product',
-        title: `제품 뷰 · ${v.angle}${v.colorMatched ? '' : ' (형태만)'}`,
+        title: `제품 뷰 · ${p.line}${p.placement ? `(${p.placement})` : ''} ${v.angle}${v.colorMatched ? '' : ' 형태만'}`,
         url: v.url,
-        role: v.colorMatched
-          ? `an official product photograph of the exact product from the ${ANGLE_EN[v.angle] ?? v.angle} — reproduce this exact three-dimensional shape, proportions and smooth seamless cover`
-          : `an official product photograph showing the exact SHAPE and proportions from the ${ANGLE_EN[v.angle] ?? v.angle} — it is shown in a different colour, so take ONLY the shape; the colour comes from the swatch`,
+        role: (() => {
+          const who = `the Yogibo ${p.line}${p.placement ? ` ${wherePhrase(p.placement)}` : ''}`;
+          const angle = ANGLE_EN[v.angle] ?? v.angle;
+          return v.colorMatched
+            ? `an official product photograph of ${who}, seen from the ${angle} — reproduce this exact three-dimensional shape, proportions and smooth seamless cover`
+            : `an official product photograph of ${who}, seen from the ${angle} — it is shown in a different colour, so take ONLY the shape and proportions; the colour is specified in the text`;
+        })(),
       });
     }
   }
@@ -322,12 +346,18 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
     });
   });
 
-  if (spec.product?.color?.hex) {
+  // 컬러 스와치 — 제품마다 한 장. 다중이면 어느 제품 색인지 못박는다.
+  for (const p of spec.products ?? []) {
+    if (!p.color?.hex) continue;
+    if (slots.length >= MAX_REFS) break;
+    const multi = (spec.products ?? []).length > 1;
     slots.push({
       kind: 'swatch',
-      title: `컬러 스와치 · ${spec.product.color.name}`,
-      swatchHex: spec.product.color.hex,
-      role: `the exact official colour swatch (${spec.product.color.hex}) — match this hue, saturation and darkness precisely`,
+      title: `컬러 스와치 · ${p.color.name}${multi ? ` (${p.line})` : ''}`,
+      swatchHex: p.color.hex,
+      role: multi
+        ? `the exact official colour swatch (${p.color.hex}) for the Yogibo ${p.line}${p.placement ? ` ${wherePhrase(p.placement)}` : ''} — match this hue, saturation and darkness precisely on that product only`
+        : `the exact official colour swatch (${p.color.hex}) — match this hue, saturation and darkness precisely`,
     });
   }
 
@@ -375,23 +405,50 @@ function compositionFor(spec: GenerationSpec): string {
 
 /** 제품 블록 — 12차 실측 4종 세트 */
 function productBlock(spec: GenerationSpec): string[] {
-  const p = spec.product;
-  if (!p) return [];
+  const products = spec.products ?? [];
+  if (!products.length) return [];
+  const multi = products.length > 1;
   const L: string[] = [];
-  const colorEn = p.color?.nameEn || p.color?.name || '';
-  L.push(`PRODUCT — Yogibo ${p.line}${colorEn ? ` (${colorEn})` : ''}.`);
-  L.push(`SHAPE: ${p.shape}.`);
-  const d = p.dims ?? {};
-  const dims = [d.w && `${d.w}cm wide`, d.d && `${d.d}cm deep`, d.h && `${d.h}cm tall/long`].filter(Boolean).join(' x ');
-  if (dims) L.push(`EXACT SIZE: ${dims}${d.weight ? `, ${d.weight}kg` : ''}.`);
-  if (p.scalePrompt) L.push(`SCALE ANCHOR: ${p.scalePrompt}.`);
-  L.push(`NEGATIVE: ${p.negative}.`);
-  if (p.color?.hex) L.push(`COLOUR: ${colorEn} (${p.color.hex}) — exact, must not drift toward a neighbouring hue.`);
-  L.push(`USE: ${p.staging || p.modes}.`);
+
+  if (multi) {
+    L.push(
+      `PRODUCTS — ${products.length} different Yogibo products in one scene. ` +
+        'Each is a separate product with its own shape and colour; do not merge them, ' +
+        'do not give them the same shape, and do not swap their colours:',
+    );
+  }
+
+  products.forEach((p, i) => {
+    const colorEn = p.color?.nameEn || p.color?.name || '';
+    // 다중일 때는 위치를 머리에 박아 색·형태가 뒤섞이는 걸 막는다
+    const where = p.placement ? `${p.placement.toUpperCase()} — ` : multi ? `PRODUCT ${i + 1} — ` : '';
+    if (multi) L.push('');
+    L.push(`${multi ? where : 'PRODUCT — '}Yogibo ${p.line}${colorEn ? ` (${colorEn})` : ''}.`);
+    L.push(`  SHAPE: ${p.shape}.`);
+    const d = p.dims ?? {};
+    const dims = [d.w && `${d.w}cm wide`, d.d && `${d.d}cm deep`, d.h && `${d.h}cm tall/long`].filter(Boolean).join(' x ');
+    if (dims) L.push(`  EXACT SIZE: ${dims}${d.weight ? `, ${d.weight}kg` : ''}.`);
+    if (p.scalePrompt) L.push(`  SCALE ANCHOR: ${p.scalePrompt}.`);
+    L.push(`  NEGATIVE: ${p.negative}.`);
+    if (p.color?.hex) L.push(`  COLOUR: ${colorEn} (${p.color.hex}) — exact, must not drift toward a neighbouring hue.`);
+    L.push(`  USE: ${p.staging || p.modes}.`);
+  });
   return L;
 }
 
 /** 인물 블록 — 여러 명이면 사진 왼쪽부터 PERSON 1/2/3 */
+/**
+ * 위치를 자연스러운 영어 구로 바꾼다.
+ * 'on the centre' 는 비문이고, 비문은 모델이 위치를 무시하는 원인이 된다.
+ */
+function wherePhrase(placement: string): string {
+  const p = placement.trim().toLowerCase();
+  if (p === 'centre' || p === 'center' || p === 'middle') return 'in the centre';
+  if (p === 'foreground') return 'in the foreground';
+  if (p === 'background') return 'in the background';
+  return `on the ${p}`;
+}
+
 function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
   const talents = spec.talents ?? [];
   if (!talents.length) return [];
@@ -399,19 +456,29 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
   const multi = talents.length > 1;
 
   if (multi) {
+    // 위치가 하나라도 명시되면 '왼쪽부터' 문장을 쓰면 안 된다 — PERSON 1 이 가운데인데
+    // 헤더가 왼쪽부터 세라고 하면 모델이 둘 중 하나를 버린다
+    const anyPlacement = talents.some((t) => t.placement);
     L.push(
-      `PEOPLE — exactly ${talents.length} people, assigned by position COUNTING FROM THE LEFT of the frame. ` +
-        'No extra people, no background bystanders, no duplicated faces.',
+      anyPlacement
+        ? `PEOPLE — exactly ${talents.length} people. Each person's position in the frame is stated explicitly below; ` +
+            'place them exactly there. No extra people, no background bystanders, no duplicated faces.'
+        : `PEOPLE — exactly ${talents.length} people, assigned by position COUNTING FROM THE LEFT of the frame. ` +
+            'No extra people, no background bystanders, no duplicated faces.',
     );
   }
 
   talents.forEach((t, i) => {
-    const head = multi ? `PERSON ${i + 1} (${i === 0 ? 'leftmost' : `${ORDINALS[i].toLowerCase()} from left`})` : 'MODEL';
+    const where = t.placement
+      ? wherePhrase(t.placement)
+      : i === 0 ? 'leftmost' : `${ORDINALS[i].toLowerCase()} from left`;
+    const head = multi ? `PERSON ${i + 1} (${where})` : 'MODEL';
     // 이 인물의 시트가 몇 번째 참조인지 명시한다 — 다인에서 얼굴이 섞이는 걸 막는 핵심
     const slotIdxs = refs
       .map((r, idx) => (r.kind === 'talent' && r.personIndex === i + 1 ? idx : -1))
       .filter((idx) => idx >= 0);
-    const sheetRef = slotIdxs.length
+    // freeform 인물은 참조 이미지가 없다 — 없는 이미지를 가리키면 안 된다
+    const sheetRef = !t.freeform && slotIdxs.length
       ? ` — identity from the ${slotIdxs.map((idx) => ORDINALS[idx]).join(' and ')} image${slotIdxs.length > 1 ? 's' : ''}`
       : '';
     L.push(`${head}${sheetRef}: ${t.identityEn}.`);
@@ -424,16 +491,22 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
       else L.push(`  EXPRESSION: ${t.expression.en}.`);
     }
     if (t.outfit) L.push(`  OUTFIT: ${t.outfit.descEn || t.outfit.desc} (${t.outfit.code}), barefoot unless stated otherwise.`);
+    else if (t.outfitFree) L.push(`  OUTFIT: ${t.outfitFree}, barefoot unless stated otherwise.`);
   });
 
   if (multi) {
+    const anyRef = talents.some((t) => !t.freeform);
     L.push(
-      'Each person keeps their own distinct identity from their own reference sheet — never blend faces between people, never give two people the same face.',
+      anyRef
+        ? 'Each person keeps their own distinct identity — those with a reference sheet must match it exactly; never blend faces between people, never give two people the same face.'
+        : 'Each person has a clearly distinct face and age; never give two people the same face.',
     );
   }
-  L.push(
-    'FACE MATCH: the identity sheets are ground truth. The rendered face must be recognisably the SAME person — same bone structure, eye shape, nose, lips, hairline. Do not beautify, de-age, or drift toward a generic face.',
-  );
+  if (talents.some((t) => !t.freeform)) {
+    L.push(
+      'FACE MATCH: for every person that has an identity sheet, that sheet is ground truth. The rendered face must be recognisably the SAME person — same bone structure, eye shape, nose, lips, hairline. Do not beautify, de-age, or drift toward a generic face.',
+    );
+  }
   return L;
 }
 
@@ -630,9 +703,13 @@ export interface WriteResult {
  * 프롬프트를 만든다. PROMPT_MODE=opus 이고 키가 있으면 Opus 가 쓰고, 아니면 템플릿으로 조립한다.
  * Opus 호출이 실패하면 템플릿으로 떨어진다 — 프롬프트를 못 만들어 생성이 막히는 것이 가장 나쁘다.
  */
-export async function writePrompt(spec: GenerationSpec): Promise<WriteResult> {
+export async function writePrompt(spec: GenerationSpec, override?: 'local' | 'opus'): Promise<WriteResult> {
   const refs = buildReferences(spec);
-  const wantOpus = (process.env.PROMPT_MODE || 'local') === 'opus' && !!process.env.ANTHROPIC_API_KEY;
+  // 키가 있으면 기본이 Opus 다. 장당 ~₩60 은 품질 대비 감수할 값이고,
+  // 손으로 쓴 프롬프트 수준이 나오는 지점이 바로 여기다.
+  // 로컬 개발만 .env.local 의 PROMPT_MODE=local 로 명시적으로 끈다.
+  // 컷 단위 override 가 오면 그게 이긴다 (화면의 프롬프트 작성 토글).
+  const wantOpus = (override ?? process.env.PROMPT_MODE ?? 'opus') === 'opus' && !!process.env.ANTHROPIC_API_KEY;
 
   if (!wantOpus) return { prompt: buildPromptLocal(spec, refs), refs, mode: 'local' };
 

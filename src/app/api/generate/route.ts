@@ -7,6 +7,7 @@ import {
   type TalentSpec,
   type UploadedRefSpec,
   type EditTarget,
+  type ProductSpec,
 } from '@/lib/prompt-writer';
 import { generateImage, loadReference, colorSwatch, GeminiError, type GenAspect, type InlineImage } from '@/lib/gemini';
 import { generateImage as hfGenerate, higgsfieldConfigured, HiggsfieldError } from '@/lib/higgsfield';
@@ -41,8 +42,25 @@ function costFromUsage(u?: { promptTokens: number; imageTokens: number; thoughtT
   return { usd: Number(usd.toFixed(5)), krw: Math.round(usd * USD_TO_KRW) };
 }
 
+/**
+ * 프롬프트 작성(Opus) 원가. 단가는 env 로 뺀다 — 여기에 숫자를 박아두면
+ * 요금이 바뀌었을 때 화면이 조용히 거짓말을 하게 된다.
+ * 값이 없으면 원가를 null 로 두고 화면엔 실측 토큰만 보여준다.
+ */
+function promptCostFromUsage(u?: { input_tokens: number; output_tokens: number }): { usd: number; krw: number } | null {
+  const inRate = Number(process.env.OPUS_PRICE_IN_PER_MTOK);
+  const outRate = Number(process.env.OPUS_PRICE_OUT_PER_MTOK);
+  if (!u || !inRate || !outRate) return null;
+  const usd = (u.input_tokens * inRate + u.output_tokens * outRate) / 1_000_000;
+  return { usd: Number(usd.toFixed(5)), krw: Math.round(usd * USD_TO_KRW) };
+}
+
 interface TalentPick {
-  code: string;
+  /** 전속 모델 코드. freeform 인물이면 비워둔다. */
+  code?: string;
+  /** 자유 서술 인물 — 전속 모델에 없는 인물(예: 한국인 중년 남성)을 텍스트로 지정 */
+  freeform?: { identityEn: string; sizeEn?: string; outfitFree?: string; placement?: string };
+  placement?: string;
   /** expressions._id ('soft_smile' 등) */
   expression?: string;
   outfitCode?: string;
@@ -62,8 +80,16 @@ interface Body {
   usageShotId?: string;
   /** 등장 인물 — 사진 왼쪽부터 순서대로 */
   talents?: TalentPick[];
+  /** 단일 제품 (기존 방식) */
   line?: string;
   colorKey?: string;
+  /**
+   * 다중 제품 — 한 컷에 2~3종을 위치별로. products 가 오면 line/colorKey 는 무시된다.
+   * placement 예: 'left' | 'centre' | 'right'
+   */
+  products?: { line: string; colorKey?: string; placement?: string }[];
+  /** 프롬프트 작성 방식 — 미지정이면 서버 기본값(PROMPT_MODE) */
+  promptMode?: 'local' | 'opus';
   sizeValue?: string;
   /** sizeValue='custom' 일 때 직접 지정한 규격 */
   customSize?: { width: number; height: number };
@@ -115,10 +141,18 @@ export async function POST(req: Request) {
 
     // ── 2) 자산 로딩 ──────────────────────────────────────────────
     const talentPicks = (body.talents ?? []).slice(0, 4);
-    const [baseCut, product, talentDocs, shapeRef, poseRef, usageShot, preservation, variations, rules, exprDocs] =
+    const [baseCut, productDocs, talentDocs, shapeRef, poseRef, usageShot, preservation, variations, rules, exprDocs] =
       await Promise.all([
         body.baseCutId ? db.collection('cuts').findOne({ url: body.baseCutId }) : null,
-        body.line ? db.collection('products').findOne({ _id: body.line as never }) : null,
+        // 다중이면 products[], 아니면 line 하나. 어느 쪽이든 배열로 받는다.
+        (() => {
+          const lines = body.products?.length
+            ? [...new Set(body.products.map((x) => x.line))]
+            : body.line ? [body.line] : [];
+          return lines.length
+            ? db.collection('products').find({ _id: { $in: lines as never[] } }).toArray()
+            : [];
+        })(),
         talentPicks.length
           ? db.collection('talents').find({ _id: { $in: talentPicks.map((t) => t.code) as never[] } }).toArray()
           : [],
@@ -139,6 +173,22 @@ export async function POST(req: Request) {
     // 선택 순서(사진 왼쪽부터)를 보존하며 TalentSpec 으로 변환
     const talents: TalentSpec[] = [];
     for (const pick of talentPicks) {
+      // 자유 서술 인물 — 전속 모델에 없는 인물(한국인 중년 남성 등). 얼굴 시트가 없으므로
+      // freeform 플래그로 표시해서 prompt-writer 가 참조 슬롯을 잡지 않게 한다.
+      if (pick.freeform?.identityEn) {
+        talents.push({
+          code: '',
+          category: 'freeform',
+          slot: '',
+          identityEn: pick.freeform.identityEn,
+          sizeEn: pick.freeform.sizeEn || '',
+          freeform: true,
+          ...(pick.freeform.outfitFree ? { outfitFree: pick.freeform.outfitFree } : {}),
+          ...(pick.freeform.placement || pick.placement ? { placement: pick.freeform.placement || pick.placement } : {}),
+        });
+        continue;
+      }
+      if (!pick.code) continue;
       const t = talentById.get(pick.code);
       if (!t) continue;
       const expr = pick.expression ? exprById.get(pick.expression) : null;
@@ -158,6 +208,7 @@ export async function POST(req: Request) {
         ...(outfit
           ? { outfit: { code: outfit.code, desc: outfit.desc, descEn: outfit.descEn || '', ...(outfit.cropUrl ? { cropUrl: outfit.cropUrl } : {}) } }
           : {}),
+        ...(pick.placement ? { placement: pick.placement } : {}),
       });
     }
 
@@ -183,7 +234,7 @@ export async function POST(req: Request) {
      *     붙던 문제 — 무관한 규칙은 노이즈이고 모델을 헷갈리게 한다)
      */
     const hasTalent = talents.length > 0;
-    const hasProduct = !!product;
+    const hasProduct = (body.products?.length ?? 0) > 0 || !!body.line;
     const activeRules = rules.filter((r) => {
       if (r.conditional === 'no-scene' && hasScene) return false;
       if (r.requires === 'talent' && !hasTalent) return false;
@@ -191,13 +242,16 @@ export async function POST(req: Request) {
       return true;
     });
 
-    const color = product?.colors?.find((c: { key: string }) => c.key === body.colorKey);
-
     /*
-     * 공식 제품 뷰 선택 — youtube/productPrompt.js 의 규칙:
-     * "카메라 각도에 맞는 뷰를 첨부하라". 카메라 변형 미지정이면 ¾뷰 우선(썸네일 관행).
-     * 자기 색 뷰가 없으면 같은 라인의 뷰 보유 색으로 폴백 — 형태만 참고, 색은 스와치가 잡는다.
+     * 제품 스펙 조립 — 단일(line/colorKey)이든 다중(products[])이든 배열로 만든다.
+     * 다중이면 placement 로 위치를 못박아야 색·형태가 뒤섞이지 않는다.
      */
+    const productById = new Map(productDocs.map((d) => [String(d._id), d]));
+    const picks = body.products?.length
+      ? body.products
+      : body.line ? [{ line: body.line, colorKey: body.colorKey, placement: undefined }] : [];
+
+    // 카메라 변형이 지정되면 그 각도의 공식 뷰를 우선 붙인다 (미지정=¾)
     const cameraPick = (body.variationIds ?? []).find((v) => v.startsWith('camera:'))?.split(':')[1];
     const ANGLE_PREF: Record<string, string[]> = {
       front: ['front', 'side'],
@@ -207,32 +261,66 @@ export async function POST(req: Request) {
       low: ['front', 'side'],
     };
     const wantedAngles = ANGLE_PREF[cameraPick ?? ''] ?? ['a045', 'side', 'front'];
+    // 제품이 여러 종이면 참조 예산을 나눠 쓴다 (한 종이 뷰를 다 먹으면 나머지가 형태를 못 잡는다)
+    const viewsPerProduct = picks.length > 1 ? 1 : 2;
 
-    let productViews: { angle: string; url: string; colorMatched: boolean }[] = [];
-    if (product && body.colorKey) {
-      let viewSrc: Record<string, string> | undefined = color?.views;
+    const productSpecs: ProductSpec[] = [];
+    for (const pick of picks) {
+      const doc = productById.get(pick.line);
+      if (!doc) continue;
+      const col = doc.colors?.find((c: { key: string }) => c.key === pick.colorKey);
+
+      /*
+       * 공식 뷰 — 3단 폴백.
+       *   ① 이 컬러의 뷰            (색까지 맞음)
+       *   ② 같은 라인 다른 컬러의 뷰 (형태만)
+       *   ③ shapeViews             (형태만 — legacy 에만 남은 단종 컬러. 이게 없으면
+       *                             팟·드롭·피라미드·슬림·미니·서포트는 사진 참조가 0장이 된다)
+       * 사진 참조 없이 텍스트만으로 형태를 지시하면 제품이 다른 물건으로 나온다 —
+       * 이 프로젝트에서 확인된 가장 큰 품질 요인이다.
+       */
+      const views: { angle: string; url: string; colorMatched: boolean }[] = [];
+      let viewSrc: Record<string, string> | undefined = col?.views;
       let colorMatched = true;
       if (!viewSrc || !Object.keys(viewSrc).length) {
-        const fallback = product.colors?.find(
-          (c: { views?: Record<string, string> }) => c.views && Object.keys(c.views).length,
-        );
-        viewSrc = fallback?.views;
+        viewSrc = doc.colors?.find((c: { views?: Record<string, string> }) => c.views && Object.keys(c.views).length)?.views;
+        colorMatched = false;
+      }
+      if (!viewSrc || !Object.keys(viewSrc).length) {
+        viewSrc = doc.shapeViews?.views;
         colorMatched = false;
       }
       if (viewSrc) {
         for (const a of wantedAngles) {
-          if (productViews.length >= 2) break; // 참조 슬롯 예산 — 뷰는 2장까지
-          if (viewSrc[a]) productViews.push({ angle: a, url: viewSrc[a], colorMatched });
+          if (views.length >= viewsPerProduct) break;
+          if (viewSrc[a]) views.push({ angle: a, url: viewSrc[a], colorMatched });
         }
       }
+
+      // product_items.notes 의 "연출: <영문>" — 실제 판매 데이터에 박힌 연출 지침
+      let staging = '';
+      if (pick.colorKey) {
+        const item = await db.collection('product_items').findOne({ line: doc.line, colorKey: pick.colorKey });
+        staging = String(item?.notes || '').match(/연출:\s*([^·]+)/)?.[1]?.trim() ?? '';
+      }
+
+      productSpecs.push({
+        line: doc.line,
+        shape: doc.geometry.shape,
+        negative: doc.geometry.negative,
+        modes: doc.geometry.modes,
+        dims: doc.dims,
+        scalePrompt: doc.scalePrompt,
+        ...(col ? { color: { name: col.name, nameEn: col.nameEn || col.name, hex: col.hex } } : {}),
+        ...(staging ? { staging } : {}),
+        ...(views.length ? { views } : {}),
+        ...(pick.placement ? { placement: pick.placement } : {}),
+      });
     }
 
-    // product_items.notes 의 "연출: <영문>" — 실제 판매 데이터에 박힌 연출 지침
-    let staging = '';
-    if (product && body.colorKey) {
-      const item = await db.collection('product_items').findOne({ line: product.line, colorKey: body.colorKey });
-      staging = String(item?.notes || '').match(/연출:\s*([^·]+)/)?.[1]?.trim() ?? '';
-    }
+    // 첫 제품 — 컬러 측정·파일명·DB 기록·Element 토큰의 대표값으로 쓴다
+    const product = picks[0] ? productById.get(picks[0].line) ?? null : null;
+    const color = product?.colors?.find((c: { key: string }) => c.key === picks[0]?.colorKey) ?? null;
 
     // ── 3) 프롬프트 작성 ──────────────────────────────────────────
     const spec: GenerationSpec = {
@@ -249,21 +337,7 @@ export async function POST(req: Request) {
       ...(poseRef ? { poseRef: { url: poseRef.onUrl, name: poseRef.name } } : {}),
       ...(usageShot ? { usageShot: { url: usageShot.url, kindEn: usageShot.kindEn, kindKr: usageShot.kindKr } } : {}),
       ...(talents.length ? { talents } : {}),
-      ...(product
-        ? {
-            product: {
-              line: product.line,
-              shape: product.geometry.shape,
-              negative: product.geometry.negative,
-              modes: product.geometry.modes,
-              dims: product.dims,
-              scalePrompt: product.scalePrompt,
-              ...(color ? { color: { name: color.name, nameEn: color.nameEn || color.name, hex: color.hex } } : {}),
-              ...(staging ? { staging } : {}),
-              ...(productViews.length ? { views: productViews } : {}),
-            },
-          }
-        : {}),
+      ...(productSpecs.length ? { products: productSpecs } : {}),
       size: {
         width: size.width,
         height: size.height,
@@ -277,7 +351,7 @@ export async function POST(req: Request) {
       houseRules: activeRules.map((r) => r.en).filter(Boolean),
     };
 
-    const written = await writePrompt(spec);
+    const written = await writePrompt(spec, body.promptMode);
 
     if (body.dryRun) {
       return NextResponse.json({
@@ -290,6 +364,7 @@ export async function POST(req: Request) {
         target: { width: size.width, height: size.height },
         elementId: color?.elementId ?? null,
         usage: written.usage ?? null,
+        promptCost: promptCostFromUsage(written.usage),
       });
     }
 
@@ -340,7 +415,7 @@ export async function POST(req: Request) {
     if (usedRefs.length !== written.refs.length) {
       // 참조가 빠지면 FIRST/SECOND 번호가 어긋난다 — 프롬프트를 다시 쓴다
       console.warn(`[generate] 참조 ${written.refs.length - usedRefs.length}장 누락 — 프롬프트 재작성`);
-      const redone = await writePrompt(spec);
+      const redone = await writePrompt(spec, body.promptMode);
       written.prompt = redone.prompt;
     }
 
@@ -385,19 +460,40 @@ export async function POST(req: Request) {
       const stamp = isoNow.replace(/[-:T]/g, '').slice(0, 14);
       const rand = Math.random().toString(36).slice(2, 7);
       const namePart =
-        [body.line, body.colorKey, ...talentPicks.map((t) => t.code)].filter(Boolean).join('_') || 'gen';
+        [
+          ...picks.flatMap((x) => [x.line, x.colorKey]),
+          ...talentPicks.map((t) => t.code),
+        ]
+          .filter(Boolean)
+          .join('_')
+          .slice(0, 80) || 'gen';
       const url = await uploadBuffer(dailySubpath(isoNow), `${namePart}_${stamp}_${rand}_${n}.jpg`, cropped.buffer);
 
       const doc = {
+        // 대표 제품 = 첫 번째. 갤러리 필터·컬러 측정이 이 값을 쓴다.
         line: product?.line ?? '',
-        colorKey: body.colorKey ?? '',
+        colorKey: picks[0]?.colorKey ?? '',
         colorName: color?.name ?? '',
         hex: color?.hex ?? '',
         url,
         title: body.title || '',
-        spec: [...talentPicks.map((t) => t.code), size.label, ...(body.editTargets ?? [])].filter(Boolean).join(' · '),
+        // 한 컷에 여러 제품이면 전부 기록한다 — 대표값(line/colorKey)만으로는 뭘 넣었는지 못 되살린다
+        ...(picks.length > 1
+          ? { products: picks.map((x) => ({ line: x.line, colorKey: x.colorKey ?? '', placement: x.placement ?? '' })) }
+          : {}),
+        spec: [
+          ...(picks.length > 1 ? [picks.map((x) => x.line).join('+')] : []),
+          ...talentPicks.map((t) => t.code || t.freeform?.identityEn?.slice(0, 20)),
+          size.label,
+          ...(body.editTargets ?? []),
+        ]
+          .filter(Boolean)
+          .join(' · '),
         recipe: {
-          talentCodes: talentPicks.map((t) => t.code),
+          talentCodes: talentPicks.map((t) => t.code).filter(Boolean),
+          ...(talentPicks.some((t) => t.freeform)
+            ? { freeformTalents: talentPicks.filter((t) => t.freeform).map((t) => t.freeform!.identityEn) }
+            : {}),
           ...(body.poseRefKey || body.shapeRefKey ? { pose: body.poseRefKey || body.shapeRefKey } : {}),
           ...(talentPicks[0]?.expression ? { expression: talentPicks[0].expression } : {}),
           ...(talentPicks[0]?.outfitCode ? { outfit: talentPicks[0].outfitCode } : {}),
@@ -421,6 +517,8 @@ export async function POST(req: Request) {
         requestBytes: gen.requestBytes,
         // 실측 토큰과 그로부터 계산한 실제 원가 — 추정이 아니라 응답에서 읽은 값
         ...(gen.usage ? { tokenUsage: gen.usage, cost: costFromUsage(gen.usage) } : {}),
+        // 프롬프트를 Opus 가 썼다면 그 원가도 컷에 남긴다 (이미지 생성비와 별개)
+        ...(written.usage ? { promptUsage: written.usage, promptCost: promptCostFromUsage(written.usage) } : {}),
         hidden: false,
         note: '',
         createdAt: new Date(isoNow),
@@ -435,6 +533,8 @@ export async function POST(req: Request) {
         // 실측 토큰 기반 실제 원가 — 화면이 추정치 대신 이 값을 쓴다
         cost: costFromUsage(gen.usage),
         tokenUsage: gen.usage ?? null,
+        promptUsage: written.usage ?? null,
+        promptCost: promptCostFromUsage(written.usage),
         width: cropped.width,
         height: cropped.height,
         deltaE: colorCheck?.deltaE ?? null,

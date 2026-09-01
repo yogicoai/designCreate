@@ -24,13 +24,62 @@ interface Props {
   references: ReferenceDoc[];
   /** 프롬프트 작성 모드 — local(템플릿·무과금) / opus(라이브, 확인에도 소액 과금) */
   promptMode: 'local' | 'opus';
+  /** ANTHROPIC_API_KEY 유무. 없으면 화면에서 Opus 를 켤 수 없다 */
+  opusAvailable: boolean;
 }
 
 type RefRole = 'style' | 'base' | 'background';
 interface UploadedRef { url: string; title: string; role: RefRole }
 
 /** 선택된 모델 1명 — 순서가 곧 "사진 왼쪽부터" 배정 순서다 */
-interface TalentPick { code: string; expression: string; outfitCode: string }
+interface TalentPick { code: string; expression: string; outfitCode: string; placement?: string }
+/** 추가 제품 — 한 컷에 2~3종을 넣을 때. 첫 제품은 위의 line/colorKey 가 맡는다. */
+interface ExtraProduct { line: string; colorKey: string; placement: string }
+/** 자유 서술 인물 — 전속 모델에 없는 인물 */
+interface FreePerson { presetKey: string; extra: string; placement: string }
+
+/** 위치 — 프롬프트의 "on the left" 로 그대로 들어간다 */
+const PLACEMENTS = [
+  { value: '', label: '자동' },
+  { value: 'left', label: '왼쪽' },
+  { value: 'centre', label: '가운데' },
+  { value: 'right', label: '오른쪽' },
+  { value: 'foreground', label: '앞쪽' },
+  { value: 'background', label: '뒤쪽' },
+];
+
+/*
+ * 자유 인물 프리셋.
+ * 한글만 받아서 그대로 넘기면 영문 프롬프트에 한글이 섞여 품질이 떨어진다.
+ * 자주 쓰는 인물형은 영문 서술을 미리 박아두고, 나머지는 extra 로 덧붙인다.
+ * (Opus 모드에서는 extra 한글도 영문으로 풀린다)
+ */
+const PERSON_PRESETS: { key: string; kr: string; identityEn: string; sizeEn: string }[] = [
+  { key: 'k_m_mid', kr: '한국인 중년 남성',
+    identityEn: 'a Korean man in his early 50s, natural greying at the temples, warm approachable face, short tidy hair',
+    sizeEn: 'about 173 cm, average build' },
+  { key: 'k_f_mid', kr: '한국인 중년 여성',
+    identityEn: 'a Korean woman in her late 40s, soft warm face, shoulder-length dark hair',
+    sizeEn: 'about 160 cm, slim build' },
+  { key: 'k_m_20', kr: '한국인 20대 남성',
+    identityEn: 'a Korean man in his mid 20s, clean-cut, short black hair',
+    sizeEn: 'about 178 cm, lean build' },
+  { key: 'k_f_20', kr: '한국인 20대 여성',
+    identityEn: 'a Korean woman in her mid 20s, long straight black hair, natural light makeup',
+    sizeEn: 'about 164 cm, slim build' },
+  { key: 'k_m_old', kr: '한국인 노년 남성',
+    identityEn: 'a Korean man in his early 70s, grey hair, kind lined face',
+    sizeEn: 'about 168 cm, slight build' },
+  { key: 'k_f_old', kr: '한국인 노년 여성',
+    identityEn: 'a Korean woman in her late 60s, short permed grey hair, gentle face',
+    sizeEn: 'about 155 cm, small build' },
+  { key: 'k_boy', kr: '한국인 남자아이',
+    identityEn: 'a Korean boy about 7 years old, round cheeks, short black hair',
+    sizeEn: 'about 122 cm, child proportions' },
+  { key: 'k_girl', kr: '한국인 여자아이',
+    identityEn: 'a Korean girl about 7 years old, shoulder-length black hair',
+    sizeEn: 'about 120 cm, child proportions' },
+];
 
 type EditTarget = 'face' | 'person' | 'add-person' | 'outfit' | 'product-color' | 'background' | 'text-removal';
 
@@ -72,6 +121,8 @@ const MY_SIZE_GROUP = '내 규격';
 interface DryRunResult {
   prompt: string;
   promptMode: string;
+  usage?: { input_tokens: number; output_tokens: number } | null;
+  promptCost?: { usd: number; krw: number } | null;
   refs: { kind: string; title: string; url?: string; swatchHex?: string }[];
   /** 선택한 제품 컬러의 힉스필드 Element 토큰 (있으면 힉스필드가 유리) */
   elementId?: string | null;
@@ -130,6 +181,9 @@ export default function CreateStudio(p: Props) {
   const [colorKey, setColorKey] = useState('');
   /** 선택 순서 유지 — ①②③④ = 사진 왼쪽부터 */
   const [picks, setPicks] = useState<TalentPick[]>([]);
+  const [mainPlacement, setMainPlacement] = useState('');
+  const [extraProducts, setExtraProducts] = useState<ExtraProduct[]>([]);
+  const [freePeople, setFreePeople] = useState<FreePerson[]>([]);
   const [baseTab, setBaseTab] = useState<'none' | 'cut' | 'posecut' | 'pose'>('none');
   const [baseCutUrl, setBaseCutUrl] = useState('');
   const [poseRefKey, setPoseRefKey] = useState('');
@@ -143,6 +197,10 @@ export default function CreateStudio(p: Props) {
   const [samples, setSamples] = useState(1);
   /** 품질 티어 — 초안은 Flash 로 싸게 돌려보고, 확정본만 Pro 로 */
   const [tier, setTier] = useState<'pro' | 'draft'>('pro');
+  // 프롬프트 작성 방식 — 서버 기본값에서 출발하되 컷 단위로 바꿀 수 있다
+  const [writer, setWriter] = useState<'local' | 'opus'>(
+    p.opusAvailable && p.promptMode === 'opus' ? 'opus' : 'local',
+  );
 
   const [uploadNote, setUploadNote] = useState('');
   const [copied, setCopied] = useState<'prompt' | 'urls' | null>(null);
@@ -280,9 +338,38 @@ export default function CreateStudio(p: Props) {
       mode, dryRun, samples,
       sizeValue,
       ...(sizeValue === 'custom' ? { customSize: { width: Number(customW), height: Number(customH) } } : {}),
-      ...(line ? { line } : {}),
-      ...(colorKey ? { colorKey } : {}),
-      ...(picks.length ? { talents: picks } : {}),
+      // 제품이 2종 이상이면 products[] 로, 1종이면 기존 line/colorKey 로 보낸다
+      ...(line && extraProducts.length
+        ? {
+            products: [
+              { line, colorKey, placement: mainPlacement },
+              ...extraProducts.filter((x) => x.line),
+            ],
+          }
+        : line
+          ? { line, ...(colorKey ? { colorKey } : {}) }
+          : {}),
+      ...(picks.length || freePeople.length
+        ? {
+            talents: [
+              ...picks,
+              ...freePeople
+                .map((f) => {
+                  const preset = PERSON_PRESETS.find((x) => x.key === f.presetKey);
+                  const extra = f.extra.trim();
+                  if (!preset && !extra) return null;
+                  return {
+                    freeform: {
+                      identityEn: [preset?.identityEn, extra].filter(Boolean).join(', '),
+                      sizeEn: preset?.sizeEn ?? '',
+                      ...(f.placement ? { placement: f.placement } : {}),
+                    },
+                  };
+                })
+                .filter(Boolean),
+            ],
+          }
+        : {}),
       ...((baseTab === 'cut' || baseTab === 'posecut') && baseCutUrl
         ? { baseCutId: baseCutUrl, baseCutUsage: baseTab === 'posecut' ? 'pose' : 'full' }
         : {}),
@@ -293,6 +380,7 @@ export default function CreateStudio(p: Props) {
       engine,
       ...(direction.trim() ? { direction: direction.trim() } : {}),
       tier,
+      promptMode: writer,
     };
   }
 
@@ -310,7 +398,7 @@ export default function CreateStudio(p: Props) {
       if (dryRun) setDry(json);
       else {
         setResults(json.results ?? []);
-        if (json.prompt) setDry({ prompt: json.prompt, promptMode: json.promptMode, refs: json.refs, aspect: json.aspect, target: json.target });
+        if (json.prompt) setDry({ prompt: json.prompt, promptMode: json.promptMode, refs: json.refs, aspect: json.aspect, target: json.target, usage: json.usage ?? null, promptCost: json.promptCost ?? null });
         if (!json.ok) setErr(json.results?.find((r: GenResult) => r.error)?.error || '생성 실패');
       }
     } catch (e) {
@@ -685,6 +773,79 @@ ${c.spec}`}
                 )}
               </>
             )}
+
+            {/*
+              추가 제품 — 한 컷에 2~3종.
+              위치를 안 박으면 모델이 두 제품을 같은 형태·같은 색으로 뭉개버린다.
+              그래서 추가하는 순간 첫 제품에도 위치 선택이 생긴다.
+            */}
+            {line && (
+              <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--line)' }}>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="label">
+                    함께 놓을 제품{' '}
+                    <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
+                      — 한 컷에 2~3종. 위치를 지정해야 형태·색이 안 섞입니다.
+                    </span>
+                  </div>
+                  {extraProducts.length < 2 && (
+                    <button className="chip shrink-0"
+                            onClick={() => setExtraProducts((c) => [...c, { line: '', colorKey: '', placement: '' }])}>
+                      + 제품 추가
+                    </button>
+                  )}
+                </div>
+
+                {extraProducts.length > 0 && (
+                  <div className="flex items-center gap-2 mb-2 text-[11px]">
+                    <span className="shrink-0" style={{ color: 'var(--text-dim)' }}>① {line}</span>
+                    <select className="input py-1 text-[11px]" style={{ width: 110 }} value={mainPlacement}
+                            onChange={(e) => setMainPlacement(e.target.value)}>
+                      {PLACEMENTS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {extraProducts.map((ex, i) => {
+                  const exProd = p.products.find((x) => x.line === ex.line);
+                  return (
+                    <div key={i} className="mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] shrink-0" style={{ color: 'var(--text-dim)' }}>{i === 0 ? '②' : '③'}</span>
+                        <select className="input py-1 text-[11px] flex-1" value={ex.line}
+                                onChange={(e) => setExtraProducts((c) =>
+                                  c.map((x, j) => (j === i ? { ...x, line: e.target.value, colorKey: '' } : x)))}>
+                          <option value="">— 제품 선택 —</option>
+                          {p.products.map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line}</option>)}
+                        </select>
+                        <select className="input py-1 text-[11px]" style={{ width: 110 }} value={ex.placement}
+                                onChange={(e) => setExtraProducts((c) =>
+                                  c.map((x, j) => (j === i ? { ...x, placement: e.target.value } : x)))}>
+                          {PLACEMENTS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+                        </select>
+                        <button className="chip shrink-0" style={{ color: 'var(--text-mute)' }}
+                                onClick={() => setExtraProducts((c) => c.filter((_, j) => j !== i))}>✕</button>
+                      </div>
+                      {exProd && (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5 ml-5">
+                          {exProd.colors.map((c) => (
+                            <button key={c.key}
+                                    onClick={() => setExtraProducts((cur) =>
+                                      cur.map((x, j) => (j === i ? { ...x, colorKey: c.key === x.colorKey ? '' : c.key } : x)))}
+                                    className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-lg border text-[11px]"
+                                    style={{ borderColor: c.key === ex.colorKey ? 'var(--accent)' : 'var(--line)',
+                                             background: c.key === ex.colorKey ? 'var(--accent-soft)' : 'transparent' }}>
+                              <span className="w-4 h-4 rounded" style={{ background: c.hex, border: '1px solid rgba(255,255,255,.15)' }} />
+                              {c.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </Section>
 
           {/* ④ 모델 — 다중 선택, 클릭 순서 = 사진 왼쪽부터 */}
@@ -810,6 +971,53 @@ ${c.spec}`}
                 })}
               </div>
             )}
+
+            {/*
+              자유 인물 — 전속 모델에 없는 사람(가족 구성 등).
+              얼굴 시트가 없으니 프롬프트가 유일한 근거다. 그래서 한글만 받지 않고
+              자주 쓰는 인물형은 영문 서술을 프리셋으로 박아둔다.
+              전속 모델 뒤에 이어 붙으므로 위치를 지정해 자리를 못박는 게 좋다.
+            */}
+            <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--line)' }}>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <div className="label">
+                  자유 인물{' '}
+                  <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
+                    — 전속 모델에 없는 사람. 얼굴 레퍼런스 없이 서술로만 만듭니다.
+                  </span>
+                </div>
+                {picks.length + freePeople.length < 4 && (
+                  <button className="chip shrink-0"
+                          onClick={() => setFreePeople((c) => [...c, { presetKey: '', extra: '', placement: '' }])}>
+                    + 인물 추가
+                  </button>
+                )}
+              </div>
+
+              {freePeople.map((f, i) => (
+                <div key={i} className="mb-2 rounded-lg p-2" style={{ background: 'var(--surface-2)' }}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-[11px] shrink-0" style={{ color: 'var(--text-dim)' }}>
+                      {['①', '②', '③', '④'][picks.length + i] ?? '·'}
+                    </span>
+                    <select className="input py-1 text-[11px] flex-1" value={f.presetKey}
+                            onChange={(e) => setFreePeople((c) => c.map((x, j) => (j === i ? { ...x, presetKey: e.target.value } : x)))}>
+                      <option value="">— 인물형 선택 —</option>
+                      {PERSON_PRESETS.map((x) => <option key={x.key} value={x.key}>{x.kr}</option>)}
+                    </select>
+                    <select className="input py-1 text-[11px]" style={{ width: 110 }} value={f.placement}
+                            onChange={(e) => setFreePeople((c) => c.map((x, j) => (j === i ? { ...x, placement: e.target.value } : x)))}>
+                      {PLACEMENTS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+                    </select>
+                    <button className="chip shrink-0" style={{ color: 'var(--text-mute)' }}
+                            onClick={() => setFreePeople((c) => c.filter((_, j) => j !== i))}>✕</button>
+                  </div>
+                  <input className="input py-1 text-[11px]" value={f.extra}
+                         placeholder="추가 서술 (선택) — 예: 베이지 니트에 청바지, 안경 착용"
+                         onChange={(e) => setFreePeople((c) => c.map((x, j) => (j === i ? { ...x, extra: e.target.value } : x)))} />
+                </div>
+              ))}
+            </div>
           </Section>
 
           {/* ⑤ 베이스 (자산) */}
@@ -1036,6 +1244,33 @@ ${c.spec}`}>
             ))}
           </div>
           )}
+          {/*
+            프롬프트 작성 — 템플릿 조립 vs Opus.
+            Opus 는 참조 이미지를 실제로 보고 쓰고, 한글 지시를 영문으로 풀어 각 항목에 배치한다.
+            손으로 쓴 프롬프트 수준의 결과가 나오는 지점이 여기다.
+          */}
+          {p.opusAvailable && (
+            <div className="flex gap-1.5">
+              {([['opus', '프롬프트 Opus (권장)'], ['local', '프롬프트 템플릿 · 무과금']] as const).map(([v, l]) => (
+                <button key={v} onClick={() => setWriter(v)} className="chip flex-1 justify-center"
+                        title={v === 'local'
+                          ? '규칙 템플릿으로 조립 — 빠르고 공짜, 대신 레퍼런스를 보지 않는다'
+                          : 'Opus 가 참조 이미지를 보고 직접 작성 — 한글 지시를 영문으로 풀어 각 항목에 배치. 이미지 생성비와 별도로 소액 과금'}
+                        style={writer === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+          {writer === 'opus' && (
+            <div className="text-[10px] px-1" style={{ color: 'var(--info)' }}>
+              Opus 가 레퍼런스를 보고 프롬프트를 씁니다.{' '}
+              {dry?.promptMode === 'opus' && dry.usage
+                ? <>직전 실측 <b>{(dry.usage.input_tokens + dry.usage.output_tokens).toLocaleString()} 토큰</b>
+                    {dry.promptCost ? <> · 약 ₩{dry.promptCost.krw.toLocaleString()}</> : <> (단가 미설정 — OPUS_PRICE_*_PER_MTOK)</>}</>
+                : <>이미지 생성비와 별도로 소액 과금됩니다.</>}
+            </div>
+          )}
           {engine === 'gemini' && tier === 'draft' && (
             <div className="text-[10px] px-1" style={{ color: 'var(--warn)' }}>
               초안 모드는 얼굴·제품 참조 유지력이 낮습니다. 확정본은 고품질로 다시 뽑으세요.
@@ -1054,7 +1289,7 @@ ${c.spec}`}>
             {engine === 'higgs'
               ? <>약 <b style={{ color: 'var(--text-dim)' }}>{(samples * (balance?.higgs?.perImage ?? HF_CREDITS_FALLBACK)).toLocaleString()} 크레딧</b> · 20~40초/장</>
               : <>생성 약 <b style={{ color: 'var(--text-dim)' }}>₩{cost.toLocaleString()}</b> · 25~35초/장 (생성 후 실측 표시)</>}
-            {p.promptMode === 'local' && <span> · 프롬프트는 템플릿 조립(무과금)</span>}
+            {writer === 'local' && <span> · 프롬프트는 템플릿 조립(무과금)</span>}
           </div>
         </div>
 

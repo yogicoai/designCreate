@@ -63,6 +63,12 @@ export interface ProductDoc {
   recommendedModels: string;
   /** 같은 형태의 상위 라인 (Slim/Midi/Mini 는 Max 와 동일 형태, 사이즈만 다름) */
   sameShapeAs?: string;
+  /**
+   * 라인 단위 형태 참조 — 컬러 슬롯 어디에도 뷰가 없을 때 쓰는 마지막 폴백.
+   * legacy 에만 남은 단종 컬러의 사진이라 색은 못 쓰고 형태만 쓴다.
+   * scripts/backfill-shape-views.mjs 가 채운다.
+   */
+  shapeViews?: { colorName: string; views: Record<string, string> };
   colors: ProductColor[];
   order: number;
   active: boolean;
