@@ -24,7 +24,7 @@ const EXTRA = [
   { talent: 'M_A', code: 'A_M_C_04', file: 'A_M_C_04.jpg', desc: '화이트 티+그레이 와이드슬랙스', descEn: 'a plain white tee with light grey wide-leg trousers' },
   { talent: 'M_A', code: 'A_M_C_05', file: 'A_M_C_05.jpg', desc: '블랙 수트+타이', descEn: 'a black suit with a white shirt and a slim black tie' },
   { talent: 'M_A', code: 'A_M_C_06', file: 'A_M_C_06.jpg', desc: '그래픽 탱크+네이비 보드쇼츠', descEn: 'a sleeveless graphic tank top with navy board shorts' },
-  { talent: 'M_A', code: 'A_M_EX_01', file: encodeURIComponent('260812_남성A_의상_1.jpg'), desc: '라이트그레이 티+그레이 와이드팬츠', descEn: 'a light grey tee with grey wide-leg trousers' },
+  // 260812_남성A_의상_1.jpg 는 A_M_C_04(화이트 티+그레이 와이드슬랙스)와 같은 옷 — 중복이라 등록하지 않는다
   // 수영복 컨셉 — 모델 C·D (2026-08-31 사용자 추가분)
   { talent: 'W_C', code: 'C_W_C_02', file: 'C_cloath.jpg', desc: '화이트·핑크 크롭 래시가드+핑크 스윔쇼츠', descEn: 'a white-and-pink cropped half-zip rash guard with black raglan sleeves and pink swim shorts, no brand logos' },
   { talent: 'W_D', code: 'D_W_C_03', file: 'D_cloath.jpg', desc: '블랙 하프집업 래시가드+블랙 스윔쇼츠', descEn: 'a black half-zip long-sleeve rash guard with white piping and matching black swim shorts, no brand logos' },
