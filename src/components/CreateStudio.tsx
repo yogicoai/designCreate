@@ -195,11 +195,20 @@ export default function CreateStudio(p: Props) {
     const sameShape = new Set(
       p.products.filter((x) => x.line === line || x.sameShapeAs === line || (product?.sameShapeAs && x.line === product.sameShapeAs)).map((x) => x.line),
     );
-    // 고른 컬러의 컷을 맨 앞에 — 같은 색 포즈가 있으면 그게 1순위다
-    const rank = (c: BaseCut) =>
-      c.line === line && c.colorKey === colorKey ? 0 : c.line === line ? 1 : sameShape.has(c.line) ? 2 : 3;
+    /*
+     * 고른 컬러에 컷이 있으면 그 컬러만 보여준다 — 색이 맞는 포즈가 있는데
+     * 다른 색까지 섞어 보여주면 고르기만 어려워진다.
+     * 그 색 컷이 하나도 없을 때만 전체로 넓힌다 (같은 라인 > 같은 형태 > 나머지 순).
+     */
+    const exact = p.baseCuts.filter((c) => c.line === line && c.colorKey === colorKey);
+    if (colorKey && exact.length) return exact.slice(0, 96);
+
+    const rank = (c: BaseCut) => (c.line === line ? 0 : sameShape.has(c.line) ? 1 : 2);
     return [...p.baseCuts].sort((a, b) => rank(a) - rank(b)).slice(0, 96);
   }, [p.baseCuts, p.products, line, colorKey, product]);
+
+  /** 포즈 목록이 선택 컬러로 좁혀졌는지 — 안내 문구에 쓴다 */
+  const poseScoped = !!colorKey && p.baseCuts.some((c) => c.line === line && c.colorKey === colorKey);
 
   const sizeGroups = useMemo(() => {
     const m = new Map<string, WithId<SizePresetDoc>[]>();
@@ -620,7 +629,7 @@ export default function CreateStudio(p: Props) {
                 <div className="label mb-1">컬러</div>
                 <div className="flex flex-wrap gap-1.5">
                   {product.colors.map((c) => (
-                    <button key={c.key} onClick={() => setColorKey(c.key === colorKey ? '' : c.key)}
+                    <button key={c.key} onClick={() => { setColorKey(c.key === colorKey ? '' : c.key); setBaseCutUrl(''); setBaseTab('none'); }}
                             className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-lg border text-[11px]"
                             style={{ borderColor: c.key === colorKey ? 'var(--accent)' : 'var(--line)',
                                      background: c.key === colorKey ? 'var(--accent-soft)' : 'transparent' }}>
@@ -640,7 +649,11 @@ export default function CreateStudio(p: Props) {
                     <div className="label mt-3 mb-1">
                       포즈{' '}
                       <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
-                        — 우리 썸네일 컷에서 포즈·앵글만 가져옵니다 (다른 색 컷도 가능)
+                        {poseScoped
+                          ? ` — ${product?.colors.find((c) => c.key === colorKey)?.name ?? ''} 컷 ${poseCuts.length}개`
+                          : colorKey
+                            ? ' — 이 컬러엔 컷이 없어 전체에서 고릅니다 (포즈·앵글만 가져옴)'
+                            : ' — 우리 썸네일 컷에서 포즈·앵글만 가져옵니다'}
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-1.5 max-h-[210px] overflow-y-auto pr-1">
