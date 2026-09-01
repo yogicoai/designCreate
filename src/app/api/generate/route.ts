@@ -175,7 +175,21 @@ export async function POST(req: Request) {
       !!body.direction?.trim() ||
       (body.variationIds ?? []).some((v) => v.startsWith('scene:') && !v.endsWith(':auto')) ||
       uploadedRefs.some((u) => u.role === 'base' || u.role === 'background');
-    const activeRules = rules.filter((r) => !(r.conditional === 'no-scene' && hasScene));
+    /*
+     * 규칙 필터링:
+     *  - no-scene: 장면 지시가 있으면 스튜디오 배경 규칙을 뺀다
+     *  - requires: 그 대상이 선택되지 않았으면 뺀다
+     *    (인물 없는 제품컷에 "자연스러운 미소", 제품 없는 컷에 "Max 엔 지퍼가 없다" 가
+     *     붙던 문제 — 무관한 규칙은 노이즈이고 모델을 헷갈리게 한다)
+     */
+    const hasTalent = talents.length > 0;
+    const hasProduct = !!product;
+    const activeRules = rules.filter((r) => {
+      if (r.conditional === 'no-scene' && hasScene) return false;
+      if (r.requires === 'talent' && !hasTalent) return false;
+      if (r.requires === 'product' && !hasProduct) return false;
+      return true;
+    });
 
     const color = product?.colors?.find((c: { key: string }) => c.key === body.colorKey);
 

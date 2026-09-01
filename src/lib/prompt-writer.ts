@@ -508,8 +508,18 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
   }
 
   if (spec.direction) {
+    /*
+     * 로컬(템플릿) 모드에는 번역기가 없어 한글 지시가 그대로 나간다.
+     * 나노바나나는 한국어를 이해하므로 동작은 하지만, 무엇을 하라는 건지 못 박아준다.
+     * 라이브(Opus) 모드에서는 Opus 가 이 지시를 영문으로 옮겨 본문에 녹인다.
+     */
     L.push('');
-    L.push(`ADDITIONAL DIRECTION (translate faithfully): ${spec.direction}`);
+    L.push(
+      'ADDITIONAL DIRECTION FROM THE ART DIRECTOR (written in Korean). ' +
+        'Read it, translate it faithfully, and apply it to the scene, lighting, props, camera and pose. ' +
+        'Where it conflicts with any rule above, THIS DIRECTION WINS:',
+    );
+    L.push(spec.direction);
   }
 
   if (spec.houseRules?.length) {
@@ -578,6 +588,11 @@ const OPUS_SYSTEM = `너는 요기보(빈백 소파 브랜드) 자사몰의 AI �
 5. 편집 지시(EDIT)가 있으면 "이것만 바꾸고 나머지는 원본 그대로"를 가장 앞에, 가장 강하게 써라.
 6. 전 컷 공통 규칙은 빠짐없이 반영하라.
 7. 텍스트·로고·워터마크 금지 문장을 마지막에 반드시 넣어라.
+8. **MD 의 한글 방향 지시는 반드시 영문으로 옮겨 프롬프트 본문에 녹여라.**
+   한글을 그대로 남기지 마라. 그리고 따로 떨어진 문장으로 덧붙이지 말고, 해당하는 항목
+   (장면·조명·소품·카메라·포즈)에 각각 흡수시켜라. 예: "배경을 밝은 거실로, 45도 측면에서"
+   → 장면 서술과 카메라 서술에 각각 반영한다.
+   지시가 기존 규칙과 충돌하면 **MD 지시를 우선**한다 (배경 지정이 스튜디오 배경 규칙을 이기는 식).
 
 출력은 영문 프롬프트 본문만. 설명·머리말·코드펜스 없이 프롬프트 텍스트만 출력하라.`;
 

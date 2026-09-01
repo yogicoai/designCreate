@@ -29,16 +29,17 @@ const env = Object.fromEntries(
 // ── ① 하우스룰 분류 ────────────────────────────────────────────────
 // order 는 seed.mjs 의 CAUTIONS 순서와 같다.
 const RULE_CLASS = {
-  0: { appliesTo: 'image' },                       // 자연스러운 미소
+  0: { appliesTo: 'image', requires: 'talent' },   // 자연스러운 미소 — 인물이 있을 때만
   1: { appliesTo: 'operator' },                    // expr 시트를 함께 투입하라 — 작업 절차
   2: { appliesTo: 'operator' },                    // 등받이 top 을 말로 묘사하지 마라 — 프롬프트 작성 지침
   3: { appliesTo: 'operator' },                    // 각도 중요하면 원본 포즈 프레임을 베이스로 — 작업 절차
-  4: { appliesTo: 'image' },                       // 지퍼·봉제선 없음
-  5: { appliesTo: 'image' },                       // 실제 비례 지킬 것
+  4: { appliesTo: 'image', requires: 'product' },  // 지퍼·봉제선 없음 — 제품이 있을 때만
+  5: { appliesTo: 'image', requires: 'product' },  // 실제 비례 지킬 것 — 제품이 있을 때만
   6: { appliesTo: 'operator' },                    // 모델별 의상 매핑 — 선택 단계에서 지킬 일
   7: { appliesTo: 'image', conditional: 'no-scene' }, // 배경 #f2f2f4 — 장면 지시가 있으면 빠진다
   8: { appliesTo: 'operator' },                    // 2048 무손실 업로드
   9: { appliesTo: 'operator' },                    // 생성 전 스펙·크레딧 고지
+  10: { appliesTo: 'image', requires: 'talent' },  // 두신비율 — 인물이 있을 때만
 };
 
 // ── ② 영문 표기 ────────────────────────────────────────────────────
@@ -148,7 +149,7 @@ for (const r of rules) {
   const c = RULE_CLASS[r.order] || { appliesTo: 'image' };
   await db.collection('house_rules').updateOne(
     { _id: r._id },
-    { $set: { appliesTo: c.appliesTo, conditional: c.conditional ?? null } },
+    { $set: { appliesTo: c.appliesTo, conditional: c.conditional ?? null, requires: c.requires ?? null } },
   );
 }
 console.log('\n  ✅ house_rules 분류');
