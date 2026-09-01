@@ -243,6 +243,13 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
    * 1~2인이면 인당 2장, 3인 이상이면 슬롯 예산상 인당 1장(얼굴 시트 우선).
    */
   const talents = spec.talents ?? [];
+  /*
+   * 인당 참조 장수. 얼굴이 많아질수록 한 장당 가중치가 떨어져 골격이 뭉개진다.
+   * 4인 교체에서 인당 2장(총 8장 + 베이스)을 넣었더니 네 얼굴 모두 시트에서 벗어났다 —
+   * 특히 표정컷을 "정확히 복사하라"고 시키면 표정을 따라가며 골격까지 끌려간다.
+   * 그래서 3인 이상이면 대표컷 한 장만 쓰고 표정은 텍스트로만 지시한다.
+   */
+  const identPerPerson = talents.filter((t) => !t.freeform).length >= 3 ? 1 : 2;
   talents.forEach((t, i) => {
     if (t.freeform) return; // 자유 서술 인물은 참조 이미지가 없다 — 텍스트로만 지정
     const multi = talents.length > 1;
@@ -273,9 +280,12 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
             role: `the expression reference for ${who} — the SAME model in 8 expressions; pick the requested expression panel while keeping the identity identical`,
           },
     ];
+    let used = 0;
     for (const r of ident) {
       if (!r.url) continue;
+      if (used >= identPerPerson) break;
       slots.push({ kind: 'talent', title: r.title, url: r.url, personIndex: i + 1, role: r.role, sub: r.sub });
+      used++;
     }
   });
 
@@ -505,7 +515,24 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
   }
   if (talents.some((t) => !t.freeform)) {
     L.push(
-      'FACE MATCH: for every person that has an identity sheet, that sheet is ground truth. The rendered face must be recognisably the SAME person — same bone structure, eye shape, nose, lips, hairline. Do not beautify, de-age, or drift toward a generic face.',
+      /*
+       * 얼굴 일관성은 이 프로젝트의 핵심 요구사항이다.
+       * 실패 사례에서 배운 것: 모델은 시트와 베이스 얼굴을 "평균"내려 하고,
+       * 교체 대상의 나이·체형에 맞춰 시트 쪽을 구부린다(10~12세 시트가 6~7세로 내려갔다).
+       * 그래서 ①평균 금지 ②나이 고정 ③충돌 시 시트가 이긴다 를 못박는다.
+       */
+      'FACE IDENTITY IS THE SINGLE HIGHEST PRIORITY OF THIS IMAGE — above pose, above composition, above styling. ' +
+        'For every person that has an identity sheet, that sheet is absolute ground truth. The rendered face must be ' +
+        'unmistakably the SAME person: same skull and jaw shape, same cheekbones, same eye shape and spacing, same nose, ' +
+        'same lips, same hairline and hair texture.',
+      'DO NOT AVERAGE. Never blend the sheet face with whatever face is already in the base image — the base face is to be ' +
+        'discarded completely and rebuilt from the sheet. A result that looks like a mix of the two is a failure.',
+      'AGE IS LOCKED to what the sheet and the stated age say. Do not age a person up or down to suit the body, pose, ' +
+        'clothing or seat of the figure they are replacing. If the person being replaced is visibly younger, older, ' +
+        'shorter or differently built, the SHEET WINS — rebuild the head, face and proportions to match the sheet and ' +
+        'let the pose adapt around them.',
+      'Do not beautify, slim, smooth, de-age or drift toward a generic attractive face. Keep the real skin texture, ' +
+        'pores and asymmetry.',
     );
   }
   return L;
@@ -682,6 +709,16 @@ const OPUS_SYSTEM = `너는 요기보(빈백 소파 브랜드) 자사몰의 AI �
 3. 참조 이미지는 브리프에 적힌 순서대로 FIRST/SECOND/THIRD... 로 지칭하라. 순서를 바꾸면 안 된다.
 4. 인물이 여러 명이면 사진 왼쪽부터 PERSON 1/2/3 으로 배정하고, 각 사람이 어느 시트의 얼굴인지
    명시하고, 얼굴이 섞이지 않게 못박아라.
+4-1. **얼굴 일관성은 이 프로젝트의 최우선 요구사항이다.** 전속 모델은 여러 컷에 반복 등장하므로
+   매번 같은 사람으로 보여야 한다. 브리프의 FACE IDENTITY / DO NOT AVERAGE / AGE IS LOCKED 문장은
+   요약하거나 부드럽게 바꾸지 말고, 뜻을 그대로 살려 프롬프트 안에서 **가장 강한 문장**으로 실어라.
+   특히 이런 실패를 막아야 한다:
+     - 시트 얼굴과 베이스 사진 속 얼굴을 평균내서 제3의 인물이 나오는 것
+     - 교체 대상의 나이·체형에 맞추려고 시트 쪽 나이를 올리거나 내리는 것
+       (10~12세 모델이 6~7세로 나오는 식)
+     - 미화·보정으로 시트의 골격이 뭉개지는 것
+   인물 교체(EDIT: person/face)일 때는 "베이스의 얼굴은 완전히 버리고 시트에서 새로 만든다"를
+   프롬프트 앞쪽에 배치하라.
 5. 편집 지시(EDIT)가 있으면 "이것만 바꾸고 나머지는 원본 그대로"를 가장 앞에, 가장 강하게 써라.
 6. 전 컷 공통 규칙은 빠짐없이 반영하라.
 7. 텍스트·로고·워터마크 금지 문장을 마지막에 반드시 넣어라.
