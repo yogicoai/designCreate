@@ -9,6 +9,7 @@ import {
   type EditTarget,
 } from '@/lib/prompt-writer';
 import { generateImage, loadReference, colorSwatch, GeminiError, type GenAspect, type InlineImage } from '@/lib/gemini';
+import { generateImage as hfGenerate, higgsfieldConfigured, HiggsfieldError } from '@/lib/higgsfield';
 import { uploadBuffer, dailySubpath, ftpConfigured } from '@/lib/ftp';
 import { cropToSize, measureProductColor } from '@/lib/image-post';
 import { planAspect } from '@/lib/aspect';
@@ -25,6 +26,20 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 const USAGE_KEY = 'gemini-image';
+
+/**
+ * gemini-3-pro-image 공식 단가 ($/1M 토큰) — 실측 usageMetadata 와 곱해 실제 원가를 낸다.
+ * 사고(thinking) 토큰도 출력 단가로 과금된다. 이걸 빼먹어 한동안 원가를 60%% 과소 표기했다.
+ */
+const PRICE_IN_PER_TOKEN = 2.0 / 1_000_000;
+const PRICE_OUT_PER_TOKEN = 120.0 / 1_000_000;
+const USD_TO_KRW = Number(process.env.USD_TO_KRW) || 1400;
+
+function costFromUsage(u?: { promptTokens: number; imageTokens: number; thoughtTokens: number }): { usd: number; krw: number } | null {
+  if (!u) return null;
+  const usd = u.promptTokens * PRICE_IN_PER_TOKEN + (u.imageTokens + u.thoughtTokens) * PRICE_OUT_PER_TOKEN;
+  return { usd: Number(usd.toFixed(5)), krw: Math.round(usd * USD_TO_KRW) };
+}
 
 interface TalentPick {
   code: string;
@@ -54,6 +69,8 @@ interface Body {
   direction?: string;
   samples?: number;
   tier?: 'pro' | 'draft';
+  /** 생성 엔진 — gemini(나노바나나) | higgs(힉스필드 Element) */
+  engine?: 'gemini' | 'higgs';
   dryRun?: boolean;
   title?: string;
 }
@@ -255,12 +272,18 @@ export async function POST(req: Request) {
         refs: written.refs.map((r) => ({ kind: r.kind, title: r.title, url: r.url, swatchHex: r.swatchHex })),
         aspect: size.genAspect,
         target: { width: size.width, height: size.height },
+        elementId: color?.elementId ?? null,
         usage: written.usage ?? null,
       });
     }
 
     if (!ftpConfigured()) {
       return NextResponse.json({ ok: false, error: 'FTP 설정이 없습니다 (.env.local).' }, { status: 500 });
+    }
+
+    const engine = body.engine === 'higgs' ? 'higgs' : 'gemini';
+    if (engine === 'higgs' && !higgsfieldConfigured()) {
+      return NextResponse.json({ ok: false, error: 'Higgsfield 설정이 없습니다 (.env.local).' }, { status: 500 });
     }
 
     // ── 4) 사용량 한도 ────────────────────────────────────────────
@@ -274,7 +297,7 @@ export async function POST(req: Request) {
     );
     const cur = usage?.count ?? 0;
     const cap = usage?.limit ?? limit;
-    if (cur + samples > cap) {
+    if (engine === 'gemini' && cur + samples > cap) {
       return NextResponse.json(
         { ok: false, error: `생성 한도 초과 — ${cur}/${cap} 장 사용됨. 관리자가 한도를 늘려야 합니다.`, usage: { count: cur, limit: cap } },
         { status: 429 },
@@ -311,16 +334,30 @@ export async function POST(req: Request) {
     let produced = 0;
 
     for (let n = 1; n <= samples; n++) {
-      let gen;
+      let gen: {
+        buffer: Buffer; model: string; elapsedMs: number; requestBytes: number;
+        usage?: { promptTokens: number; imageTokens: number; thoughtTokens: number; totalTokens: number };
+      };
       try {
-        gen = await generateImage({
-          prompt: written.prompt,
-          references: inline,
-          aspect: size.genAspect as GenAspect,
-          tier: body.tier ?? 'pro',
-        });
+        if (engine === 'higgs') {
+          const r = await hfGenerate({
+            prompt: written.prompt,
+            // 힉스필드는 공개 URL 을 자체 스토리지로 가져간다 (스와치는 URL 이 없어 제외)
+            referenceUrls: usedRefs.filter((x) => x.url).map((x) => x.url as string),
+            aspect: size.genAspect,
+            ...(color?.elementId ? { elementId: String(color.elementId) } : {}),
+          });
+          gen = { buffer: r.buffer, model: `higgsfield/${r.model}${r.usedElement ? '+element' : ''}`, elapsedMs: r.elapsedMs, requestBytes: 0 };
+        } else {
+          gen = await generateImage({
+            prompt: written.prompt,
+            references: inline,
+            aspect: size.genAspect as GenAspect,
+            tier: body.tier ?? 'pro',
+          });
+        }
       } catch (e) {
-        const err = e as GeminiError;
+        const err = e as GeminiError & HiggsfieldError;
         results.push({ ok: false, error: err.message, blockReason: err.blockReason ?? null, status: err.status ?? null });
         if (err.status === 422 || err.quotaExhausted) break; // 같은 요청은 같은 이유로 또 막힌다
         continue;
@@ -353,7 +390,7 @@ export async function POST(req: Request) {
         prompt: written.prompt,
         promptMode: written.mode,
         aiModel: gen.model,
-        provider: 'gemini',
+        provider: engine,
         sizeValue: size.value,
         sizeLabel: size.label,
         aspect: size.genAspect,
@@ -366,6 +403,8 @@ export async function POST(req: Request) {
         measuredHex: colorCheck?.hex ?? null,
         elapsedMs: gen.elapsedMs,
         requestBytes: gen.requestBytes,
+        // 실측 토큰과 그로부터 계산한 실제 원가 — 추정이 아니라 응답에서 읽은 값
+        ...(gen.usage ? { tokenUsage: gen.usage, cost: costFromUsage(gen.usage) } : {}),
         hidden: false,
         note: '',
         createdAt: new Date(isoNow),
@@ -377,6 +416,9 @@ export async function POST(req: Request) {
         ok: true,
         id: String(ins.insertedId),
         url,
+        // 실측 토큰 기반 실제 원가 — 화면이 추정치 대신 이 값을 쓴다
+        cost: costFromUsage(gen.usage),
+        tokenUsage: gen.usage ?? null,
         width: cropped.width,
         height: cropped.height,
         deltaE: colorCheck?.deltaE ?? null,
@@ -385,7 +427,14 @@ export async function POST(req: Request) {
       });
     }
 
-    if (produced > 0) await usageCol.updateOne({ _id: USAGE_KEY as never }, { $inc: { count: produced } });
+    // 엔진별로 다른 카운터 — gemini 는 월 한도, higgs 는 크레딧 추정 차감
+    if (produced > 0) {
+      await usageCol.updateOne(
+        { _id: (engine === 'higgs' ? 'higgs-image' : USAGE_KEY) as never },
+        { $inc: { count: produced } },
+        { upsert: true },
+      );
+    }
 
     const after = await usageCol.findOne({ _id: USAGE_KEY as never });
     return NextResponse.json({

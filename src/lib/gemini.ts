@@ -128,8 +128,19 @@ export interface GenerateInput {
   tier?: 'pro' | 'draft';
 }
 
+export interface TokenUsage {
+  /** 입력 (텍스트 + 참조 이미지) */
+  promptTokens: number;
+  /** 출력 이미지 토큰 */
+  imageTokens: number;
+  /** 내부 추론 토큰 — 출력 단가로 과금된다. 빼먹으면 원가가 60%% 과소 계상된다. */
+  thoughtTokens: number;
+  totalTokens: number;
+}
+
 export interface GenerateResult {
   buffer: Buffer;
+  usage?: TokenUsage;
   mimeType: string;
   width: number;
   height: number;
@@ -202,7 +213,24 @@ export async function generateImage(input: GenerateInput): Promise<GenerateResul
     const json = (await res.json()) as {
       candidates?: { content?: { parts?: Record<string, unknown>[] }; finishReason?: string }[];
       promptFeedback?: { blockReason?: string };
+      usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+        thoughtsTokenCount?: number;
+        totalTokenCount?: number;
+        candidatesTokensDetails?: { modality?: string; tokenCount?: number }[];
+      };
     };
+
+    const um = json.usageMetadata;
+    const usage: TokenUsage | undefined = um
+      ? {
+          promptTokens: um.promptTokenCount ?? 0,
+          imageTokens: um.candidatesTokensDetails?.find((d) => d.modality === 'IMAGE')?.tokenCount ?? um.candidatesTokenCount ?? 0,
+          thoughtTokens: um.thoughtsTokenCount ?? 0,
+          totalTokens: um.totalTokenCount ?? 0,
+        }
+      : undefined;
 
     if (json.promptFeedback?.blockReason) {
       // 안전필터. 같은 프롬프트로 다시 걸어도 결과가 같으므로 재시도 대상이 아니다.
@@ -219,6 +247,7 @@ export async function generateImage(input: GenerateInput): Promise<GenerateResul
         const meta = await sharp(buffer).metadata();
         return {
           buffer,
+          ...(usage ? { usage } : {}),
           mimeType: inline.mimeType ?? inline.mime_type ?? 'image/png',
           width: meta.width ?? 0,
           height: meta.height ?? 0,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useRef } from 'react';
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import type { ProductDoc, TalentDoc, PoseRefDoc, ExpressionDoc } from '@/lib/types';
 import type { SizePresetDoc, VariationDoc, PreservationDoc, ReferenceDoc } from '@/lib/queries';
 import { shrinkForUpload, formatBytes } from '@/lib/client-image';
@@ -52,11 +52,21 @@ const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
 ];
 
 /**
- * 장당 단가 — 출력 + 참조 8장·프롬프트 입력 포함, ₩1,400/$ 환산.
- *   pro   = gemini-3-pro-image 2K ($0.134 + 입력) ≈ ₩200 — 다중 참조 아이덴티티 유지 최상
- *   draft = gemini-3.1-flash-image 2K ($0.101 + 입력) ≈ ₩145 — 구도·분위기 초안용
+ * 장당 예상 단가 — 실측 usageMetadata 기반 (₩1,400/$).
+ *
+ * 실제 원가는 사고(thinking) 토큰에 따라 매번 달라진다: 같은 브리프로도 199~699 토큰이
+ * 나와 ₩230~₩314 범위로 흔들린다. 그래서 여기 값은 어디까지나 **예상 범위의 중앙**이고,
+ * 생성 후에는 응답의 실측 원가를 그대로 표시한다.
+ *   pro   = gemini-3-pro-image 2K — 실측 ₩230~₩314
+ *   draft = gemini-3.1-flash-image 2K — 출력 단가가 Pro 의 약 1/4
  */
-const WON_BY_TIER = { pro: 200, draft: 145 } as const;
+const WON_BY_TIER = { pro: 270, draft: 90 } as const;
+/**
+ * 힉스필드는 원화가 아니라 크레딧으로 빠진다.
+ * 서버(/api/balance)가 실제 설정값(perImage)을 내려주므로 그걸 우선 쓰고,
+ * 못 받았을 때만 이 기본값을 쓴다.
+ */
+const HF_CREDITS_FALLBACK = 2;
 const ORD = ['①', '②', '③', '④'];
 const MY_SIZE_GROUP = '내 규격';
 
@@ -64,12 +74,17 @@ interface DryRunResult {
   prompt: string;
   promptMode: string;
   refs: { kind: string; title: string; url?: string; swatchHex?: string }[];
+  /** 선택한 제품 컬러의 힉스필드 Element 토큰 (있으면 힉스필드가 유리) */
+  elementId?: string | null;
   aspect?: string;
   target?: { width: number; height: number };
 }
 
 interface GenResult {
   ok: boolean; id?: string; url?: string; width?: number; height?: number;
+  /** 실측 토큰 기반 실제 원가 */
+  cost?: { usd: number; krw: number } | null;
+  tokenUsage?: { promptTokens: number; imageTokens: number; thoughtTokens: number; totalTokens: number } | null;
   deltaE?: number | null; measuredHex?: string | null; elapsedMs?: number;
   error?: string; blockReason?: string | null;
 }
@@ -96,6 +111,14 @@ function Section({ n, title, hint, children, right, id }: {
 }
 
 export default function CreateStudio(p: Props) {
+  /**
+   * 작업 방식 — 이게 아래 섹션 구성을 결정한다.
+   *   ref    = 가진 사진으로 제작 (사진이 출발점)
+   *   direct = 자산으로 직접 제작 (제품·모델·포즈 조합이 출발점)
+   */
+  const [flow, setFlow] = useState<'ref' | 'direct'>('direct');
+  const [engine, setEngine] = useState<'gemini' | 'higgs'>('gemini');
+  const [balance, setBalance] = useState<{ gemini?: { count: number; limit: number; remaining: number }; higgs?: { credits?: number | null; configured?: boolean; perImage?: number; estimated?: boolean } } | null>(null);
   const [mode, setMode] = useState<'thumbnail' | 'banner'>('thumbnail');
   /** 프리셋 목록 — 커스텀 규격을 저장하면 여기 즉시 추가된다 */
   const [sizes, setSizes] = useState<WithId<SizePresetDoc>[]>(p.sizes);
@@ -133,6 +156,25 @@ export default function CreateStudio(p: Props) {
   const [results, setResults] = useState<GenResult[]>([]);
   const [err, setErr] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+
+  /** 힉스필드 실제 크레딧으로 기준값 재설정 (플랫폼 REST 에 잔액 API 가 없어 수동) */
+  async function syncCredits() {
+    const v = window.prompt('힉스필드 현재 크레딧 잔액을 입력하세요 (힉스필드 사이트에서 확인)', String(balance?.higgs?.credits ?? ''));
+    if (v == null) return;
+    const credits = Number(v.replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(credits)) return;
+    const r = await fetch('/api/balance', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ credits }) });
+    if ((await r.json()).ok) loadBalance();
+  }
+
+  const loadBalance = useCallback(async () => {
+    try {
+      const r = await fetch('/api/balance');
+      const j = await r.json();
+      if (j.ok) setBalance({ gemini: j.gemini, higgs: j.higgs });
+    } catch { /* 잔액 조회 실패는 생성을 막지 않는다 */ }
+  }, []);
+  useEffect(() => { loadBalance(); }, [loadBalance]);
 
   const product = p.products.find((x) => x.line === line);
   const size = sizes.find((s) => s.value === sizeValue);
@@ -230,6 +272,7 @@ export default function CreateStudio(p: Props) {
       ...(baseTab === 'pose' && shapeRefKey ? { shapeRefKey } : {}),
       ...(uploads.length ? { uploadedRefs: uploads, preservation } : {}),
       ...(hasBaseUpload && editTargets.length ? { editTargets } : {}),
+      engine,
       variationIds: Object.values(variationIds).filter((v) => v && !v.endsWith(':auto')),
       ...(direction.trim() ? { direction: direction.trim() } : {}),
       tier,
@@ -257,6 +300,7 @@ export default function CreateStudio(p: Props) {
       setErr((e as Error).message);
     } finally {
       setBusy(null);
+      if (!dryRun) loadBalance(); // 차감 결과를 즉시 반영
     }
   }
 
@@ -329,26 +373,41 @@ export default function CreateStudio(p: Props) {
   }
 
   const cost = samples * WON_BY_TIER[tier];
+  const dryElement = !!dry?.elementId;
   const isMySize = size?.group === MY_SIZE_GROUP;
 
   return (
     <div className="flex h-full">
       {/* ── 좌: 선택 ── */}
       <div className="flex-1 min-w-0 p-7 overflow-y-auto">
-        <header className="mb-5 flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <h1 className="text-[22px] font-extrabold tracking-tight">이미지 생성</h1>
-            <p className="text-[13px] mt-1" style={{ color: 'var(--text-dim)' }}>
-              모델과 레퍼런스를 고르고 방향만 적으면 됩니다. 프롬프트는 자동으로 만들어집니다.
-            </p>
-          </div>
-          {/* 가장 흔한 시작 행동 — 사진 들고 와서 시작. 바로 파일창이 열린다. */}
-          <button className="btn" onClick={() => fileInput.current?.click()} disabled={uploading}>
-            ＋ 레퍼런스로 시작
-          </button>
+        <header className="mb-5">
+          <h1 className="text-[22px] font-extrabold tracking-tight">이미지 생성</h1>
+          <p className="text-[13px] mt-1" style={{ color: 'var(--text-dim)' }}>
+            어떻게 만들지 먼저 고르면, 그에 맞는 항목만 아래에 나옵니다.
+          </p>
         </header>
 
         <div className="flex flex-col gap-3 max-w-[680px]">
+          {/* 0. 작업 방식 — 이 선택이 아래 섹션 구성을 바꾼다 */}
+          <div className="grid sm:grid-cols-2 gap-2.5">
+            {([
+              ['ref', '레퍼런스로 제작', '가진 사진에서 출발 — 그 사진을 편집하거나, 분위기·배경만 가져옵니다'],
+              ['direct', '직접 제작', '제품·컬러·모델·포즈를 조합해 새로 만듭니다'],
+            ] as const).map(([v, title, desc]) => {
+              const on = flow === v;
+              return (
+                <button key={v} onClick={() => setFlow(v)} className="card p-3.5 text-left"
+                        style={{ borderColor: on ? 'var(--accent)' : 'var(--line)', borderWidth: on ? 2 : 1,
+                                 background: on ? 'var(--accent-soft)' : 'var(--surface)' }}>
+                  <div className="text-[13.5px] font-bold" style={{ color: on ? 'var(--accent)' : 'var(--text)' }}>
+                    {on ? '● ' : '○ '}{title}
+                  </div>
+                  <div className="text-[11px] mt-1 leading-relaxed" style={{ color: 'var(--text-dim)' }}>{desc}</div>
+                </button>
+              );
+            })}
+          </div>
+
           {/* ① 용도 · 규격 */}
           <Section n="1" title="용도와 규격" hint="프리셋에서 고르거나 픽셀을 직접 지정합니다. 직접 지정한 규격은 저장해서 다시 쓸 수 있습니다.">
             <div className="flex gap-1.5 mb-3">
@@ -415,6 +474,7 @@ export default function CreateStudio(p: Props) {
           </Section>
 
           {/* ② 레퍼런스 — 가장 흔한 시작 행동이라 위로 올렸다 */}
+          {flow === 'ref' && (
           <Section n="2" title="레퍼런스 이미지"
                    hint="새로 올리거나 보관함에서 가져옵니다. 올린 이미지는 자동으로 보관함에 등록돼 다른 썸네일·배너 작업에도 재사용됩니다."
                    right={
@@ -529,9 +589,10 @@ export default function CreateStudio(p: Props) {
               </div>
             )}
           </Section>
+          )}
 
           {/* ③ 제품 */}
-          <Section n="3" title="제품 · 컬러" hint="선택하면 실측 치수·기하 서술·컬러 스와치가 자동으로 들어갑니다.">
+          <Section n={flow === "ref" ? "3" : "2"} title="제품 · 컬러" hint={flow === "ref" ? "사진 속 제품을 그대로 쓸 거면 비워두세요. 다른 제품으로 바꿀 때만 고릅니다." : "선택하면 실측 치수·기하 서술·컬러 스와치가 자동으로 들어갑니다."}>
             <select className="input mb-2" value={line} onChange={(e) => { setLine(e.target.value); setColorKey(''); setPoseRefKey(''); setShapeRefKey(''); }}>
               <option value="">— 제품 없음 (인물/분위기만) —</option>
               {p.products.map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>)}
@@ -552,7 +613,7 @@ export default function CreateStudio(p: Props) {
           </Section>
 
           {/* ④ 모델 — 다중 선택, 클릭 순서 = 사진 왼쪽부터 */}
-          <Section n="4" title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다. 다시 클릭하면 빠집니다.">
+          <Section n={flow === "ref" ? "4" : "3"} title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다. 다시 클릭하면 빠집니다.">
             <div className="flex flex-wrap gap-2 mb-3">
               {p.talents.map((t) => {
                 const idx = picks.findIndex((x) => x.code === t.code);
@@ -677,7 +738,8 @@ export default function CreateStudio(p: Props) {
           </Section>
 
           {/* ⑤ 베이스 (자산) */}
-          <Section n="5" title="베이스 (기존 자산)" hint="확정된 컷이나 실사 포즈 레퍼를 앵커로 씁니다. 레퍼런스를 '이 사진을 편집'으로 쓸 땐 비워두세요.">
+          {flow === 'direct' && (
+          <Section n="4" title="베이스 (기존 자산)" hint="확정된 컷이나 실사 포즈 레퍼를 앵커로 씁니다. 레퍼런스를 '이 사진을 편집'으로 쓸 땐 비워두세요.">
             <div className="flex gap-1.5 mb-3">
               {([['none', '없음'], ['cut', '기존 컷'], ['pose', '포즈 레퍼']] as const).map(([v, l]) => (
                 <button key={v} onClick={() => setBaseTab(v)} className="btn"
@@ -730,9 +792,10 @@ export default function CreateStudio(p: Props) {
               ) : <p className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>제품을 먼저 고르면 그 제품의 실사 포즈 레퍼가 나옵니다.</p>
             )}
           </Section>
+          )}
 
           {/* ⑥ 연출 */}
-          <Section n="6" title="연출" hint="비워두면 레퍼런스와 베이스를 따라갑니다."
+          <Section n={flow === "ref" ? "5" : "5"} title="연출" hint="비워두면 레퍼런스와 베이스를 따라갑니다."
                    right={<button className="btn btn-ghost text-[11px]" onClick={() => setShowStaging((v) => !v)}>{showStaging ? '접기' : '펼치기'}</button>}>
             {showStaging && (
               <div className="grid sm:grid-cols-2 gap-2">
@@ -750,7 +813,7 @@ export default function CreateStudio(p: Props) {
           </Section>
 
           {/* ⑦ 방향 지시 */}
-          <Section n="7" title="방향 지시" hint="한글로 편하게 적으면 됩니다. 예: 배경을 밝은 거실로, 랩탑 들고 있게">
+          <Section n="6" title="방향 지시" hint="한글로 편하게 적으면 됩니다. 예: 배경을 밝은 거실로, 랩탑 들고 있게">
             <textarea className="input" rows={3} value={direction} onChange={(e) => setDirection(e.target.value)}
                       placeholder="예: 창가 자연광이 드는 아늑한 거실, 옆에 작은 화분" />
           </Section>
@@ -814,6 +877,60 @@ export default function CreateStudio(p: Props) {
                 ? '프롬프트 확인 (Opus · 약 ₩50)'
                 : '프롬프트 확인 (무료)'}
           </button>
+          {/* 엔진 — 힉스필드는 Element 토큰 보유 제품에서 형태·색이 더 정확 */}
+          <div className="flex gap-1.5">
+            {([
+              ['gemini', '나노바나나', '범용 · 원화 한도에서 차감'],
+              ['higgs', '힉스필드', 'Element 토큰 제품에서 형태·색 우세 · 크레딧 차감'],
+            ] as const).map(([v, l, tip]) => {
+              const off = v === 'higgs' && balance?.higgs?.configured === false;
+              return (
+                <button key={v} onClick={() => !off && setEngine(v)} title={off ? '힉스필드 설정이 없습니다 (.env.local)' : tip}
+                        className="chip flex-1 justify-center"
+                        style={{ ...(engine === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}),
+                                 ...(off ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }}>
+                  {l}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 잔액 — 생성 전에 "얼마 남았고 얼마 나간다" 를 항상 보여준다 */}
+          <div className="text-[10.5px] px-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+            {engine === 'higgs' ? (
+              balance?.higgs?.credits != null ? (
+                <>
+                  힉스필드 잔액(추정) <b style={{ color: 'var(--text-dim)' }}>{balance.higgs.credits.toLocaleString()} 크레딧</b>
+                  {' → 이번 생성 약 '}
+                  <b style={{ color: 'var(--warn)' }}>{(samples * (balance?.higgs?.perImage ?? HF_CREDITS_FALLBACK)).toLocaleString()} 크레딧</b> 차감
+                  <button onClick={syncCredits} className="ml-1"
+                          style={{ color: 'var(--info)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 10 }}>
+                    동기화
+                  </button>
+                  {dry && !dryElement && <><br />이 제품엔 Element 토큰이 없어 힉스필드 이점이 적습니다.</>}
+                  {dry && dryElement && <><br /><span style={{ color: 'var(--ok)' }}>Element 토큰 보유 — 형태·색 정확도 우세</span></>}
+                </>
+              ) : (
+                <>
+                  힉스필드 잔액 미설정 —{' '}
+                  <button onClick={syncCredits} style={{ color: 'var(--info)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 10.5 }}>
+                    현재 크레딧 입력
+                  </button>
+                </>
+              )
+            ) : (
+              balance?.gemini ? (
+                <>
+                  월 한도 <b style={{ color: 'var(--text-dim)' }}>{balance.gemini.count}/{balance.gemini.limit}장</b>
+                  {` (남은 ${balance.gemini.remaining}장) → 이번 생성 `}
+                  <b style={{ color: 'var(--warn)' }}>{samples}장 · 약 ₩{cost.toLocaleString()}</b>
+                  <br />실제 원가는 생성마다 달라집니다 (사고 토큰 변동 — 1장 ₩230~₩314 실측)
+                </>
+              ) : '사용량을 불러오는 중…'
+            )}
+          </div>
+
+          {engine === 'gemini' && (
           <div className="flex gap-1.5">
             {([['pro', '고품질 · ₩200'], ['draft', '초안 · ₩145']] as const).map(([v, l]) => (
               <button key={v} onClick={() => setTier(v)} className="chip flex-1 justify-center"
@@ -823,7 +940,8 @@ export default function CreateStudio(p: Props) {
               </button>
             ))}
           </div>
-          {tier === 'draft' && (
+          )}
+          {engine === 'gemini' && tier === 'draft' && (
             <div className="text-[10px] px-1" style={{ color: 'var(--warn)' }}>
               초안 모드는 얼굴·제품 참조 유지력이 낮습니다. 확정본은 고품질로 다시 뽑으세요.
             </div>
@@ -838,7 +956,9 @@ export default function CreateStudio(p: Props) {
             </button>
           </div>
           <div className="text-[10.5px] text-center" style={{ color: 'var(--text-mute)' }}>
-            생성 약 <b style={{ color: 'var(--text-dim)' }}>₩{cost.toLocaleString()}</b> · 25~35초/장
+            {engine === 'higgs'
+              ? <>약 <b style={{ color: 'var(--text-dim)' }}>{(samples * (balance?.higgs?.perImage ?? HF_CREDITS_FALLBACK)).toLocaleString()} 크레딧</b> · 20~40초/장</>
+              : <>생성 약 <b style={{ color: 'var(--text-dim)' }}>₩{cost.toLocaleString()}</b> · 25~35초/장 (생성 후 실측 표시)</>}
             {p.promptMode === 'local' && <span> · 프롬프트는 템플릿 조립(무과금)</span>}
           </div>
         </div>
@@ -863,6 +983,12 @@ export default function CreateStudio(p: Props) {
                     {r.deltaE != null && (
                       <span style={{ color: r.deltaE < 5 ? 'var(--ok)' : r.deltaE < 15 ? 'var(--warn)' : 'var(--danger)' }}>
                         컬러 ΔE {r.deltaE}
+                      </span>
+                    )}
+                    {r.cost && (
+                      <span title={r.tokenUsage ? `입력 ${r.tokenUsage.promptTokens} · 이미지 ${r.tokenUsage.imageTokens} · 사고 ${r.tokenUsage.thoughtTokens} 토큰` : ''}
+                            style={{ color: 'var(--text-dim)' }}>
+                        실제 ₩{r.cost.krw.toLocaleString()}
                       </span>
                     )}
                   </div>
