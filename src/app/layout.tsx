@@ -16,8 +16,12 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
     <html lang="ko" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex">
         <Sidebar />
-        {/* 모바일에서는 상단 고정 바(h-12) 아래로 본문을 내린다 */}
-        <main className="flex-1 min-w-0 overflow-x-hidden pt-12 lg:pt-0">{children}</main>
+        {/*
+          모바일에서는 상단 고정 바(h-12) 아래로 본문을 내린다.
+          overflow-x 는 hidden 이 아니라 clip 이어야 한다 — hidden 은 overflow-y 를 auto 로
+          만들어 스크롤 컨테이너가 생기고, 그러면 안쪽의 sticky 가 먹지 않는다.
+        */}
+        <main className="flex-1 min-w-0 overflow-x-clip pt-12 lg:pt-0">{children}</main>
       </body>
     </html>
   );

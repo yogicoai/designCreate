@@ -191,45 +191,49 @@ function buildAuto(
       direction: side,
     });
 
-    // 눈썹 문구가 있으면 제목을 아래로 내려 네 줄로 쌓는다
+    /*
+     * 세로 자리는 실제 자사몰 웹 배너를 재서 맞췄다.
+     * 눈썹 .27 / 제목 .415 / 혜택 .565 / 버튼 .71 — 줄 사이가 .15 씩.
+     * 처음엔 .17 씩 벌렸더니 한 덩어리로 안 읽히고 따로 놀았다.
+     */
     const hasEye = !!txt.eyebrow;
-    const ty = hasEye ? 0.43 : 0.36;
+    const ty = hasEye ? 0.415 : 0.36;
     // 눈썹과 혜택 줄은 작아서 흰색이면 중간톤 위에서 뭉갠다 — 제목만 흰색으로 둔다
     if (hasEye) layers.push({
-      id: 'auto-eyebrow', kind: 'text', x, y: 0.26, text: txt.eyebrow,
-      size: fitText(txt.eyebrow, 0.055, colFrac), weight: 600, tracking: 0.01,
+      id: 'auto-eyebrow', kind: 'text', x, y: 0.27, text: txt.eyebrow,
+      size: fitText(txt.eyebrow, 0.050, colFrac), weight: 600, tracking: 0.01,
       lineHeight: 1.25, align, color: soft, opacity: 1, shadow: false, curve: 0,
     });
     if (txt.title) layers.push({
       id: 'auto-title', kind: 'text', x, y: ty, text: txt.title,
-      size: fitText(txt.title, hasEye ? 0.135 : 0.155, colFrac), weight: 800, tracking: -0.015,
+      size: fitText(txt.title, hasEye ? 0.125 : 0.15, colFrac), weight: 800, tracking: -0.015,
       lineHeight: 1.15, align, color: strong,
       opacity: 1, shadow: false, curve: 0,
     });
     if (txt.subtitle) layers.push({
-      id: 'auto-sub', kind: 'text', x, y: hasEye ? 0.60 : 0.56, text: txt.subtitle,
-      size: fitText(txt.subtitle, hasEye ? 0.048 : 0.058, colFrac), weight: 500, tracking: 0.03,
+      id: 'auto-sub', kind: 'text', x, y: hasEye ? 0.565 : 0.53, text: txt.subtitle,
+      size: fitText(txt.subtitle, hasEye ? 0.046 : 0.055, colFrac), weight: 500, tracking: 0.03,
       lineHeight: 1.3, align, color: soft,
       opacity: 1, shadow: false, curve: 0,
     });
     if (txt.cta) {
-      const cs = fitText(txt.cta, hasEye ? 0.046 : 0.055, colFrac * 0.8);
+      const cs = fitText(txt.cta, hasEye ? 0.044 : 0.05, colFrac * 0.8);
       // 화살표 자리까지 세어서 알약 폭을 잡는다
       const pw = ((textEm(txt.cta) + 3.2) * cs * S) / W;
       const px = side === 'left' ? marginX + pw / 2 : 1 - marginX - pw / 2;
-      const cy = 0.78;
+      const cy = 0.71;
       const on = '#ffffff';
       layers.push({
-        id: 'auto-pill', kind: 'rect', x: px, y: cy, w: pw, h: (cs * S * 2.4) / H,
+        id: 'auto-pill', kind: 'rect', group: 'cta', x: px, y: cy, w: pw, h: (cs * S * 2.4) / H,
         color: pillFrom(reg.dominant), opacity: 0.95, radius: 0.06,
       });
       layers.push({
-        id: 'auto-cta', kind: 'text', x: px - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
+        id: 'auto-cta', kind: 'text', group: 'cta', x: px - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
         weight: 600, tracking: 0.01, align: 'middle',
         color: on, opacity: 1, shadow: false, curve: 0,
       });
       layers.push({
-        id: 'auto-cta-arrow', kind: 'icon', x: px + pw / 2 - (cs * S * 0.9) / W, y: cy,
+        id: 'auto-cta-arrow', kind: 'icon', group: 'cta', x: px + pw / 2 - (cs * S * 0.9) / W, y: cy,
         icon: 'arrow', size: cs * 0.95, stroke: 0.13, color: on, opacity: 1,
       });
     }
@@ -288,16 +292,16 @@ function buildAuto(
       const cy = topSide ? (big ? 0.9 : 0.87) : (big ? 0.10 : 0.13);
       const on = '#ffffff';
       layers.push({
-        id: 'auto-pill', kind: 'rect', x: 0.5, y: cy, w: pw,
+        id: 'auto-pill', kind: 'rect', group: 'cta', x: 0.5, y: cy, w: pw,
         h: (cs * S * 2.6) / H, color: pillFrom(reg.dominant), opacity: 0.95, radius: 0.06,
       });
       layers.push({
-        id: 'auto-cta', kind: 'text', x: 0.5 - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
+        id: 'auto-cta', kind: 'text', group: 'cta', x: 0.5 - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
         weight: 600, tracking: 0.01, align: 'middle',
         color: on, opacity: 1, shadow: false, curve: 0,
       });
       layers.push({
-        id: 'auto-cta-arrow', kind: 'icon', x: 0.5 + pw / 2 - (cs * S * 0.9) / W, y: cy,
+        id: 'auto-cta-arrow', kind: 'icon', group: 'cta', x: 0.5 + pw / 2 - (cs * S * 0.9) / W, y: cy,
         icon: 'arrow', size: cs * 0.95, stroke: 0.13, color: on, opacity: 1,
       });
     }

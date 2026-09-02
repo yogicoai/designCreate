@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ICONS, renderLayersToSvg, type DesignDoc, type DesignLayer } from '@/lib/design-render';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { ICONS, renderLayersToSvg, textEm, type DesignDoc, type DesignLayer } from '@/lib/design-render';
 import { TEMPLATES, THEMES, findTheme } from '@/lib/banner-templates';
 import { VISIBLE_SIZES, VISIBLE_GROUPS, findSize, shapeOf, cropLoss } from '@/lib/banner-sizes';
+import { shrinkForUpload } from '@/lib/client-image';
 
 /**
  * 배너 디자인 생성 — 간단한 포토샵.
@@ -39,6 +40,33 @@ function newLayer(kind: DesignLayer['kind'], color: string): DesignLayer {
 
 /** 자동 배치가 만든 레이어인가 — 손대지 않은 배치만 규격이 바뀔 때 다시 잡는다 */
 const isAuto = (l: DesignLayer) => l.id.startsWith('auto-');
+
+/*
+ * 내가 올린 배경은 브라우저에 기억해둔다.
+ *
+ * cuts 컬렉션에 넣지 않는 이유: 이건 '생성한 컷'이 아니라 배너 재료일 뿐이다.
+ * 레퍼런스 보관함에도 넣지 않는다 — 거긴 스타일 참고 이미지 자리다.
+ * 그래도 새로고침하면 사라지는 건 곤란하니 URL 만 브라우저에 적어둔다.
+ *
+ * 스냅샷으로 문자열을 돌려주는 게 중요하다. 매번 새 배열을 만들어 돌려주면
+ * useSyncExternalStore 가 계속 바뀐 것으로 보고 무한히 다시 그린다.
+ */
+const MINE_KEY = 'banner-bg-mine';
+const mineListeners = new Set<() => void>();
+let mineJson = (() => {
+  try { return (typeof window !== 'undefined' && window.localStorage.getItem(MINE_KEY)) || '[]'; }
+  catch { return '[]'; }
+})();
+
+function subscribeMine(fn: () => void) {
+  mineListeners.add(fn);
+  return () => { mineListeners.delete(fn); };
+}
+function saveMine(next: CutOption[]) {
+  mineJson = JSON.stringify(next.slice(0, 24));
+  try { window.localStorage.setItem(MINE_KEY, mineJson); } catch { /* 무시 */ }
+  mineListeners.forEach((fn) => fn());
+}
 
 /**
  * 단계 카드.
@@ -84,18 +112,74 @@ function Step({
   );
 }
 
+/** 이 레이어가 속한 무리. 무리가 없으면 자기 자신이 한 무리다 */
+const groupOf = (l: DesignLayer) => l.group ?? l.id;
+
+/** 무리마다 대표 하나씩만 남긴다 — 손잡이도 목록도 한 몸으로 보여야 한다 */
+function leaders(list: DesignLayer[]): DesignLayer[] {
+  const seen = new Set<string>();
+  return list.filter((l) => {
+    const g = groupOf(l);
+    if (seen.has(g)) return false;
+    seen.add(g);
+    return true;
+  });
+}
+
+/**
+ * 버튼(알약 + 글자 + 화살표)의 속을 다시 맞춘다.
+ *
+ * 문구나 글자 크기를 바꾸면 알약도 같이 커져야 한다. 서버의 자동 배치가
+ * 쓰는 것과 같은 계산이다 — 안 그러면 글자가 알약 밖으로 삐져나온다.
+ */
+function relayoutButton(list: DesignLayer[], group: string, W: number, H: number): DesignLayer[] {
+  const S = Math.min(W, H);
+  const pill = list.find((l) => l.group === group && l.kind === 'rect');
+  const label = list.find((l) => l.group === group && l.kind === 'text');
+  const arrow = list.find((l) => l.group === group && l.kind === 'icon');
+  if (!pill || !label) return list;
+
+  const cs = label.size ?? 0.03;
+  const pw = Math.min(0.95, ((textEm(label.text ?? '') + (arrow ? 3.2 : 1.8)) * cs * S) / W);
+  const ph = (cs * S * 2.4) / H;
+  const cx = pill.x;
+  const cy = pill.y;
+
+  return list.map((l) => {
+    if (l.group !== group) return l;
+    if (l.kind === 'rect') return { ...l, x: cx, y: cy, w: pw, h: ph };
+    if (l.kind === 'icon') return { ...l, x: cx + pw / 2 - (cs * S * 0.9) / W, y: cy, size: cs * 0.95 };
+    return { ...l, x: arrow ? cx - (cs * S * 0.6) / W : cx, y: cy };
+  });
+}
+
+/** 목록·손잡이에 보여줄 이름. 무리는 '버튼' 으로 묶어 부른다 */
+function labelOf(l: DesignLayer, all: DesignLayer[]): string {
+  if (l.group) {
+    const t = all.find((x) => x.group === l.group && x.kind === 'text')?.text;
+    return `버튼 · ${t || '(빈 글자)'}`;
+  }
+  if (l.kind === 'text') return l.text || '(빈 글자)';
+  if (l.kind === 'icon') return `아이콘 · ${ICONS[l.icon ?? '']?.label ?? l.icon}`;
+  return l.kind === 'rect' ? '도형' : '그늘';
+}
+
 /** 저장된 배너를 다시 열 때, 그때 쓴 문구를 입력칸에 되돌려 놓는다 */
 function textOf(d: DesignDoc | undefined, id: string, fallback: string) {
   return d?.layers.find((l) => l.id === id)?.text ?? fallback;
 }
 
 export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; initial?: DesignDoc }) {
-  const [imageUrl, setImageUrl] = useState(initial?.imageUrl || cuts[0]?.url || '');
+  /*
+   * 배경은 고르고 시작한다. 첫 컷을 자동으로 물려두면 고르지도 않은 배경 위에
+   * 문구가 얹힌 채 화면이 열려서, 자기가 무엇을 만들고 있는지 헷갈린다.
+   */
+  const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? '');
   const [themeId, setThemeId] = useState('dark');
   const [layers, setLayers] = useState<DesignLayer[]>(initial?.layers ?? []);
   const [selected, setSelected] = useState<string | null>(null);
   const [templates, setTemplates] = useState<SavedTemplate[]>([]);
-  const [busy, setBusy] = useState<'auto' | 'save' | 'tpl' | null>(null);
+  const [busy, setBusy] = useState<'auto' | 'save' | 'tpl' | 'upload' | null>(null);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const [result, setResult] = useState<string | null>(null);
@@ -124,6 +208,11 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
 
   const theme = findTheme(themeId);
   const sel = layers.find((l) => l.id === selected) ?? null;
+
+  const mineRaw = useSyncExternalStore(subscribeMine, () => mineJson, () => '[]');
+  const mine = useMemo<CutOption[]>(() => {
+    try { return JSON.parse(mineRaw) as CutOption[]; } catch { return []; }
+  }, [mineRaw]);
 
   // 원본 컷의 실제 크기 — 얼마나 잘리는지 알려주려면 필요하다
   useEffect(() => {
@@ -203,9 +292,20 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
     const d = dragRef.current, st = stageRef.current;
     if (!d || !st) return;
     const r = st.getBoundingClientRect();
-    patch(d.id, {
-      x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width - d.dx)),
-      y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height - d.dy)),
+    const nx = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width - d.dx));
+    const ny = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height - d.dy));
+    /*
+     * 한 무리는 통째로 옮긴다. 대표가 움직인 만큼 나머지도 같이 민다 —
+     * 각자 따로 걸리면 버튼의 알약·글자·화살표가 옮길 때마다 어긋난다.
+     * 따라가는 조각은 자르지 않는다. 자르면 무리의 모양이 뭉개진다.
+     */
+    setLayers((cur) => {
+      const lead = cur.find((l) => l.id === d.id);
+      if (!lead) return cur;
+      const ddx = nx - lead.x;
+      const ddy = ny - lead.y;
+      const g = groupOf(lead);
+      return cur.map((l) => (groupOf(l) === g ? { ...l, x: l.x + ddx, y: l.y + ddy } : l));
     });
   }
   const onUp = () => { dragRef.current = null; };
@@ -281,6 +381,33 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
 
+  /**
+   * 내 이미지를 배경으로 올린다.
+   *
+   * 서버가 배경을 URL 로 받아 처리하므로 공개된 자리에 올라가야 한다 — cafe24 FTP.
+   * register=0 을 붙여 레퍼런스 보관함에는 넣지 않는다. 이건 스타일 참고가 아니라
+   * 이 배너의 재료일 뿐이다.
+   */
+  async function uploadBackground(files: FileList | null) {
+    const f = files?.[0];
+    if (!f) return;
+    setBusy('upload'); setErr(''); setNote('');
+    try {
+      const shrunk = await shrinkForUpload(f);
+      const fd = new FormData();
+      fd.append('file', shrunk.file);
+      fd.append('title', f.name);
+      fd.append('register', '0');
+      const j = await (await fetch('/api/upload', { method: 'POST', body: fd })).json();
+      if (!j.ok) { setErr(j.error || '업로드 실패'); return; }
+      const row: CutOption = { id: j.url, url: j.url, label: f.name };
+      saveMine([row, ...mine.filter((m) => m.url !== j.url)]);
+      setImageUrl(j.url);
+      setResult(null);
+      setNote(`"${f.name}" 을(를) 배경으로 올렸습니다. (${j.width}×${j.height})`);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
+  }
+
   async function saveTemplate() {
     const name = window.prompt('템플릿 이름을 지어주세요 (배경 없이 배치만 저장됩니다)');
     if (!name) return;
@@ -296,6 +423,50 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
     } finally { setBusy(null); }
   }
 
+  // ── 선택한 무리 — 버튼(알약+글자+화살표)은 조각이 아니라 한 몸으로 고친다 ──
+  const selGroup = sel?.group ?? null;
+  const grpLayers = selGroup ? layers.filter((l) => l.group === selGroup) : [];
+  const btnLabel = grpLayers.find((l) => l.kind === 'text') ?? null;
+  const btnPill = grpLayers.find((l) => l.kind === 'rect') ?? null;
+  const isSel = (l: DesignLayer) => !!sel && groupOf(l) === groupOf(sel);
+
+  /*
+   * 두 번 누르면 편집으로 — 고치는 자리(맨 위 패널)로 데려가 문구에 초점을 준다.
+   * focusTick 이 카운터인 이유: 같은 레이어를 다시 두 번 눌러도 또 와야 한다.
+   */
+  const inspectorRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const [focusTick, setFocusTick] = useState(0);
+  useEffect(() => {
+    if (!focusTick) return;
+    inspectorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    textRef.current?.focus();
+    textRef.current?.select?.();
+  }, [focusTick]);
+
+  function openInspector(id: string) {
+    setSelected(id);
+    setFocusTick((n) => n + 1);
+  }
+
+  /** 버튼 문구·크기를 고치면 같은 계산으로 알약도 다시 잰다 — 글자가 삐져나오면 안 된다 */
+  function setBtn(next: Partial<DesignLayer>) {
+    if (!btnLabel || !selGroup) return;
+    setLayers((cur) => relayoutButton(
+      cur.map((l) => (l.id === btnLabel.id ? { ...l, ...next } : l)),
+      selGroup, dims.w, dims.h,
+    ));
+    setResult(null);
+  }
+
+  /** 버튼의 글자와 화살표는 같은 색이어야 한다 */
+  function setBtnInk(color: string) {
+    if (!selGroup) return;
+    setLayers((cur) => cur.map((l) => (
+      l.group === selGroup && (l.kind === 'text' || l.kind === 'icon') ? { ...l, color } : l
+    )));
+  }
+
   const num = (label: string, v: number, min: number, max: number, step: number, on: (n: number) => void, fmt?: (n: number) => string) => (
     <label className="block mb-2">
       <div className="flex justify-between text-[10.5px] mb-0.5" style={{ color: 'var(--text-mute)' }}>
@@ -306,17 +477,162 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
     </label>
   );
 
+  /*
+   * 선택한 것을 고치는 자리.
+   *
+   * 오른쪽 열 맨 위에 둔다. 아래쪽에 있으면 무대에서 뭔가를 고른 뒤
+   * 한참 스크롤해야 해서, 고르는 곳과 고치는 곳이 멀어진다.
+   * 무대에서 두 번 누르면 여기로 와서 곧바로 문구를 고칠 수 있다.
+   */
+  const inspector = !sel ? null : (
+    <div ref={inspectorRef} className="card p-3 mb-3" style={{ borderColor: 'var(--accent-dim)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="label" style={{ color: 'var(--text-dim)' }}>{labelOf(sel, layers)}</div>
+        <button className="chip" onClick={() => setSelected(null)} title="선택 해제">닫기</button>
+      </div>
+
+      {btnLabel && btnPill ? (
+        /* 버튼은 한 몸이라 조각별로 만지게 하지 않는다 — 문구·크기·색만 준다 */
+        <>
+          <input ref={textRef as unknown as React.RefObject<HTMLInputElement>}
+                 className="input py-1 text-[12px] mb-2" value={btnLabel.text ?? ''}
+                 placeholder="버튼 문구"
+                 onChange={(e) => setBtn({ text: e.target.value })} />
+          {num('글자 크기', btnLabel.size ?? 0.03, 0.012, 0.09, 0.001,
+               (n) => setBtn({ size: n }), (n) => `${(n * 100).toFixed(1)}%`)}
+          {num('모서리', btnPill.radius ?? 0.06, 0, 0.2, 0.005,
+               (n) => patch(btnPill.id, { radius: n }), (n) => n.toFixed(3))}
+          <div className="label mb-1 mt-1">버튼 색</div>
+          <div className="flex items-center gap-2 mb-2">
+            <input type="color" value={btnPill.color}
+                   onChange={(e) => patch(btnPill.id, { color: e.target.value })}
+                   style={{ width: 40, height: 28, padding: 0, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'none' }} />
+            <div className="flex gap-1 flex-wrap">
+              {[theme.accent, theme.strong, theme.scrim, '#2f3a5c'].map((c) => (
+                <button key={c} onClick={() => patch(btnPill.id, { color: c })} title={c}
+                        className="w-6 h-6 rounded" style={{ background: c, border: '1px solid var(--line)' }} />
+              ))}
+            </div>
+          </div>
+          <div className="label mb-1">글자 색</div>
+          <div className="flex items-center gap-2">
+            <input type="color" value={btnLabel.color}
+                   onChange={(e) => setBtnInk(e.target.value)}
+                   style={{ width: 40, height: 28, padding: 0, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'none' }} />
+            <div className="flex gap-1 flex-wrap">
+              {['#ffffff', '#1b1d21'].map((c) => (
+                <button key={c} onClick={() => setBtnInk(c)} title={c}
+                        className="w-6 h-6 rounded" style={{ background: c, border: '1px solid var(--line)' }} />
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+
+        {sel.kind === 'text' && (
+          <>
+            <textarea ref={textRef as unknown as React.RefObject<HTMLTextAreaElement>} className="input text-[12px] mb-2" style={{ height: 62 }} value={sel.text ?? ''}
+                      placeholder="문구 (줄바꿈 가능)"
+                      onChange={(e) => patch(sel.id, { text: e.target.value })} />
+            {num('글자 크기', sel.size ?? 0.06, 0.015, 0.2, 0.002, (n) => patch(sel.id, { size: n }), (n) => `${(n * 100).toFixed(1)}%`)}
+            {num('굵기', sel.weight ?? 700, 300, 900, 100, (n) => patch(sel.id, { weight: n }), (n) => String(n))}
+            {num('자간', sel.tracking ?? 0, -0.05, 0.2, 0.005, (n) => patch(sel.id, { tracking: n }), (n) => n.toFixed(3))}
+            {num('줄 간격', sel.lineHeight ?? 1.25, 0.9, 2, 0.05, (n) => patch(sel.id, { lineHeight: n }), (n) => n.toFixed(2))}
+            {num('곡선 (반달)', sel.curve ?? 0, -1, 1, 0.02, (n) => patch(sel.id, { curve: n }), (n) => n.toFixed(2))}
+            <div className="flex gap-1.5 mb-2">
+              {(['start', 'middle', 'end'] as const).map((a) => (
+                <button key={a} className="chip flex-1 justify-center"
+                        style={sel.align === a ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}
+                        onClick={() => patch(sel.id, { align: a })}>
+                  {a === 'start' ? '왼쪽' : a === 'middle' ? '가운데' : '오른쪽'}
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-1.5 text-[11px] mb-2" style={{ color: 'var(--text-dim)' }}>
+              <input type="checkbox" checked={!!sel.shadow} onChange={(e) => patch(sel.id, { shadow: e.target.checked })} />
+              글자 외곽 그림자 (밝은 배경에서 안 날아가게)
+            </label>
+          </>
+        )}
+
+        {sel.kind === 'icon' && (
+          <>
+            <div className="flex flex-wrap gap-1 mb-2">
+              {Object.entries(ICONS).map(([k, v]) => (
+                <button key={k} className="chip" title={v.label}
+                        style={sel.icon === k ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}
+                        onClick={() => patch(sel.id, { icon: k })}>{v.label}</button>
+              ))}
+            </div>
+            {num('크기', sel.size ?? 0.06, 0.015, 0.25, 0.002, (n) => patch(sel.id, { size: n }), (n) => `${(n * 100).toFixed(1)}%`)}
+            {num('선 굵기', sel.stroke ?? 0.09, 0.02, 0.2, 0.005, (n) => patch(sel.id, { stroke: n }), (n) => n.toFixed(3))}
+          </>
+        )}
+
+        {(sel.kind === 'rect' || sel.kind === 'scrim') && (
+          <>
+            {num('가로', sel.w ?? 0.4, 0.05, 1, 0.01, (n) => patch(sel.id, { w: n }), (n) => `${(n * 100).toFixed(0)}%`)}
+            {num('세로', sel.h ?? 0.1, 0.02, 1, 0.01, (n) => patch(sel.id, { h: n }), (n) => `${(n * 100).toFixed(0)}%`)}
+            {sel.kind === 'rect' && num('모서리', sel.radius ?? 0, 0, 0.2, 0.005, (n) => patch(sel.id, { radius: n }), (n) => n.toFixed(3))}
+            {/*
+              * 그늘 방향에 좌/우가 있어야 한다 — 가로형 배너의 자동 배치가
+              * 좌우 그라데이션을 만들기 때문에, 여기서 위/아래만 고를 수 있으면
+              * 손대는 순간 배치가 깨진다.
+              */}
+            {sel.kind === 'scrim' && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {(['top', 'bottom', 'left', 'right', 'none'] as const).map((d) => (
+                  <button key={d} className="chip justify-center"
+                          style={{
+                            ...(sel.direction === d ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}),
+                            flex: '1 1 28%',
+                          }}
+                          onClick={() => patch(sel.id, { direction: d })}>
+                    {d === 'top' ? '위' : d === 'bottom' ? '아래' : d === 'left' ? '왼쪽' : d === 'right' ? '오른쪽' : '균일'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {num('불투명도', sel.opacity ?? 1, 0, 1, 0.02, (n) => patch(sel.id, { opacity: n }), (n) => `${(n * 100).toFixed(0)}%`)}
+        {num('회전', sel.rotate ?? 0, -45, 45, 1, (n) => patch(sel.id, { rotate: n }), (n) => `${n}°`)}
+
+        <div className="label mb-1 mt-2">색</div>
+        <div className="flex items-center gap-2">
+          <input type="color" value={sel.color} onChange={(e) => patch(sel.id, { color: e.target.value })}
+                 style={{ width: 40, height: 28, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'none' }} />
+          <div className="flex gap-1 flex-wrap">
+            {[theme.strong, theme.soft, theme.accent, theme.accentText, theme.scrim].map((c) => (
+              <button key={c} onClick={() => patch(sel.id, { color: c })} title={c}
+                      className="w-6 h-6 rounded" style={{ background: c, border: '1px solid var(--line)' }} />
+            ))}
+          </div>
+        </div>
+        </>
+      )}
+    </div>
+  );
+
   const sizeName = sizeId ? findSize(sizeId).label : '컷 크기 그대로';
   const shapeWord = shape === 'wide' ? '가로형' : shape === 'tall' ? '세로형' : '정사각';
 
   return (
-    <div className="flex flex-col xl:flex-row gap-4">
-      {/* ── 왼쪽: 결과만 크게 ── */}
-      <div className="flex-1 min-w-0">
+    /*
+     * 넓은 화면에서는 미리보기를 세워두고 단계만 스크롤한다.
+     * 문구를 고치거나 자르는 위치를 옮길 때 결과가 화면 밖으로 나가면
+     * 무엇이 바뀌었는지 확인할 수가 없다.
+     * items-start 가 없으면 flex 가 자식을 끝까지 늘려서 sticky 가 먹지 않는다.
+     */
+    <div className="flex flex-col xl:flex-row gap-4 xl:items-start">
+      {/* ── 왼쪽: 결과만 크게 (고정) ── */}
+      <div className="flex-1 min-w-0 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
         <div className="card p-3">
           {/* 지금 무엇을 만들고 있는지 한 줄로 — 규격을 바꿔가며 쓰는 화면이라 필요하다 */}
           <div className="flex items-baseline justify-between gap-2 flex-wrap mb-2">
-            <div className="label">미리보기 — 저장본과 같은 그림</div>
+            <div className="label">작업 화면 — 저장본과 같은 그림</div>
             <div className="text-[10.5px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
               {sizeName} · {dims.w}×{dims.h} · {shapeWord}
               {needsFit && fitMode === 'cover' && ` · 컷의 ${Math.round(loss * 100)}% 잘림`}
@@ -356,21 +672,28 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
             {/* 저장본과 같은 SVG 를 그대로 얹는다 */}
             <div className="absolute inset-0 pointer-events-none"
                  dangerouslySetInnerHTML={{ __html: svg.replace('<svg ', '<svg style="width:100%;height:100%;display:block" ') }} />
-            {/* 잡는 손잡이 — 레이어 중심에 투명한 점을 두고 그걸 끈다 */}
-            {layers.map((l) => (
-              <span key={l.id} onPointerDown={(e) => onDown(e, l.id)}
-                    title={l.kind === 'text' ? (l.text ?? '') : l.kind}
+            {/*
+              * 잡는 손잡이 — 레이어 중심에 점을 두고 그걸 끈다.
+              * 무리마다 하나만 둔다. 버튼에 점 세 개가 뜨면 한 몸으로 안 보인다.
+              * 두 번 누르면 곧바로 편집으로 넘어간다.
+              */}
+            {leaders(layers).map((l) => (
+              <span key={l.id}
+                    onPointerDown={(e) => onDown(e, l.id)}
+                    onDoubleClick={() => openInspector(l.id)}
+                    title={`${labelOf(l, layers)} — 끌어서 옮기기 · 두 번 눌러 수정`}
                     className="absolute rounded-full"
                     style={{
                       left: `${l.x * 100}%`, top: `${l.y * 100}%`, transform: 'translate(-50%,-50%)',
                       width: 22, height: 22, cursor: 'move',
-                      border: `2px solid ${selected === l.id ? 'var(--accent)' : 'rgba(255,255,255,.55)'}`,
-                      background: selected === l.id ? 'rgba(226,80,60,.25)' : 'rgba(0,0,0,.25)',
+                      border: `2px solid ${isSel(l) ? 'var(--accent)' : 'rgba(255,255,255,.55)'}`,
+                      background: isSel(l) ? 'rgba(226,80,60,.25)' : 'rgba(0,0,0,.25)',
                     }} />
             ))}
             {!imageUrl && (
-              <div className="absolute inset-0 grid place-items-center text-[12px]" style={{ color: 'var(--text-mute)' }}>
-                오른쪽 1번에서 배경 컷을 골라주세요.
+              <div className="absolute inset-0 grid place-items-center text-center text-[12px] px-4" style={{ color: 'var(--text-mute)' }}>
+                오른쪽 1번에서 배경을 골라주세요.<br />
+                생성한 컷을 쓰거나, 가지고 있는 이미지를 올려도 됩니다.
               </div>
             )}
           </div>
@@ -379,14 +702,14 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
             <button className="btn btn-primary" onClick={() => render(true)} disabled={!!busy || !layers.length}>
               {busy === 'save' ? '저장 중…' : '완성 · 갤러리에 저장'}
             </button>
-            <button className="btn" onClick={() => render(false)} disabled={!!busy || !layers.length}>실제 크기로 확인</button>
+            <button className="btn" onClick={() => render(false)} disabled={!!busy || !layers.length}>미리보기</button>
             <button className="btn" onClick={saveTemplate} disabled={!!busy || !layers.length}>템플릿으로 저장</button>
           </div>
           {note && <div className="text-[11px] mt-2" style={{ color: 'var(--ok)' }}>{note}</div>}
           {err && <div className="text-[11px] mt-2" style={{ color: 'var(--danger)' }}>{err}</div>}
           {result && (
             <div className="mt-3">
-              <div className="label mb-1">실제 크기 렌더 (저장 전)</div>
+              <div className="label mb-1">미리보기 — 실제 크기로 그린 것 (저장 전)</div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={result} alt="렌더 결과" className="w-full rounded-lg border" style={{ borderColor: 'var(--line-strong)' }} />
             </div>
@@ -396,8 +719,37 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
 
       {/* ── 오른쪽: 밟는 순서 ── */}
       <aside className="w-full xl:w-[340px] shrink-0">
-        <Step n={1} title="배경 컷 고르기" done={!!imageUrl}
+        {inspector}
+
+        <Step n={1} title="배경 고르기" done={!!imageUrl}
               hint={imageUrl ? `${src.w}×${src.h}` : undefined}>
+          {/* 내가 올린 것 — 방금 올린 게 맨 앞에 오도록 생성 컷보다 위에 둔다 */}
+          {mine.length > 0 && (
+            <>
+              <div className="label mb-1.5">내가 올린 이미지</div>
+              <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">
+                {mine.map((c) => (
+                  <div key={c.id} className="relative shrink-0">
+                    <button onClick={() => { setImageUrl(c.url); setResult(null); }} title={c.label}
+                            className="block rounded-lg overflow-hidden border" style={{ padding: 0 }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={c.url} alt={c.label} loading="lazy" className="object-cover"
+                           style={{ width: 58, height: 58, borderColor: 'var(--line)',
+                                    outline: c.url === imageUrl ? '2px solid var(--accent)' : 'none', outlineOffset: -2 }} />
+                    </button>
+                    <button title="목록에서 빼기"
+                            onClick={() => saveMine(mine.filter((m) => m.url !== c.url))}
+                            className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] leading-none"
+                            style={{ background: 'var(--surface-3)', border: '1px solid var(--line)', color: 'var(--text-mute)', cursor: 'pointer', padding: 0 }}>
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="label mb-1.5">생성한 컷</div>
           <div className="flex gap-1.5 overflow-x-auto pb-1">
             {cuts.map((c) => (
               <button key={c.id} onClick={() => { setImageUrl(c.url); setResult(null); }} title={c.label}
@@ -410,9 +762,19 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
             ))}
             {cuts.length === 0 && (
               <span className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
-                생성된 컷이 없습니다. 먼저 이미지를 만들어주세요.
+                생성된 컷이 없습니다. 먼저 이미지를 만들거나 아래에서 올려주세요.
               </span>
             )}
+          </div>
+
+          <label className="btn w-full justify-center mt-2" style={{ cursor: busy ? 'not-allowed' : 'pointer' }}>
+            {busy === 'upload' ? '올리는 중…' : '＋ 내 이미지 올리기'}
+            <input type="file" accept="image/*" className="hidden" disabled={!!busy}
+                   onChange={(e) => { uploadBackground(e.target.files); e.target.value = ''; }} />
+          </label>
+          <div className="text-[10.5px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+            포토샵으로 만든 배경도 올려서 쓸 수 있습니다. 올린 이미지는 이 브라우저에 기억해두니
+            다음에 와도 그대로 있습니다.
           </div>
         </Step>
 
@@ -544,111 +906,39 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
               3번에서 자동 배치를 누르거나, ＋ 로 레이어를 추가하세요.
             </div>
           )}
+          {/* 무리는 한 줄로 — 버튼이 세 줄로 늘어서면 무엇이 한 몸인지 안 보인다 */}
           <div className="flex flex-col gap-1">
-            {layers.map((l, i) => (
-              <div key={l.id} className="flex items-center gap-1.5 p-1.5 rounded-lg text-[11px]"
-                   style={{ background: selected === l.id ? 'var(--accent-soft)' : 'var(--surface-2)', cursor: 'pointer' }}
-                   onClick={() => setSelected(l.id)}>
-                <span className="w-3 h-3 rounded shrink-0" style={{ background: l.color }} />
-                <span className="truncate flex-1" style={{ color: 'var(--text-dim)' }}>
-                  {l.kind === 'text' ? (l.text || '(빈 글자)') : l.kind === 'icon' ? `아이콘 · ${ICONS[l.icon ?? '']?.label ?? l.icon}` : l.kind === 'rect' ? '도형' : '그늘'}
-                </span>
-                <button title="위로" onClick={(e) => { e.stopPropagation(); if (i === 0) return; setLayers((c) => { const n = [...c]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; return n; }); }}
-                        style={{ background: 'none', border: 'none', color: 'var(--text-mute)', cursor: 'pointer', padding: 0 }}>▲</button>
-                <button title="삭제" onClick={(e) => { e.stopPropagation(); setLayers((c) => c.filter((x) => x.id !== l.id)); }}
-                        style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0 }}>✕</button>
-              </div>
-            ))}
+            {leaders(layers).map((l) => {
+              const g = groupOf(l);
+              const grouped = !!l.group;
+              return (
+                <div key={l.id} className="flex items-center gap-1.5 p-1.5 rounded-lg text-[11px]"
+                     style={{ background: isSel(l) ? 'var(--accent-soft)' : 'var(--surface-2)', cursor: 'pointer' }}
+                     onClick={() => setSelected(l.id)}
+                     onDoubleClick={() => openInspector(l.id)}>
+                  <span className="w-3 h-3 rounded shrink-0" style={{ background: l.color }} />
+                  <span className="truncate flex-1" style={{ color: 'var(--text-dim)' }}>{labelOf(l, layers)}</span>
+                  {!grouped && (
+                    <button title="위로" onClick={(e) => {
+                      e.stopPropagation();
+                      setLayers((c) => {
+                        const i = c.findIndex((x) => x.id === l.id);
+                        if (i <= 0) return c;
+                        const n = [...c]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; return n;
+                      });
+                    }} style={{ background: 'none', border: 'none', color: 'var(--text-mute)', cursor: 'pointer', padding: 0 }}>▲</button>
+                  )}
+                  <button title="삭제" onClick={(e) => {
+                    e.stopPropagation();
+                    setLayers((c) => c.filter((x) => groupOf(x) !== g));   // 무리는 통째로 지운다
+                    setSelected(null);
+                  }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0 }}>✕</button>
+                </div>
+              );
+            })}
           </div>
         </Step>
 
-        {sel && (
-          <div className="card p-3">
-            <div className="label mb-2">선택한 레이어</div>
-
-            {sel.kind === 'text' && (
-              <>
-                <textarea className="input text-[12px] mb-2" style={{ height: 62 }} value={sel.text ?? ''}
-                          placeholder="문구 (줄바꿈 가능)"
-                          onChange={(e) => patch(sel.id, { text: e.target.value })} />
-                {num('글자 크기', sel.size ?? 0.06, 0.015, 0.2, 0.002, (n) => patch(sel.id, { size: n }), (n) => `${(n * 100).toFixed(1)}%`)}
-                {num('굵기', sel.weight ?? 700, 300, 900, 100, (n) => patch(sel.id, { weight: n }), (n) => String(n))}
-                {num('자간', sel.tracking ?? 0, -0.05, 0.2, 0.005, (n) => patch(sel.id, { tracking: n }), (n) => n.toFixed(3))}
-                {num('줄 간격', sel.lineHeight ?? 1.25, 0.9, 2, 0.05, (n) => patch(sel.id, { lineHeight: n }), (n) => n.toFixed(2))}
-                {num('곡선 (반달)', sel.curve ?? 0, -1, 1, 0.02, (n) => patch(sel.id, { curve: n }), (n) => n.toFixed(2))}
-                <div className="flex gap-1.5 mb-2">
-                  {(['start', 'middle', 'end'] as const).map((a) => (
-                    <button key={a} className="chip flex-1 justify-center"
-                            style={sel.align === a ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}
-                            onClick={() => patch(sel.id, { align: a })}>
-                      {a === 'start' ? '왼쪽' : a === 'middle' ? '가운데' : '오른쪽'}
-                    </button>
-                  ))}
-                </div>
-                <label className="flex items-center gap-1.5 text-[11px] mb-2" style={{ color: 'var(--text-dim)' }}>
-                  <input type="checkbox" checked={!!sel.shadow} onChange={(e) => patch(sel.id, { shadow: e.target.checked })} />
-                  글자 외곽 그림자 (밝은 배경에서 안 날아가게)
-                </label>
-              </>
-            )}
-
-            {sel.kind === 'icon' && (
-              <>
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {Object.entries(ICONS).map(([k, v]) => (
-                    <button key={k} className="chip" title={v.label}
-                            style={sel.icon === k ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}
-                            onClick={() => patch(sel.id, { icon: k })}>{v.label}</button>
-                  ))}
-                </div>
-                {num('크기', sel.size ?? 0.06, 0.015, 0.25, 0.002, (n) => patch(sel.id, { size: n }), (n) => `${(n * 100).toFixed(1)}%`)}
-                {num('선 굵기', sel.stroke ?? 0.09, 0.02, 0.2, 0.005, (n) => patch(sel.id, { stroke: n }), (n) => n.toFixed(3))}
-              </>
-            )}
-
-            {(sel.kind === 'rect' || sel.kind === 'scrim') && (
-              <>
-                {num('가로', sel.w ?? 0.4, 0.05, 1, 0.01, (n) => patch(sel.id, { w: n }), (n) => `${(n * 100).toFixed(0)}%`)}
-                {num('세로', sel.h ?? 0.1, 0.02, 1, 0.01, (n) => patch(sel.id, { h: n }), (n) => `${(n * 100).toFixed(0)}%`)}
-                {sel.kind === 'rect' && num('모서리', sel.radius ?? 0, 0, 0.2, 0.005, (n) => patch(sel.id, { radius: n }), (n) => n.toFixed(3))}
-                {/*
-                  * 그늘 방향에 좌/우가 있어야 한다 — 가로형 배너의 자동 배치가
-                  * 좌우 그라데이션을 만들기 때문에, 여기서 위/아래만 고를 수 있으면
-                  * 손대는 순간 배치가 깨진다.
-                  */}
-                {sel.kind === 'scrim' && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {(['top', 'bottom', 'left', 'right', 'none'] as const).map((d) => (
-                      <button key={d} className="chip justify-center"
-                              style={{
-                                ...(sel.direction === d ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}),
-                                flex: '1 1 28%',
-                              }}
-                              onClick={() => patch(sel.id, { direction: d })}>
-                        {d === 'top' ? '위' : d === 'bottom' ? '아래' : d === 'left' ? '왼쪽' : d === 'right' ? '오른쪽' : '균일'}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-
-            {num('불투명도', sel.opacity ?? 1, 0, 1, 0.02, (n) => patch(sel.id, { opacity: n }), (n) => `${(n * 100).toFixed(0)}%`)}
-            {num('회전', sel.rotate ?? 0, -45, 45, 1, (n) => patch(sel.id, { rotate: n }), (n) => `${n}°`)}
-
-            <div className="label mb-1 mt-2">색</div>
-            <div className="flex items-center gap-2">
-              <input type="color" value={sel.color} onChange={(e) => patch(sel.id, { color: e.target.value })}
-                     style={{ width: 40, height: 28, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'none' }} />
-              <div className="flex gap-1 flex-wrap">
-                {[theme.strong, theme.soft, theme.accent, theme.accentText, theme.scrim].map((c) => (
-                  <button key={c} onClick={() => patch(sel.id, { color: c })} title={c}
-                          className="w-6 h-6 rounded" style={{ background: c, border: '1px solid var(--line)' }} />
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
       </aside>
     </div>
   );

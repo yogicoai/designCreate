@@ -52,6 +52,12 @@ export interface DesignLayer {
   direction?: 'top' | 'bottom' | 'left' | 'right' | 'none';
   /** 회전 (도) */
   rotate?: number;
+  /**
+   * 한 몸으로 다룰 레이어끼리 같은 이름을 준다.
+   * 버튼이 대표적이다 — 알약·글자·화살표 셋이 따로 놀면 옮길 때마다 어긋난다.
+   * 그리는 쪽은 이 값을 보지 않는다. 화면에서 다루는 단위일 뿐이다.
+   */
+  group?: string;
 
   // ── 아이콘 ──
   /** ICONS 의 키 */
