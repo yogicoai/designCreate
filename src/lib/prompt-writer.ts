@@ -410,24 +410,38 @@ function describeRefs(refs: RefSlot[]): string {
 }
 
 /** 사이즈별 구도 지시 — 배너 모드에서만 카피 자리를 비운다 */
+/**
+ * 프레임을 끝까지 채우라는 지시.
+ *
+ * 레퍼런스가 목표 규격과 비율이 다르면(가로 레퍼 → 정사각), 모델이 남는
+ * 구석을 흰/투명/레터박스로 비워두는 사고가 난다 (사용자 확인 — 좌상단 빈 칸).
+ * 원본이 그랬더라도 목표 규격을 골랐으면 그 구석까지 씬을 자연스럽게 이어
+ * 채워야 한다.
+ */
+const FILL_FRAME =
+  ' FILL THE ENTIRE FRAME edge to edge — absolutely no blank, white, grey, transparent, ' +
+  'black-bar or letterboxed area, and no empty corners. If the reference does not cover the whole ' +
+  'target shape, EXTEND (outpaint) the scene naturally to every edge — continue the walls, floor, ' +
+  'window, curtains and background seamlessly so the whole rectangle is a single continuous photograph.';
+
 function compositionFor(spec: GenerationSpec): string {
   const { width, height } = spec.size;
   const r = height ? width / height : 1;
   if (spec.mode === 'thumbnail') {
-    if (r >= 1.3) return `WIDE PRODUCT SHOT (${width}x${height}). Centre the product and model; keep generous even margin on both sides.`;
-    if (r >= 0.95) return `SQUARE PRODUCT THUMBNAIL (${width}x${height}). The product and model fill the frame with even margin — this is a catalogue thumbnail, so the product must read clearly at small size.`;
-    return `TALL PRODUCT SHOT (${width}x${height}). Vertical framing; the product fills the lower two thirds.`;
+    if (r >= 1.3) return `WIDE PRODUCT SHOT (${width}x${height}). Centre the product and model; keep generous even margin on both sides.` + FILL_FRAME;
+    if (r >= 0.95) return `SQUARE PRODUCT THUMBNAIL (${width}x${height}). The product and model fill the frame with even margin — this is a catalogue thumbnail, so the product must read clearly at small size.` + FILL_FRAME;
+    return `TALL PRODUCT SHOT (${width}x${height}). Vertical framing; the product fills the lower two thirds.` + FILL_FRAME;
   }
   if (r >= 2.5) {
-    return `EXTREME WIDE BANNER (${width}x${height}). Place the product and model in the RIGHT third. The LEFT half must be an empty, uncluttered wall/floor plane. Keep every essential element inside the vertical middle band — the top and bottom will be cropped away.`;
+    return `EXTREME WIDE BANNER (${width}x${height}). Place the product and model in the RIGHT third. The LEFT half must be an empty, uncluttered wall/floor plane. Keep every essential element inside the vertical middle band — the top and bottom will be cropped away.` + FILL_FRAME;
   }
   if (r >= 1.6) {
-    return `WIDE WEB BANNER (${width}x${height}). Split composition: the LEFT 45% stays clean and empty for copy, product and model occupy the RIGHT side.`;
+    return `WIDE WEB BANNER (${width}x${height}). Split composition: the LEFT 45% stays clean and empty for copy, product and model occupy the RIGHT side.` + FILL_FRAME;
   }
   if (r >= 0.95) {
-    return `SQUARE SNS POST (${width}x${height}). Subject and product sit in the LOWER TWO THIRDS, centred slightly off-axis. The TOP THIRD stays a quiet, evenly lit area for copy.`;
+    return `SQUARE SNS POST (${width}x${height}). Subject and product sit in the LOWER TWO THIRDS, centred slightly off-axis. The TOP THIRD stays a quiet, evenly lit area for copy.` + FILL_FRAME;
   }
-  return `TALL MOBILE FORMAT (${width}x${height}). The TOP third stays clean and empty for copy; the product and model fill the LOWER two thirds.`;
+  return `TALL MOBILE FORMAT (${width}x${height}). The TOP third stays clean and empty for copy; the product and model fill the LOWER two thirds.` + FILL_FRAME;
 }
 
 /** 제품 블록 — 12차 실측 4종 세트 */

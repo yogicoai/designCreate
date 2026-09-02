@@ -223,6 +223,8 @@ export default function CreateStudio(p: Props) {
   const [promptEdited, setPromptEdited] = useState(false);
   const [busy, setBusy] = useState<'dry' | 'gen' | 'handoff' | null>(null);
   const [results, setResults] = useState<GenResult[]>([]);
+  // 생성 완료 팝업 — 성공하면 결과를 크게 띄운다 (사용자 요청: 완료 시 팝업)
+  const [donePopup, setDonePopup] = useState<GenResult[] | null>(null);
   const [err, setErr] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -447,6 +449,9 @@ export default function CreateStudio(p: Props) {
           setPromptText(json.prompt);
           setPromptEdited(false);
         if (!json.ok) setErr(json.results?.find((r: GenResult) => r.error)?.error || '생성 실패');
+        // 성공한 결과가 하나라도 있으면 완료 팝업을 띄운다
+        const ok = (json.results ?? []).filter((r: GenResult) => r.ok);
+        if (ok.length) setDonePopup(ok);
       }
     } catch (e) {
       setErr((e as Error).message);
@@ -1513,6 +1518,40 @@ ${hint}` : hint))}>
 
 
       </aside>
+
+      {/* ── 생성 완료 팝업 ── */}
+      {donePopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style={{ background: 'rgba(0,0,0,.8)' }} onClick={() => setDonePopup(null)}>
+          <div className="card p-4 max-w-[min(1100px,94vw)] max-h-[92vh] overflow-y-auto w-full"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>
+                ✓ 생성 완료 · {donePopup.length}장
+              </h2>
+              <button className="chip" onClick={() => setDonePopup(null)}>닫기</button>
+            </div>
+            <div className={`grid gap-3 ${donePopup.length > 1 ? 'sm:grid-cols-2' : ''}`}>
+              {donePopup.map((r, i) => (
+                <div key={i}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={r.url} alt="생성 결과" className="w-full rounded-lg border"
+                       style={{ borderColor: 'var(--line-strong)' }} />
+                  <div className="text-[10.5px] mt-1 flex gap-2 flex-wrap" style={{ color: 'var(--text-mute)' }}>
+                    <span>{r.width}×{r.height}</span>
+                    {r.deltaE != null && <span>컬러 ΔE {r.deltaE}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-3 justify-end flex-wrap">
+              <a href={donePopup[0].url} target="_blank" rel="noreferrer" className="btn">원본 열기</a>
+              <a href="/cuts" className="btn">생성이미지 갤러리</a>
+              <button className="btn btn-primary" onClick={() => setDonePopup(null)}>확인</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
