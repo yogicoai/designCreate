@@ -450,7 +450,9 @@ export async function POST(req: Request) {
         tune?: { scale?: number; gap?: number };
       };
       /** 같은 문구로 여러 규격을 한 번에 만들어 짝으로 저장 */
-      batch?: AutoTexts & { imageUrl: string; sizeIds: string[]; buttonColor?: string; sourceId?: string; tune?: { scale?: number; gap?: number }; font?: string };
+      batch?: AutoTexts & { imageUrl: string; sizeIds: string[]; buttonColor?: string; sourceId?: string; tune?: { scale?: number; gap?: number }; font?: string;
+        /** true 면 저장하지 않고 두 장의 렌더만 돌려준다 — 확인창에 보여주기 위한 것 */
+        preview?: boolean };
     };
 
     // ── 1차 배치 ──
@@ -488,10 +490,10 @@ export async function POST(req: Request) {
 
     // ── 웹+모바일 짝 저장 — 같은 문구로 여러 규격을 자동 배치해 한 번에 만든다 ──
     if (body.batch?.imageUrl) {
-      if (!ftpConfigured()) {
+      const b = body.batch;
+      if (!b.preview && !ftpConfigured()) {
         return NextResponse.json({ ok: false, error: 'FTP 설정이 없습니다 (.env.local).' }, { status: 500 });
       }
-      const b = body.batch;
       const texts = {
         eyebrow: (b.eyebrow ?? '').trim(),
         title: (b.title ?? '').trim(),
@@ -502,7 +504,7 @@ export async function POST(req: Request) {
       const c = await subjectCenter(raw);               // 초점은 원본에서 한 번만 재면 된다
       const pairId = Math.random().toString(36).slice(2, 10);
 
-      const items: { id: string; url: string; sizeId: string; w: number; h: number; label: string }[] = [];
+      const items: { id?: string; url?: string; sizeId: string; w: number; h: number; label: string; preview?: string }[] = [];
       for (const sid of (b.sizeIds ?? []).slice(0, 4)) {
         const sz = findSize(sid);
         const W = sz.w;
@@ -514,13 +516,18 @@ export async function POST(req: Request) {
         const design: DesignDoc = { imageUrl: b.imageUrl, layers: auto.layers, size: { id: sid, w: W, h: H }, fit, font: b.font };
         const svg = renderLayersToSvg(design, W, H);
         const out = await sharp(buf).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).jpeg({ quality: 94 }).toBuffer();
+        // 확인창용 — 저장 없이 그림만 돌려준다. 같은 입력이면 같은 결과라 확인 후 다시 만들어도 같다
+        if (b.preview) {
+          items.push({ sizeId: sid, w: W, h: H, label: sz.label, preview: `data:image/jpeg;base64,${out.toString('base64')}` });
+          continue;
+        }
         const saved = await saveRendered(out, design, W, H, `${texts.title || '배너'} — ${sz.label}`, {
           pairId,
           ...(b.sourceId ? { revisedFrom: b.sourceId } : {}),
         });
         items.push({ ...saved, sizeId: sid, w: W, h: H, label: sz.label });
       }
-      return NextResponse.json({ ok: true, pairId, items });
+      return NextResponse.json({ ok: true, pairId: b.preview ? undefined : pairId, items });
     }
 
     const design = body.design;

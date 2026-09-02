@@ -190,7 +190,16 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   const [busy, setBusy] = useState<'auto' | 'save' | 'tpl' | 'upload' | null>(null);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
-  const [result, setResult] = useState<string | null>(null);
+  /*
+   * 확인창 — 저장 전에 실제 크기 렌더를 보여주고, [이대로 저장]을 눌러야 저장된다.
+   * 실수로 갤러리에 쌓이는 걸 막고, 저장되는 그림을 눈으로 확정하는 단계다.
+   * 입력이 같으면 렌더도 같아서, 확인 후 저장 때 다시 그려도 같은 그림이 나온다.
+   */
+  const [result, setResult] = useState<
+    | { kind: 'single'; preview: string; w: number; h: number }
+    | { kind: 'pair'; items: { label: string; w: number; h: number; preview: string }[] }
+    | null
+  >(null);
   const [tweakOpen, setTweakOpen] = useState(false);
   // 원본 컷의 크기와 '걸릴 자리'의 규격은 다른 값이다. 둘을 섞으면 미리보기가 어긋난다
   const [src, setSrc] = useState({ w: 1000, h: 1000 });
@@ -413,8 +422,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
       });
       const j = await r.json();
       if (!j.ok) { setErr(j.error || '실패'); return; }
-      if (save) { setNote('저장했습니다. 컷 갤러리에서 볼 수 있습니다.'); setResult(null); }
-      else setResult(j.preview);
+      if (save) { setNote('저장했습니다. 배너 디자인 관리에서 볼 수 있습니다.'); setResult(null); }
+      else setResult({ kind: 'single', preview: j.preview, w: j.width, h: j.height });
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
 
@@ -450,7 +459,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
    * 배너는 항상 짝으로 나가는 물건이라 이게 실전의 기본 동선이다.
    * 손으로 다듬은 배치는 여기 안 들어간다 (규격마다 배치가 다시 잡히므로).
    */
-  async function saveBoth() {
+  async function saveBoth(previewOnly: boolean) {
     if (!imageUrl) { setErr('배경 컷을 골라주세요.'); return; }
     setBusy('save'); setErr(''); setNote('');
     try {
@@ -464,11 +473,17 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
             tune: { scale: tuneScale, gap: tuneGap },
             font: fontFamily || undefined,
             sourceId,
+            preview: previewOnly,
           },
         }),
       });
       const j = await r.json();
       if (!j.ok) { setErr(j.error || '실패'); return; }
+      if (previewOnly) {
+        // 확인창 — 두 장을 보여주고 [모두 저장]을 기다린다
+        setResult({ kind: 'pair', items: j.items });
+        return;
+      }
       const made = (j.items as { label: string; w: number; h: number }[])
         .map((i) => `${i.label} ${i.w}×${i.h}`).join(' · ');
       setNote(`짝으로 저장했습니다 — ${made}. 배너 디자인 관리에서 볼 수 있습니다.`);
@@ -732,13 +747,38 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
             </div>
           </div>
 
+          {/*
+            완성 도구는 무대 위에 둔다. 아래에 두면 세로 배너(480x558)가 화면을
+            다 먹었을 때 버튼이 잠겨 스크롤해야 보였다. 저장은 곧바로 하지 않고
+            실제 크기 렌더를 확인창으로 보여준 뒤 [이대로 저장] 을 눌러야 한다.
+          */}
+          <div className="flex gap-2 mb-2 flex-wrap items-center">
+            <button className="btn btn-primary" onClick={() => render(false)} disabled={!!busy || !layers.length}
+                    title="실제 크기로 그려서 보여드립니다 — 확인을 눌러야 저장됩니다.">
+              {busy === 'save' ? '그리는 중…' : '✔ 완성'}
+            </button>
+            <button className="btn" onClick={() => saveBoth(true)} disabled={!!busy || !imageUrl}
+                    title="3단계 문구로 웹·모바일 두 규격을 자동 배치해 보여드립니다 — 확인 후 함께 저장됩니다.">
+              웹+모바일 짝
+            </button>
+            <button className="btn" onClick={saveTemplate} disabled={!!busy || !layers.length}>템플릿으로 저장</button>
+            {note && <span className="text-[11px]" style={{ color: 'var(--ok)' }}>{note}</span>}
+            {err && <span className="text-[11px]" style={{ color: 'var(--danger)' }}>{err}</span>}
+          </div>
+
+          <div className="flex justify-center">
           <div
             ref={stageRef}
             onPointerMove={onMove}
             onPointerUp={onUp}
             onPointerLeave={onUp}
             className="relative w-full select-none rounded-lg overflow-hidden"
-            style={{ aspectRatio: `${dims.w} / ${dims.h}`, background: 'var(--surface-2)', touchAction: 'none' }}
+            style={{
+              aspectRatio: `${dims.w} / ${dims.h}`, background: 'var(--surface-2)', touchAction: 'none',
+              // 세로형은 높이를 화면에 맞추고 폭을 줄인다. max-height 로 자르면 비율이
+              // 깨져서 손잡이 좌표와 배경 자르기가 서버와 어긋난다 — 폭으로만 줄인다
+              maxWidth: dims.w < dims.h ? `calc((100vh - 250px) * ${(dims.w / dims.h).toFixed(4)})` : undefined,
+            }}
           >
             {/*
               * 서버의 fitToSize 와 같은 계산을 CSS 로 한다.
@@ -789,29 +829,55 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
               </div>
             )}
           </div>
-
-          <div className="flex gap-2 mt-3 flex-wrap">
-            <button className="btn btn-primary" onClick={() => render(true)} disabled={!!busy || !layers.length}>
-              {busy === 'save' ? '저장 중…' : '완성 · 갤러리에 저장'}
-            </button>
-            <button className="btn" onClick={saveBoth} disabled={!!busy || !imageUrl}
-                    title="3단계 문구로 웹·모바일 두 규격을 자동 배치해 한 번에 저장합니다. 손으로 다듬은 배치는 이 저장에는 들어가지 않습니다.">
-              웹+모바일 짝 저장
-            </button>
-            <button className="btn" onClick={() => render(false)} disabled={!!busy || !layers.length}>미리보기</button>
-            <button className="btn" onClick={saveTemplate} disabled={!!busy || !layers.length}>템플릿으로 저장</button>
           </div>
-          {note && <div className="text-[11px] mt-2" style={{ color: 'var(--ok)' }}>{note}</div>}
-          {err && <div className="text-[11px] mt-2" style={{ color: 'var(--danger)' }}>{err}</div>}
-          {result && (
-            <div className="mt-3">
-              <div className="label mb-1">미리보기 — 실제 크기로 그린 것 (저장 전)</div>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={result} alt="렌더 결과" className="w-full rounded-lg border" style={{ borderColor: 'var(--line-strong)' }} />
-            </div>
-          )}
         </div>
       </div>
+
+      {/* ── 확인창 — 저장될 그림을 실제 크기 렌더로 보여주고 확인을 받는다 ── */}
+      {result && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style={{ background: 'rgba(0,0,0,.75)' }}
+             onClick={() => { if (!busy) setResult(null); }}>
+          <div className="card p-4 max-w-[min(1100px,94vw)] max-h-[92vh] overflow-y-auto w-full"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="label" style={{ color: 'var(--text-dim)' }}>
+                {result.kind === 'pair' ? '이렇게 두 장이 저장됩니다' : '이렇게 저장됩니다'}
+              </div>
+              <div className="text-[10.5px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
+                {result.kind === 'single' && `${result.w}×${result.h}`}
+              </div>
+            </div>
+
+            {result.kind === 'single' ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={result.preview} alt="저장될 배너" className="w-full rounded-lg border"
+                   style={{ borderColor: 'var(--line-strong)' }} />
+            ) : (
+              <div className="flex flex-col gap-3">
+                {result.items.map((it) => (
+                  <div key={it.label}>
+                    <div className="text-[11px] mb-1 tabular-nums" style={{ color: 'var(--text-mute)' }}>
+                      {it.label} · {it.w}×{it.h}
+                    </div>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={it.preview} alt={it.label} className="rounded-lg border mx-auto"
+                         style={{ borderColor: 'var(--line-strong)', maxHeight: '58vh', maxWidth: '100%' }} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-3 justify-end">
+              <button className="btn" onClick={() => setResult(null)} disabled={!!busy}>닫기</button>
+              <button className="btn btn-primary" disabled={!!busy}
+                      onClick={() => (result.kind === 'single' ? render(true) : saveBoth(false))}>
+                {busy === 'save' ? '저장 중…' : result.kind === 'pair' ? '✔ 두 장 모두 저장' : '✔ 이대로 저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 오른쪽: 밟는 순서 ── */}
       <aside className="w-full xl:w-[340px] shrink-0">
