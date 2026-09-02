@@ -210,6 +210,10 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     | null
   >(null);
   const [tweakOpen, setTweakOpen] = useState(false);
+  // 배경 전체보기 게시판 — 생성 컷을 20개씩 페이지로 넘겨 고른다
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [browsePage, setBrowsePage] = useState(0);
+  const BROWSE_PER = 20;
   // 원본 컷의 크기와 '걸릴 자리'의 규격은 다른 값이다. 둘을 섞으면 미리보기가 어긋난다
   const [src, setSrc] = useState({ w: 1000, h: 1000 });
   /*
@@ -1087,6 +1091,46 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
         </div>
       </div>
 
+      {/* ── 배경 전체보기 게시판 — 생성 컷 20개씩 ── */}
+      {browseOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style={{ background: 'rgba(0,0,0,.8)' }} onClick={() => setBrowseOpen(false)}>
+          <div className="card p-4 max-w-[min(1100px,94vw)] max-h-[92vh] overflow-y-auto w-full"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+              <h2 className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>
+                생성 컷 전체 — {cuts.length}개 중 {browsePage * BROWSE_PER + 1}–{Math.min(cuts.length, (browsePage + 1) * BROWSE_PER)}
+              </h2>
+              <button className="chip" onClick={() => setBrowseOpen(false)}>닫기</button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
+              {cuts.slice(browsePage * BROWSE_PER, (browsePage + 1) * BROWSE_PER).map((c) => (
+                <button key={c.id}
+                        onClick={() => { setImageUrl(c.url); setFocusTouched(false); setResult(null); setVariants({}); setBrowseOpen(false); }}
+                        className="block rounded-lg overflow-hidden border text-left" style={{ padding: 0, borderColor: 'var(--line)' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={c.url} alt={c.label} loading="lazy"
+                       style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', display: 'block',
+                                background: 'var(--surface-2)',
+                                outline: c.url === imageUrl ? '2px solid var(--accent)' : 'none', outlineOffset: -2 }} />
+                  <div className="text-[10px] px-1.5 py-1 truncate" style={{ color: 'var(--text-dim)' }}>{c.label}</div>
+                </button>
+              ))}
+            </div>
+            {cuts.length > BROWSE_PER && (
+              <div className="flex items-center justify-center gap-2 mt-3">
+                <button className="btn" disabled={browsePage === 0} onClick={() => setBrowsePage((n) => Math.max(0, n - 1))}>이전</button>
+                <span className="text-[12px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
+                  {browsePage + 1} / {Math.ceil(cuts.length / BROWSE_PER)}
+                </span>
+                <button className="btn" disabled={(browsePage + 1) * BROWSE_PER >= cuts.length}
+                        onClick={() => setBrowsePage((n) => n + 1)}>다음</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── 확인창 — 저장될 그림을 실제 크기 렌더로 보여주고 확인을 받는다 ── */}
       {result && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -1216,7 +1260,15 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
             </>
           )}
 
-          <div className="label mb-1.5">생성한 컷</div>
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="label">생성한 컷</div>
+            {cuts.length > 0 && (
+              <button className="chip" onClick={() => { setBrowsePage(0); setBrowseOpen(true); }}
+                      title="지금까지 생성된 컷을 게시판처럼 20개씩 봅니다">
+                전체보기 · {cuts.length}
+              </button>
+            )}
+          </div>
           <div className="flex gap-1.5 overflow-x-auto pb-1">
             {cuts.map((c) => (
               <button key={c.id} onClick={() => { setImageUrl(c.url); setFocusTouched(false); setResult(null); setVariants({}); }} title={c.label}

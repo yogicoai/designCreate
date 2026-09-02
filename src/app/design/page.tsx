@@ -17,7 +17,7 @@ export default async function DesignPage({
    * 배경 후보에서 저장된 배너는 뺀다 — 배너 위에 배너를 얹을 일은 없다.
    * 이관 컷도 배너 소재가 아니라 제외한다.
    */
-  const cuts = await getCuts({ source: 'imgcreate', notProvider: 'design', limit: 60 });
+  const cuts = await getCuts({ source: 'imgcreate', notProvider: 'design', limit: 200 });
   // fonts/ 폴더를 훑어 글꼴 목록을 만든다 — 파일을 넣으면 여기 바로 뜬다
   const fonts = listBannerFonts();
 
