@@ -1,67 +1,89 @@
 /**
  * 배너 규격 — 이 화면의 첫 단추.
  *
- * 배너는 "무슨 문구를 쓰나"보다 "어디에 걸리나"가 먼저 정해지는 물건이다.
- * 1920×600 웹 메인과 1080×1920 스토리는 같은 문구라도 배치가 완전히 달라야 한다.
- * 그래서 사이즈를 고르는 게 1단계이고, 자동 배치는 이 비율을 보고 판단한다.
+ * 배너는 "무슨 문구를 쓰나"보다 "어디에 걸리나"가 먼저 정해지는 물건이고,
+ * '어디'는 규격보다 위에 채널이 있다: 자사몰 / 스마트스토어 / SNS.
+ * 채널마다 걸리는 자리와 규격 묶음이 완전히 다르다 — eventTemp(구 배너 도구)도
+ * 이 세 갈래로 나눠 관리했고, 그 규격 값을 그대로 이었다.
  *
  * 숫자는 실제 게시 규격이다. 컷은 대개 1:1 로 생성되므로
  * 여기 맞추려면 잘라내거나(cover) 여백을 채워야(blur) 한다.
  */
 
 export type BannerShape = 'wide' | 'square' | 'tall';
+export type Channel = '자사몰' | '스마트스토어' | 'SNS';
+
+export const CHANNELS: Channel[] = ['자사몰', '스마트스토어', 'SNS'];
 
 export interface BannerSize {
   id: string;
-  group: '웹' | '모바일' | 'SNS';
+  channel: Channel;
   label: string;
   w: number;
   h: number;
   /**
    * 본문 폭 (px). 배경은 화면 끝까지 깔리지만 글자는 이 폭 안에서 시작해야
-   * 페이지의 다른 요소와 왼쪽 줄이 맞는다.
-   *
-   * 자사몰 상품상세가 1300px 이라, 1910 짜리 풀블리드 배너에서 글자를
-   * 캔버스 왼쪽 끝(6%)에 붙이면 본문 칼럼보다 바깥으로 나가 어긋나 보인다.
-   * 여백 = (w - content) / 2 로 잡는다.
+   * 페이지의 다른 요소와 왼쪽 줄이 맞는다. 여백 = (w - content) / 2.
+   * (자사몰 상품상세가 1300px — 풀블리드 배너에서 글자를 캔버스 끝에 붙이면
+   *  본문 칼럼보다 바깥으로 나가 어긋나 보인다)
    */
   content?: number;
   note?: string;
   /**
    * 목록에서 감춘다. 지우지 않고 감추는 이유:
    *   - 예전에 이 규격으로 저장한 배너를 다시 열 때 findSize 가 크기를 찾아야 한다
-   *   - 나중에 쓸 일이 생기면 이 줄만 지우면 된다
-   * 지금은 자사몰이 실제로 쓰는 웹·모바일 둘만 내놓는다.
+   *   - 나중에 쓸 일이 생기면 이 표시만 지우면 된다
    */
   hidden?: boolean;
 }
 
 export const BANNER_SIZES: BannerSize[] = [
-  // ── 자사몰이 실제로 쓰는 규격 ──
-  { id: 'web-main',  group: '웹',     label: '자사몰 웹 메인',     w: 1900, h: 675, content: 1300, note: 'PC 첫 화면 · 본문 1300 에 맞춰 왼쪽 정렬' },
-  { id: 'mo-main',   group: '모바일', label: '자사몰 모바일 메인', w: 480,  h: 558, note: '문구를 위에 쌓고 버튼은 아래' },
+  // ── 자사몰 — 실측 확정값 (2026-09 사용자 지정. eventTemp 의 1920x680/800x907 은 구 값) ──
+  { id: 'web-main', channel: '자사몰', label: '자사몰 웹 메인', w: 1900, h: 675, content: 1300, note: 'PC 첫 화면 · 본문 1300 에 맞춰 왼쪽 정렬' },
+  { id: 'mo-main',  channel: '자사몰', label: '자사몰 모바일 메인', w: 480, h: 558, note: '문구를 위에 쌓고 버튼은 아래' },
+  { id: 'web-detail', channel: '자사몰', label: '상품상세 배너', w: 1300, h: 500, hidden: true },
+  { id: 'web-sub',    channel: '자사몰', label: '웹 서브·카테고리', w: 1200, h: 400, hidden: true },
+  { id: 'mo-strip',   channel: '자사몰', label: '모바일 띠배너', w: 750, h: 200, hidden: true },
+  { id: 'mo-popup',   channel: '자사몰', label: '앱·웹 팝업', w: 800, h: 1000, hidden: true },
 
-  // ── 아래는 지금 안 쓴다. 정의만 남겨둔다 (위 hidden 주석 참고) ──
-  { id: 'web-detail', group: '웹', label: '상품상세 배너',    w: 1300, h: 500, note: '상세페이지 본문 폭 그대로', hidden: true },
-  { id: 'web-sub',    group: '웹', label: '웹 서브·카테고리', w: 1200, h: 400, hidden: true },
+  // ── 스마트스토어 — eventTemp 의 채널 규격 그대로 ──
+  { id: 'ss-pc-main',   channel: '스마트스토어', label: 'PC 메인', w: 1920, h: 400, note: '슬림 가로 배너' },
+  { id: 'ss-mo-main',   channel: '스마트스토어', label: '모바일 메인', w: 750, h: 600 },
+  { id: 'ss-pc-coupon', channel: '스마트스토어', label: 'PC 쿠폰·홍보 띠', w: 1280, h: 200, note: '아주 납작해서 문구는 한 줄' },
+  { id: 'ss-mo-coupon', channel: '스마트스토어', label: '모바일 쿠폰 띠', w: 750, h: 240 },
+  { id: 'ss-thumb',     channel: '스마트스토어', label: '대표 이미지 (정사각)', w: 1300, h: 1300 },
 
-  { id: 'mo-strip',  group: '모바일', label: '모바일 띠배너', w: 750, h: 200, note: '아주 납작해서 문구는 한 줄', hidden: true },
-  { id: 'mo-popup',  group: '모바일', label: '앱·웹 팝업',   w: 800, h: 1000, hidden: true },
-
-  { id: 'ig-square', group: 'SNS', label: '인스타 피드 (정사각)', w: 1080, h: 1080, hidden: true },
-  { id: 'ig-port',   group: 'SNS', label: '인스타 피드 (세로)',   w: 1080, h: 1350, hidden: true },
-  { id: 'ig-story',  group: 'SNS', label: '스토리·릴스',          w: 1080, h: 1920, hidden: true },
-  { id: 'kakao',     group: 'SNS', label: '카카오 채널 메시지',    w: 800,  h: 800,  hidden: true },
-  { id: 'yt-thumb',  group: 'SNS', label: '유튜브 썸네일',        w: 1280, h: 720,  hidden: true },
+  // ── SNS ──
+  { id: 'ig-square', channel: 'SNS', label: '인스타 피드 (정사각)', w: 1080, h: 1080 },
+  { id: 'ig-port',   channel: 'SNS', label: '인스타 피드 (세로)', w: 1080, h: 1350 },
+  { id: 'ig-story',  channel: 'SNS', label: '스토리·릴스', w: 1080, h: 1920, hidden: true },
+  { id: 'kakao',     channel: 'SNS', label: '카카오 채널 메시지', w: 800, h: 800, hidden: true },
+  { id: 'yt-thumb',  channel: 'SNS', label: '유튜브 썸네일', w: 1280, h: 720, hidden: true },
 ];
 
-/** 화면 목록에 내놓는 규격. 감춘 것은 findSize 로만 찾힌다 */
-export const VISIBLE_SIZES = BANNER_SIZES.filter((s) => !s.hidden);
+/**
+ * 채널별 자동완성 묶음 — "자동완성 저장"이 한 번에 만드는 규격들.
+ * 첫 항목이 그 채널의 대표 규격(채널을 고르면 기본으로 선택)이다.
+ */
+export const AUTO_SET: Record<Channel, string[]> = {
+  '자사몰': ['web-main', 'mo-main'],
+  '스마트스토어': ['ss-pc-main', 'ss-mo-main'],
+  'SNS': ['ig-square', 'ig-port'],
+};
 
-/** 목록에 실제로 항목이 있는 무리만 — 빈 optgroup 이 뜨면 안 된다 */
-export const VISIBLE_GROUPS = ['웹', '모바일', 'SNS'].filter(
-  (g) => VISIBLE_SIZES.some((s) => s.group === g),
-) as BannerSize['group'][];
+/** 화면 목록에 내놓는 규격 — 채널로 거른다. 감춘 것은 findSize 로만 찾힌다 */
+export function visibleSizesFor(channel: Channel): BannerSize[] {
+  return BANNER_SIZES.filter((s) => s.channel === channel && !s.hidden);
+}
+
+export function defaultSizeFor(channel: Channel): string {
+  return AUTO_SET[channel][0];
+}
+
+/** 저장된 배너를 다시 열 때, 그 규격이 속한 채널로 화면을 맞춘다 */
+export function channelOf(sizeId: string): Channel {
+  return BANNER_SIZES.find((s) => s.id === sizeId)?.channel ?? '자사몰';
+}
 
 export function findSize(id: string): BannerSize {
   return BANNER_SIZES.find((s) => s.id === id) ?? BANNER_SIZES[0];

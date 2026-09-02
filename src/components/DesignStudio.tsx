@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ICONS, renderLayersToSvg, textEm, type DesignDoc, type DesignLayer } from '@/lib/design-render';
 import { TEMPLATES, THEMES, findTheme } from '@/lib/banner-templates';
-import { VISIBLE_SIZES, VISIBLE_GROUPS, findSize, shapeOf, cropLoss } from '@/lib/banner-sizes';
+import {
+  CHANNELS, AUTO_SET, visibleSizesFor, defaultSizeFor, channelOf,
+  findSize, shapeOf, cropLoss, type Channel,
+} from '@/lib/banner-sizes';
 import { shrinkForUpload } from '@/lib/client-image';
 import { BRAND_BUTTON_COLORS, brandButtonHex } from '@/lib/brand';
 
@@ -203,7 +206,14 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   const [tweakOpen, setTweakOpen] = useState(false);
   // 원본 컷의 크기와 '걸릴 자리'의 규격은 다른 값이다. 둘을 섞으면 미리보기가 어긋난다
   const [src, setSrc] = useState({ w: 1000, h: 1000 });
-  const [sizeId, setSizeId] = useState(initial?.size?.id ?? '');   // '' = 컷 크기 그대로
+  /*
+   * 채널이 규격보다 위다 — 자사몰 / 스마트스토어 / SNS 는 걸리는 자리와
+   * 규격 묶음이 완전히 다르다. 저장본을 다시 열면 그 규격의 채널로 맞춘다.
+   */
+  const [channel, setChannel] = useState<Channel>(
+    initial?.size?.id ? channelOf(initial.size.id) : '자사몰',
+  );
+  const [sizeId, setSizeId] = useState(initial?.size?.id ?? defaultSizeFor('자사몰'));   // '' = 컷 크기 그대로
   const [fitMode, setFitMode] = useState<'cover' | 'blur'>(initial?.fit?.mode ?? 'cover');
   const [fx, setFx] = useState(initial?.fit?.fx ?? 0.5);           // 잘라낼 때 남길 가로 위치
   const [fy, setFy] = useState(initial?.fit?.fy ?? 0.45);          // 세로 위치 — 인물이 아래면 올린다
@@ -468,7 +478,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
         body: JSON.stringify({
           batch: {
             imageUrl, eyebrow: autoEyebrow, title: autoTitle, subtitle: autoSub, cta: autoCta,
-            sizeIds: ['web-main', 'mo-main'],
+            sizeIds: AUTO_SET[channel],
             buttonColor: btnColor === 'photo' ? undefined : brandButtonHex(btnColor),
             tune: { scale: tuneScale, gap: tuneGap },
             font: fontFamily || undefined,
@@ -716,6 +726,10 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   );
 
   const sizeName = sizeId ? findSize(sizeId).label : '컷 크기 그대로';
+  // 자동완성 묶음의 이름과 크기 — 버튼·설명에 그대로 쓴다
+  const autoSet = AUTO_SET[channel].map(findSize);
+  const autoSetText = autoSet.map((b) => `${b.label} ${b.w}×${b.h}`).join(' · ');
+  const autoBtnLabel = channel === 'SNS' ? '정사각·세로 자동완성 저장' : '웹·모바일 자동완성 저장';
   const shapeWord = shape === 'wide' ? '가로형' : shape === 'tall' ? '세로형' : '정사각';
 
   return (
@@ -758,8 +772,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
               {busy === 'save' ? '그리는 중…' : '✔ 완성 · 저장'}
             </button>
             <button className="btn" onClick={() => saveBoth(true)} disabled={!!busy || !imageUrl}
-                    title="3단계 문구만으로 웹 1900×675 · 모바일 480×558 두 장을 자동 배치해 보여드리고, 확인하면 함께 저장됩니다. 손으로 다듬은 배치는 들어가지 않습니다.">
-              웹·모바일 자동완성 저장
+                    title={`문구만으로 ${autoSetText} 를 자동 배치해 보여드리고, 확인하면 함께 저장됩니다. 손으로 다듬은 배치는 들어가지 않습니다.`}>
+              {autoBtnLabel}
             </button>
             <button className="btn" onClick={saveTemplate} disabled={!!busy || !layers.length}
                     title="배경 없이 지금 배치만 저장해서 다른 컷에도 얹을 수 있게 합니다.">
@@ -771,7 +785,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
           {/* 버튼 이름만으론 부족하다 — 무엇이 몇 장 저장되는지 한 줄로 미리 말해준다 */}
           <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
             <b>완성 · 저장</b> = 지금 보는 규격 한 장 ·{' '}
-            <b>웹·모바일 자동완성</b> = 3단계 문구만으로 두 규격(웹 1900×675 · 모바일 480×558)을 자동 배치해 함께 저장
+            <b>{autoBtnLabel.replace(' 저장', '')}</b> = 문구만으로 {channel}용 두 규격({autoSetText})을 자동 배치해 함께 저장
             — 둘 다 저장 전에 결과를 먼저 보여드리고, 확인을 눌러야 저장됩니다.
           </div>
 
@@ -833,7 +847,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
             ))}
             {!imageUrl && (
               <div className="absolute inset-0 grid place-items-center text-center text-[12px] px-4" style={{ color: 'var(--text-mute)' }}>
-                오른쪽 1번에서 배경을 골라주세요.<br />
+                오른쪽 2번에서 배경을 골라주세요.<br />
                 생성한 컷을 쓰거나, 가지고 있는 이미지를 올려도 됩니다.
               </div>
             )}
@@ -892,7 +906,28 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
       <aside className="w-full xl:w-[340px] shrink-0">
         {inspector}
 
-        <Step n={1} title="배경 고르기" done={!!imageUrl}
+        {/* 채널이 최초 선택 — 자사몰용인지 스마트스토어용인지 SNS 용인지가 모든 것의 출발점 */}
+        <Step n={1} title="어디에 쓸 배너인가" done={!!channel}>
+          <div className="flex gap-1.5">
+            {CHANNELS.map((ch) => (
+              <button key={ch}
+                      className={`btn flex-1 ${channel === ch ? 'btn-primary' : ''}`}
+                      onClick={() => {
+                        setChannel(ch);
+                        setSizeId(defaultSizeFor(ch));   // 채널의 대표 규격으로 바로 맞춘다
+                        setFocusTouched(false);
+                        setResult(null);
+                      }}>
+                {ch}
+              </button>
+            ))}
+          </div>
+          <div className="text-[10.5px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+            자동완성 저장 묶음: {autoSetText}
+          </div>
+        </Step>
+
+        <Step n={2} title="배경 고르기" done={!!imageUrl}
               hint={imageUrl ? `${src.w}×${src.h}` : undefined}>
           {/* 내가 올린 것 — 방금 올린 게 맨 앞에 오도록 생성 컷보다 위에 둔다 */}
           {mine.length > 0 && (
@@ -949,21 +984,17 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
           </div>
         </Step>
 
-        {/* 배너는 '어디에 걸리나'가 먼저 정해지는 물건이라 문구보다 규격이 먼저다 */}
-        <Step n={2} title="어디에 걸 배너인가" done={!!sizeId} disabled={!imageUrl}>
+        {/* 규격 — 채널이 정해졌으니 그 채널의 규격만 보여준다 */}
+        <Step n={3} title="규격" done={!!sizeId} disabled={!imageUrl}>
           <select className="input py-1 text-[12px]" value={sizeId}
                   onChange={(e) => { setSizeId(e.target.value); setFocusTouched(false); setResult(null); }}>
             <option value="">컷 크기 그대로 ({src.w}×{src.h})</option>
             {/* 감춰둔 규격으로 저장한 배너를 다시 열었을 때 — 목록에 없으면 선택칸이 빈 것처럼 보인다 */}
-            {sizeId && !VISIBLE_SIZES.some((b) => b.id === sizeId) && (
+            {sizeId && !visibleSizesFor(channel).some((b) => b.id === sizeId) && (
               <option value={sizeId}>{findSize(sizeId).label} · {dims.w}×{dims.h}</option>
             )}
-            {VISIBLE_GROUPS.map((g) => (
-              <optgroup key={g} label={g}>
-                {VISIBLE_SIZES.filter((b) => b.group === g).map((b) => (
-                  <option key={b.id} value={b.id}>{b.label} · {b.w}×{b.h}</option>
-                ))}
-              </optgroup>
+            {visibleSizesFor(channel).map((b) => (
+              <option key={b.id} value={b.id}>{b.label} · {b.w}×{b.h}</option>
             ))}
           </select>
           <div className="text-[10.5px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
@@ -1011,7 +1042,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
         </Step>
 
         {/* 기본 동선 — 문구만 넣고 누르면 끝난다 */}
-        <Step n={3} title="문구 넣고 자동 배치" accent disabled={!imageUrl}
+        <Step n={4} title="문구 넣고 자동 배치" accent disabled={!imageUrl}
               done={layers.length > 0 && layers.every(isAuto)}>
           <input className="input py-1 text-[11.5px] mb-1.5" value={autoEyebrow}
                  onChange={(e) => setAutoEyebrow(e.target.value)} placeholder="윗 문구 — 작게 한 줄 (선택)" />
@@ -1067,7 +1098,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
           </div>
         </Step>
 
-        <Step n={4} title="손으로 다듬기 (선택)" open={tweakOpen} onToggle={() => setTweakOpen((v) => !v)}
+        <Step n={5} title="손으로 다듬기 (선택)" open={tweakOpen} onToggle={() => setTweakOpen((v) => !v)}
               hint={layers.length ? `레이어 ${layers.length}` : undefined}>
           <div className="label mb-1.5">다른 배치로 바꾸기</div>
           <div className="flex flex-wrap gap-1.5 mb-1">
@@ -1114,7 +1145,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
           </div>
           {layers.length === 0 && (
             <div className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
-              3번에서 자동 배치를 누르거나, ＋ 로 레이어를 추가하세요.
+              4번에서 자동 배치를 누르거나, ＋ 로 레이어를 추가하세요.
             </div>
           )}
           {/* 무리는 한 줄로 — 버튼이 세 줄로 늘어서면 무엇이 한 몸인지 안 보인다 */}
