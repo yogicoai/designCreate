@@ -54,4 +54,5 @@ export const COLLECTIONS = {
   apiUsage: 'api_usage',                   // 생성 사용량/한도
   trendImages: 'trend_images',             // 시즌 트렌드 참고 보드 (썸네일+출처만, 원본 미보관)
   trendPromos: 'trend_promos',             // 경쟁사 이벤트·프로모션 기록 (제목+링크+날짜, 텍스트만)
+  designTemplates: 'design_templates',     // 디자인 생성 — 저장한 텍스트 배치 (배경 없이 배치만)
 } as const;
