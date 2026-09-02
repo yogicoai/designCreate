@@ -228,16 +228,17 @@ function buildAuto(
      */
 
     /*
-     * 세로 자리는 사용자가 화면에서 직접 잡아준 배치의 실측이다 (2026-09):
-     * 눈썹 .20 / 제목 .365 / 혜택 .54 / 버튼 .85 — 문구 덩어리는 위로,
-     * 버튼은 아래로 떨어뜨린 형태. 제목 크기 .110,
-     * g(줄 간격)·k(크기) 배율은 제목을 축으로 벌린다.
+     * 제목을 축으로 세 줄을 바짝 붙인다 (사용자: "간격이 넓다" 반복).
+     * 제목 폰트가 짧은 변의 0.11(675 에서 74px)이라 줄 중심 간격은 그
+     * 절반 남짓이면 충분하다 — 눈썹 -0.10 / 혜택 +0.115 로 잡았다.
+     * 버튼만 아래(0.85)로 떨어뜨려 문구 덩어리와 분리한다.
+     * g(줄 간격)·k(크기) 배율은 제목을 축으로 이 간격을 늘리고 줄인다.
      */
     const hasEye = !!txt.eyebrow;
-    const ty = hasEye ? 0.365 : 0.30;
+    const ty = hasEye ? 0.40 : 0.36;
     // 눈썹과 혜택 줄은 작아서 흰색이면 중간톤 위에서 뭉갠다 — 제목만 흰색으로 둔다
     if (hasEye) layers.push({
-      id: 'auto-eyebrow', kind: 'text', x, y: ty - 0.165 * g, text: txt.eyebrow,
+      id: 'auto-eyebrow', kind: 'text', x, y: ty - 0.10 * g, text: txt.eyebrow,
       size: fitText(txt.eyebrow, 0.055 * k, colFrac), weight: 600, tracking: 0.01,
       lineHeight: 1.25, align, color: soft, opacity: 1, shadow: false, curve: 0,
     });
@@ -248,7 +249,7 @@ function buildAuto(
       opacity: 1, shadow: false, curve: 0,
     });
     if (txt.subtitle) layers.push({
-      id: 'auto-sub', kind: 'text', x, y: ty + 0.175 * g, text: txt.subtitle,
+      id: 'auto-sub', kind: 'text', x, y: ty + 0.115 * g, text: txt.subtitle,
       size: fitText(txt.subtitle, (hasEye ? 0.049 : 0.055) * k, colFrac), weight: 500, tracking: 0.03,
       lineHeight: 1.3, align, color: soft,
       opacity: 1, shadow: false, curve: 0,
@@ -258,7 +259,7 @@ function buildAuto(
       // 화살표 자리까지 세어서 알약 폭을 잡는다
       const pw = ((textEm(txt.cta) + 3.2) * cs * S) / W;
       const px = side === 'left' ? marginX + pw / 2 : 1 - marginX - pw / 2;
-      const cy = Math.min(0.88, ty + 0.485 * g);   // 버튼은 문구 덩어리에서 떨어뜨려 아래쪽에
+      const cy = Math.min(0.88, 0.85);   // 버튼은 문구 덩어리에서 떨어뜨려 아래쪽에 고정
       const on = '#ffffff';
       layers.push({
         id: 'auto-pill', kind: 'rect', group: 'cta', x: px, y: cy, w: pw, h: (cs * S * 2.4) / H,
