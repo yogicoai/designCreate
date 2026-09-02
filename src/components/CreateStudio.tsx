@@ -105,10 +105,9 @@ const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
  * 실제 원가는 사고(thinking) 토큰에 따라 매번 달라진다: 같은 브리프로도 199~699 토큰이
  * 나와 ₩230~₩314 범위로 흔들린다. 그래서 여기 값은 어디까지나 **예상 범위의 중앙**이고,
  * 생성 후에는 응답의 실측 원가를 그대로 표시한다.
- *   pro   = gemini-3-pro-image 2K — 실측 ₩230~₩314
- *   draft = gemini-3.1-flash-image 2K — 출력 단가가 Pro 의 약 1/4
+ *   gemini-3-pro-image 2K — 실측 ₩230~₩314
  */
-const WON_BY_TIER = { pro: 270, draft: 90 } as const;
+const WON_PER_IMAGE = 270;
 const ORD = ['①', '②', '③', '④'];
 const MY_SIZE_GROUP = '내 규격';
 
@@ -220,8 +219,6 @@ export default function CreateStudio(p: Props) {
   const [refProduct, setRefProduct] = useState('');
   const [direction, setDirection] = useState('');
   const [samples, setSamples] = useState(1);
-  /** 품질 티어 — 초안은 Flash 로 싸게 돌려보고, 확정본만 Pro 로 */
-  const [tier, setTier] = useState<'pro' | 'draft'>('pro');
   // 프롬프트 작성 방식 — 서버(PROMPT_MODE)가 정한다. 화면에서 바꿀 수 없다.
   const writer: 'local' | 'opus' = p.promptMode === 'opus' ? 'opus' : 'local';
 
@@ -322,6 +319,17 @@ export default function CreateStudio(p: Props) {
     for (const s of sizes) { if (!m.has(s.group)) m.set(s.group, []); m.get(s.group)!.push(s); }
     return [...m.entries()];
   }, [sizes]);
+
+  /*
+   * 규격 드롭다운 라벨 — "이름 · 비율 (px)".
+   * 생성은 실제로 비율(genAspect)로 도니까 비율을 앞세운다. px 는 최종 게시 규격이라 괄호로 남긴다.
+   * 저장된 라벨엔 이모지+이름+(px) 가 이미 들어있어, 뒤의 (px) 만 떼고 비율·px 를 다시 붙인다.
+   */
+  const sizeOptionLabel = (s: WithId<SizePresetDoc>) => {
+    const name = s.label.replace(/\s*\(\s*\d+\s*[×xX]\s*\d+\s*\)\s*$/, '').trim();
+    const px = `${s.width}×${s.height}`;
+    return name ? `${name} · ${s.genAspect} (${px})` : `${s.genAspect} (${px})`;
+  };
 
   function togglePick(code: string) {
     setPicks((cur) => {
@@ -486,7 +494,6 @@ export default function CreateStudio(p: Props) {
       ...(refProduct ? { refProduct } : {}),
       engine,
       ...(direction.trim() ? { direction: direction.trim() } : {}),
-      tier,
       // promptMode 는 보내지 않는다 — 서버 env 가 유일한 결정권자여야
       // 클라이언트가 과금 모드를 강제로 켤 수 없다.
       // 단 사람이 직접 쓴 프롬프트는 예외 — 이건 과금을 늘리는 게 아니라 없애는 방향이다
@@ -592,7 +599,7 @@ export default function CreateStudio(p: Props) {
     }
   }
 
-  const cost = samples * WON_BY_TIER[tier];
+  const cost = samples * WON_PER_IMAGE;
   const isMySize = size?.group === MY_SIZE_GROUP;
 
   return (
@@ -685,7 +692,7 @@ export default function CreateStudio(p: Props) {
             <select className="input" value={sizeValue} onChange={(e) => setSizeValue(e.target.value)}>
               {sizeGroups.map(([g, list]) => (
                 <optgroup key={g} label={g}>
-                  {list.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  {list.map((s) => <option key={s.value} value={s.value}>{sizeOptionLabel(s)}</option>)}
                 </optgroup>
               ))}
               <optgroup label="직접 지정">
@@ -1522,15 +1529,6 @@ ${hint}` : hint))}>
             ) : '사용량을 불러오는 중…'}
           </div>
 
-          <div className="flex gap-1.5">
-            {([['pro', '고품질 · ₩200'], ['draft', '초안 · ₩145']] as const).map(([v, l]) => (
-              <button key={v} onClick={() => setTier(v)} className="chip flex-1 justify-center"
-                      title={v === 'pro' ? '최종 컷용 — 얼굴·제품 참조 유지력 최상 (Pro 2K)' : '구도·분위기 확인용 — 참조 유지력이 낮아 얼굴이 덜 붙을 수 있음 (Flash 2K)'}
-                      style={tier === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
-                {l}
-              </button>
-            ))}
-          </div>
           {/*
             프롬프트 작성 방식은 고르는 게 아니라 환경이 정한다.
             로컬(PROMPT_MODE=local) = 템플릿 조립, 무과금.
@@ -1556,11 +1554,6 @@ ${hint}` : hint))}>
               <>프롬프트 — <b>템플릿 조립 · 무과금</b> (로컬 개발 모드)</>
             )}
           </div>
-          {tier === 'draft' && (
-            <div className="text-[10px] px-1" style={{ color: 'var(--warn)' }}>
-              초안 모드는 얼굴·제품 참조 유지력이 낮습니다. 확정본은 고품질로 다시 뽑으세요.
-            </div>
-          )}
           <div className="flex gap-2">
             <select className="input flex-1" value={samples} onChange={(e) => setSamples(Number(e.target.value))}>
               <option value={1}>1장</option>
