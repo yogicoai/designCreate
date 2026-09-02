@@ -491,7 +491,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
           .catch(() => { /* 짝 최신화 실패는 조용히 — 탭 전환 때 다시 받는다 */ });
       }
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
-  }, [imageUrl, autoEyebrow, autoTitle, autoSub, autoCta, sizeId, dims, fit, fitMode, focusTouched, btnColor, tuneScale, tuneGap]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchAutoFor 는 렌더마다 새로 만들어지는 평범한 함수라 넣으면 의미 없이 매번 재생성만 된다. channel 은 짝 최신화가 낡은 채널을 잡지 않게 반드시 넣는다
+  }, [imageUrl, autoEyebrow, autoTitle, autoSub, autoCta, sizeId, dims, fit, fitMode, focusTouched, btnColor, tuneScale, tuneGap, channel]);
 
   /*
    * 규격이나 자르기를 바꾸면 배치를 다시 잡는다.
