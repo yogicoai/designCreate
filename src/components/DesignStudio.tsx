@@ -752,18 +752,27 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
             다 먹었을 때 버튼이 잠겨 스크롤해야 보였다. 저장은 곧바로 하지 않고
             실제 크기 렌더를 확인창으로 보여준 뒤 [이대로 저장] 을 눌러야 한다.
           */}
-          <div className="flex gap-2 mb-2 flex-wrap items-center">
+          <div className="flex gap-2 mb-1 flex-wrap items-center">
             <button className="btn btn-primary" onClick={() => render(false)} disabled={!!busy || !layers.length}
-                    title="실제 크기로 그려서 보여드립니다 — 확인을 눌러야 저장됩니다.">
-              {busy === 'save' ? '그리는 중…' : '✔ 완성'}
+                    title="지금 보는 규격 그대로 실제 크기로 그려 보여드리고, 확인하면 저장됩니다.">
+              {busy === 'save' ? '그리는 중…' : '✔ 완성 · 저장'}
             </button>
             <button className="btn" onClick={() => saveBoth(true)} disabled={!!busy || !imageUrl}
-                    title="3단계 문구로 웹·모바일 두 규격을 자동 배치해 보여드립니다 — 확인 후 함께 저장됩니다.">
-              웹+모바일 짝
+                    title="3단계 문구만으로 웹 1900×675 · 모바일 480×558 두 장을 자동 배치해 보여드리고, 확인하면 함께 저장됩니다. 손으로 다듬은 배치는 들어가지 않습니다.">
+              웹·모바일 자동완성 저장
             </button>
-            <button className="btn" onClick={saveTemplate} disabled={!!busy || !layers.length}>템플릿으로 저장</button>
+            <button className="btn" onClick={saveTemplate} disabled={!!busy || !layers.length}
+                    title="배경 없이 지금 배치만 저장해서 다른 컷에도 얹을 수 있게 합니다.">
+              템플릿으로 저장
+            </button>
             {note && <span className="text-[11px]" style={{ color: 'var(--ok)' }}>{note}</span>}
             {err && <span className="text-[11px]" style={{ color: 'var(--danger)' }}>{err}</span>}
+          </div>
+          {/* 버튼 이름만으론 부족하다 — 무엇이 몇 장 저장되는지 한 줄로 미리 말해준다 */}
+          <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+            <b>완성 · 저장</b> = 지금 보는 규격 한 장 ·{' '}
+            <b>웹·모바일 자동완성</b> = 3단계 문구만으로 두 규격(웹 1900×675 · 모바일 480×558)을 자동 배치해 함께 저장
+            — 둘 다 저장 전에 결과를 먼저 보여드리고, 확인을 눌러야 저장됩니다.
           </div>
 
           <div className="flex justify-center">
