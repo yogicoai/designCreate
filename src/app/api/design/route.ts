@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import { getDb, COLLECTIONS } from '@/lib/db';
 import { uploadBuffer, dailySubpath, ftpConfigured } from '@/lib/ftp';
 import { renderLayersToSvg, textEm, type DesignDoc, type DesignLayer } from '@/lib/design-render';
-import { shapeOf, type BannerShape } from '@/lib/banner-sizes';
+import { shapeOf, findSize, type BannerShape } from '@/lib/banner-sizes';
 
 /**
  * 배너 디자인 생성 — 이미지 위에 텍스트를 얹어 완성본을 만든다.
@@ -112,12 +112,17 @@ async function analyzeRegions(buf: Buffer) {
  *
  * 글자 크기는 '원하는 비율'과 '캔버스를 안 뚫는 최대치' 중 작은 쪽을 쓴다.
  * 긴 제목이 알아서 줄어들기 때문에 쓰는 사람이 크기를 만질 일이 줄어든다.
+ *
+ * 글자 외곽 그림자는 기본으로 끈다. 자사몰 배너는 판판한 글씨가 깔끔하고,
+ * 읽히게 만드는 일은 그늘(scrim)이 맡는다 — 배경이 복잡할수록 그늘이 짙어진다.
+ * 그래도 묻히면 4단계에서 레이어별로 켤 수 있다.
  */
 function buildAuto(
   shape: BannerShape,
   reg: Awaited<ReturnType<typeof analyzeRegions>>,
   W: number, H: number,
-  txt: { title: string; subtitle: string; cta: string },
+  txt: { eyebrow: string; title: string; subtitle: string; cta: string },
+  content?: number,
 ) {
   const S = Math.min(W, H);
   /** 원하는 크기와 폭 제한 중 작은 쪽. 반환값은 짧은 변 대비 비율 */
@@ -136,9 +141,17 @@ function buildAuto(
     where = side === 'left' ? '왼쪽' : '오른쪽';
     light = r.mean > 140;
     sd = r.sd;
-    const colFrac = 0.42;                              // 문구가 쓸 수 있는 가로 비중
-    const x = side === 'left' ? 0.06 : 0.94;
+    /*
+     * 글자가 시작하는 자리. 본문 폭이 정해진 규격(1910 안의 1300)이면
+     * 캔버스 끝이 아니라 본문 왼쪽 모서리에 맞춘다 — 그래야 페이지의
+     * 다른 요소와 줄이 맞는다. 본문 폭이 없으면 캔버스 기준 6%.
+     */
+    const marginX = content && content < W ? (W - content) / 2 / W : 0.06;
+    const colFrac = content && content < W ? (content * 0.55) / W : 0.42;
+    const x = side === 'left' ? marginX : 1 - marginX;
     const align = side === 'left' ? ('start' as const) : ('end' as const);
+    const strong = light ? '#1b1d21' : '#ffffff';
+    const soft = light ? '#4a4f57' : '#e9e6e1';
 
     layers.push({
       id: 'auto-scrim', kind: 'scrim', x: 0.5, y: 0.5, w: 1, h: 1,
@@ -146,30 +159,46 @@ function buildAuto(
       opacity: Math.max(0.22, Math.min(0.66, r.sd / 80)),
       direction: side,
     });
+
+    // 눈썹 문구가 있으면 제목을 아래로 내려 네 줄로 쌓는다
+    const hasEye = !!txt.eyebrow;
+    const ty = hasEye ? 0.43 : 0.36;
+    if (hasEye) layers.push({
+      id: 'auto-eyebrow', kind: 'text', x, y: 0.26, text: txt.eyebrow,
+      size: fitText(txt.eyebrow, 0.055, colFrac), weight: 600, tracking: 0.01,
+      lineHeight: 1.25, align, color: strong, opacity: 1, shadow: false, curve: 0,
+    });
     if (txt.title) layers.push({
-      id: 'auto-title', kind: 'text', x, y: 0.36, text: txt.title,
-      size: fitText(txt.title, 0.155, colFrac), weight: 800, tracking: -0.015,
-      lineHeight: 1.15, align, color: light ? '#1b1d21' : '#ffffff',
-      opacity: 1, shadow: true, curve: 0,
+      id: 'auto-title', kind: 'text', x, y: ty, text: txt.title,
+      size: fitText(txt.title, hasEye ? 0.135 : 0.155, colFrac), weight: 800, tracking: -0.015,
+      lineHeight: 1.15, align, color: strong,
+      opacity: 1, shadow: false, curve: 0,
     });
     if (txt.subtitle) layers.push({
-      id: 'auto-sub', kind: 'text', x, y: 0.56, text: txt.subtitle,
-      size: fitText(txt.subtitle, 0.058, colFrac), weight: 500, tracking: 0.03,
-      lineHeight: 1.3, align, color: light ? '#4a4f57' : '#e9e6e1',
-      opacity: 1, shadow: true, curve: 0,
+      id: 'auto-sub', kind: 'text', x, y: hasEye ? 0.60 : 0.56, text: txt.subtitle,
+      size: fitText(txt.subtitle, hasEye ? 0.048 : 0.058, colFrac), weight: 500, tracking: 0.03,
+      lineHeight: 1.3, align, color: soft,
+      opacity: 1, shadow: false, curve: 0,
     });
     if (txt.cta) {
-      const cs = fitText(txt.cta, 0.055, colFrac * 0.8);
-      const pw = ((textEm(txt.cta) + 1.8) * cs * S) / W;
-      const px = side === 'left' ? 0.06 + pw / 2 : 0.94 - pw / 2;
+      const cs = fitText(txt.cta, hasEye ? 0.046 : 0.055, colFrac * 0.8);
+      // 화살표 자리까지 세어서 알약 폭을 잡는다
+      const pw = ((textEm(txt.cta) + 3.2) * cs * S) / W;
+      const px = side === 'left' ? marginX + pw / 2 : 1 - marginX - pw / 2;
+      const cy = 0.78;
+      const on = light ? '#ffffff' : '#1b1d21';
       layers.push({
-        id: 'auto-pill', kind: 'rect', x: px, y: 0.78, w: pw, h: (cs * S * 2.3) / H,
+        id: 'auto-pill', kind: 'rect', x: px, y: cy, w: pw, h: (cs * S * 2.4) / H,
         color: light ? '#2f3a5c' : '#ffffff', opacity: 0.95, radius: 0.06,
       });
       layers.push({
-        id: 'auto-cta', kind: 'text', x: px, y: 0.78, text: txt.cta, size: cs,
+        id: 'auto-cta', kind: 'text', x: px - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
         weight: 600, tracking: 0.01, align: 'middle',
-        color: light ? '#ffffff' : '#1b1d21', opacity: 1, shadow: false, curve: 0,
+        color: on, opacity: 1, shadow: false, curve: 0,
+      });
+      layers.push({
+        id: 'auto-cta-arrow', kind: 'icon', x: px + pw / 2 - (cs * S * 0.9) / W, y: cy,
+        icon: 'arrow', size: cs * 0.95, stroke: 0.13, color: on, opacity: 1,
       });
     }
   } else {
@@ -180,39 +209,55 @@ function buildAuto(
     light = r.mean > 140;
     sd = r.sd;
     const big = shape === 'tall';                       // 세로형은 더 크게 — 멀리서 본다
-    const y0 = topSide ? (big ? 0.14 : 0.16) : (big ? 0.80 : 0.84);
     const gap = big ? 0.055 : 0.085;
+    const hasEye = !!txt.eyebrow;
+    // 눈썹 문구가 붙으면 한 줄이 더 늘어나므로 제목을 그만큼 아래로 민다
+    const base = topSide ? (big ? 0.14 : 0.16) : (big ? 0.80 : 0.84);
+    const y0 = hasEye ? base + gap * 0.7 : base;
+    const strong = light ? '#1b1d21' : '#ffffff';
+    const soft = light ? '#4a4f57' : '#e9e6e1';
 
     layers.push({
-      id: 'auto-scrim', kind: 'scrim', x: 0.5, y: topSide ? y0 + 0.02 : y0 - 0.02,
+      id: 'auto-scrim', kind: 'scrim', x: 0.5, y: topSide ? base + 0.02 : base - 0.02,
       w: 1, h: big ? 0.30 : 0.40, color: light ? '#ffffff' : '#000000',
       opacity: Math.max(0.18, Math.min(0.62, r.sd / 90)),
       direction: topSide ? 'top' : 'bottom',
     });
+    if (hasEye) layers.push({
+      id: 'auto-eyebrow', kind: 'text', x: 0.5, y: y0 - gap * 0.72, text: txt.eyebrow,
+      size: fitText(txt.eyebrow, big ? 0.036 : 0.030, 0.82), weight: 600, tracking: 0.02,
+      lineHeight: 1.25, align: 'middle', color: strong, opacity: 1, shadow: false, curve: 0,
+    });
     if (txt.title) layers.push({
       id: 'auto-title', kind: 'text', x: 0.5, y: y0, text: txt.title,
       size: fitText(txt.title, big ? 0.105 : 0.085, 0.86), weight: 800, tracking: -0.01,
-      lineHeight: 1.2, align: 'middle', color: light ? '#1b1d21' : '#ffffff',
-      opacity: 1, shadow: true, curve: 0,
+      lineHeight: 1.2, align: 'middle', color: strong,
+      opacity: 1, shadow: false, curve: 0,
     });
     if (txt.subtitle) layers.push({
       id: 'auto-sub', kind: 'text', x: 0.5, y: y0 + gap, text: txt.subtitle,
       size: fitText(txt.subtitle, big ? 0.038 : 0.032, 0.82), weight: 500, tracking: 0.04,
-      lineHeight: 1.3, align: 'middle', color: light ? '#4a4f57' : '#e9e6e1',
-      opacity: 1, shadow: true, curve: 0,
+      lineHeight: 1.3, align: 'middle', color: soft,
+      opacity: 1, shadow: false, curve: 0,
     });
     if (txt.cta) {
       const cs = fitText(txt.cta, big ? 0.036 : 0.032, 0.7);
-      const pw = ((textEm(txt.cta) + 2.0) * cs * S) / W;
+      // 화살표 자리까지 세어서 알약 폭을 잡는다 (가로형과 같은 규칙)
+      const pw = Math.min(0.9, ((textEm(txt.cta) + 3.2) * cs * S) / W);
       const cy = topSide ? (big ? 0.9 : 0.88) : (big ? 0.10 : 0.12);
+      const on = light ? '#ffffff' : '#1b1d21';
       layers.push({
-        id: 'auto-pill', kind: 'rect', x: 0.5, y: cy, w: Math.min(0.9, pw),
+        id: 'auto-pill', kind: 'rect', x: 0.5, y: cy, w: pw,
         h: (cs * S * 2.4) / H, color: light ? '#2f3a5c' : '#ffffff', opacity: 0.95, radius: 0.06,
       });
       layers.push({
-        id: 'auto-cta', kind: 'text', x: 0.5, y: cy, text: txt.cta, size: cs,
+        id: 'auto-cta', kind: 'text', x: 0.5 - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
         weight: 600, tracking: 0.01, align: 'middle',
-        color: light ? '#ffffff' : '#1b1d21', opacity: 1, shadow: false, curve: 0,
+        color: on, opacity: 1, shadow: false, curve: 0,
+      });
+      layers.push({
+        id: 'auto-cta-arrow', kind: 'icon', x: 0.5 + pw / 2 - (cs * S * 0.9) / W, y: cy,
+        icon: 'arrow', size: cs * 0.95, stroke: 0.13, color: on, opacity: 1,
       });
     }
   }
@@ -260,7 +305,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as {
       design?: DesignDoc; save?: boolean; title?: string;
       auto?: {
-        imageUrl: string; title: string; subtitle?: string; cta?: string;
+        imageUrl: string; eyebrow?: string; title: string; subtitle?: string; cta?: string;
         size?: { id?: string; w: number; h: number };
         fit?: { mode: 'cover' | 'blur'; fx: number; fy: number };
       };
@@ -270,11 +315,14 @@ export async function POST(req: Request) {
     if (body.auto?.imageUrl) {
       const { buf, W, H, srcW, srcH } = await prepareBase(body.auto);
       const reg = await analyzeRegions(buf);            // 규격에 맞춘 뒤의 그림을 본다
+      // 본문 폭은 규격표에서 가져온다 — 글자 왼쪽 줄을 페이지 본문에 맞추기 위해서다
+      const content = body.auto.size?.id ? findSize(body.auto.size.id).content : undefined;
       const out = buildAuto(shapeOf(W, H), reg, W, H, {
+        eyebrow: (body.auto.eyebrow ?? '').trim(),
         title: (body.auto.title ?? '').trim(),
         subtitle: (body.auto.subtitle ?? '').trim(),
         cta: (body.auto.cta ?? '').trim(),
-      });
+      }, content);
       return NextResponse.json({
         ok: true, ...out, size: { w: W, h: H }, source: { w: srcW, h: srcH },
       });

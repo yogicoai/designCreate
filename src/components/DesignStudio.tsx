@@ -97,10 +97,17 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
   const [fitMode, setFitMode] = useState<'cover' | 'blur'>('cover');
   const [fx, setFx] = useState(0.5);                   // 잘라낼 때 남길 가로 위치
   const [fy, setFy] = useState(0.45);                  // 세로 위치 — 인물이 아래면 올린다
-  // 자동 배치 입력 — 이 화면의 기본 사용법이다
-  const [autoTitle, setAutoTitle] = useState('요기보 Week');
-  const [autoSub, setAutoSub] = useState('보름달처럼 꽉 찬 휴식');
-  const [autoCta, setAutoCta] = useState('마음을 전하는 선물 특가');
+  /*
+   * 자동 배치 입력 — 이 화면의 기본 사용법이다.
+   *
+   * 기본값은 실제로 쓰는 자사몰 배너의 네 칸 구조를 그대로 채워둔다:
+   *   눈썹(작게 한 줄) → 제목(크게) → 혜택 한 줄 → 버튼.
+   * 빈칸에서 시작하면 무엇을 넣어야 하는지가 안 보인다.
+   */
+  const [autoEyebrow, setAutoEyebrow] = useState('함께 쓸 때 더 완성되는 요기보 조합');
+  const [autoTitle, setAutoTitle] = useState('요기보 빈백·서포트 세트');
+  const [autoSub, setAutoSub] = useState('상시할인 · 전 구성 무료배송 · 5% 추가 적립까지');
+  const [autoCta, setAutoCta] = useState('세트 구매하기');
   const [picked, setPicked] = useState<{ where: string; light: boolean; sd: number; shape: string } | null>(null);
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -207,7 +214,7 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           auto: {
-            imageUrl, title: autoTitle, subtitle: autoSub, cta: autoCta,
+            imageUrl, eyebrow: autoEyebrow, title: autoTitle, subtitle: autoSub, cta: autoCta,
             size: { id: sizeId || undefined, w: dims.w, h: dims.h }, fit,
           },
         }),
@@ -223,7 +230,7 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
         + `${j.picked.where} 여백에 배치 `
         + `(${j.picked.light ? '밝은 배경이라 짙은 글씨' : '어두운 배경이라 흰 글씨'}).`);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
-  }, [imageUrl, autoTitle, autoSub, autoCta, sizeId, dims, fit]);
+  }, [imageUrl, autoEyebrow, autoTitle, autoSub, autoCta, sizeId, dims, fit]);
 
   /*
    * 규격이나 자르기를 바꾸면 배치를 다시 잡는다.
@@ -452,10 +459,12 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
         {/* 기본 동선 — 문구만 넣고 누르면 끝난다 */}
         <Step n={3} title="문구 넣고 자동 배치" accent disabled={!imageUrl}
               done={layers.length > 0 && layers.every(isAuto)}>
+          <input className="input py-1 text-[11.5px] mb-1.5" value={autoEyebrow}
+                 onChange={(e) => setAutoEyebrow(e.target.value)} placeholder="윗 문구 — 작게 한 줄 (선택)" />
           <input className="input py-1 text-[12px] mb-1.5" value={autoTitle}
-                 onChange={(e) => setAutoTitle(e.target.value)} placeholder="제목" />
+                 onChange={(e) => setAutoTitle(e.target.value)} placeholder="제목 — 가장 크게" />
           <input className="input py-1 text-[11.5px] mb-1.5" value={autoSub}
-                 onChange={(e) => setAutoSub(e.target.value)} placeholder="부제 (선택)" />
+                 onChange={(e) => setAutoSub(e.target.value)} placeholder="혜택 한 줄 (선택)" />
           <input className="input py-1 text-[11.5px] mb-2" value={autoCta}
                  onChange={(e) => setAutoCta(e.target.value)} placeholder="버튼 문구 (선택)" />
           <button className="btn btn-primary w-full" onClick={() => autoLayout(false)} disabled={!!busy || !imageUrl}>

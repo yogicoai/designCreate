@@ -17,15 +17,24 @@ export interface BannerSize {
   label: string;
   w: number;
   h: number;
+  /**
+   * 본문 폭 (px). 배경은 화면 끝까지 깔리지만 글자는 이 폭 안에서 시작해야
+   * 페이지의 다른 요소와 왼쪽 줄이 맞는다.
+   *
+   * 자사몰 상품상세가 1300px 이라, 1910 짜리 풀블리드 배너에서 글자를
+   * 캔버스 왼쪽 끝(6%)에 붙이면 본문 칼럼보다 바깥으로 나가 어긋나 보인다.
+   * 여백 = (w - content) / 2 로 잡는다.
+   */
+  content?: number;
   note?: string;
 }
 
 export const BANNER_SIZES: BannerSize[] = [
   // ── 웹 (자사몰) ──
-  { id: 'web-main',   group: '웹', label: '웹 메인 배너',     w: 1920, h: 600, note: 'PC 첫 화면 대형 배너' },
-  { id: 'web-main-s', group: '웹', label: '웹 메인 (낮게)',   w: 1920, h: 480 },
+  { id: 'web-main',   group: '웹', label: '웹 메인 배너',     w: 1910, h: 600, content: 1300, note: 'PC 첫 화면 · 본문 1300 에 맞춰 왼쪽 정렬' },
+  { id: 'web-main-s', group: '웹', label: '웹 메인 (낮게)',   w: 1910, h: 480, content: 1300 },
+  { id: 'web-detail', group: '웹', label: '상품상세 배너',    w: 1300, h: 500, note: '상세페이지 본문 폭 그대로' },
   { id: 'web-sub',    group: '웹', label: '웹 서브·카테고리', w: 1200, h: 400 },
-  { id: 'web-detail', group: '웹', label: '상세페이지 상단',  w: 860,  h: 640 },
 
   // ── 모바일 ──
   { id: 'mo-main',   group: '모바일', label: '모바일 메인',  w: 750, h: 600 },
