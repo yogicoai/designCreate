@@ -497,12 +497,31 @@ function scaleBlock(spec: GenerationSpec): string[] {
     })
     .filter(Boolean) as string[];
 
+  // 베이스에 이미 사람이 있고 그 사람을 교체하는 흐름이면, 그 사람이 최고의 크기 기준이다.
+  // 실촬영 원본은 사람↔빈백 크기가 정답이라, 외부 키(cm)를 억지로 넣으면 오히려
+  // 원본 크기와 싸워 합성 티가 난다. 원본 인물을 자(yardstick)로 삼는다.
+  const editingPeople = (spec.editTargets ?? []).some((x) => x === 'person' || x === 'face' || x === 'add-person');
+  const hasBase = !!spec.baseCut || (spec.uploadedRefs ?? []).some((r) => r.role === 'base');
+  const baseAnchored = editingPeople && hasBase;
+
   const L: string[] = [''];
-  L.push(
-    'SCALE — render every person at ONE consistent, true-to-life human scale, correct relative to each other AND to ' +
-      'every piece of furniture in the frame. Heads and faces must not be enlarged.',
-  );
-  if (heights.length) L.push(`  Real heights: ${heights.join(', ')}. Keep these height proportions between the people.`);
+  if (baseAnchored) {
+    L.push(
+      'SCALE — the base photograph already shows real people at the correct real-world size against the furniture. ' +
+        'Use the person(s) in the base as the SIZE YARDSTICK. Where you replace a base person, keep their EXACT ' +
+        'size and footprint — same height in the frame, same seat contact, same way their weight sinks into and ' +
+        'compresses the bean bag, same limb placement — and change only the face, hair and outfit. Any newly added ' +
+        'person must be rendered at that SAME human scale as the base person relative to the furniture. Do not resize ' +
+        'people to some other height; heads and faces must not be enlarged.',
+    );
+    if (heights.length) L.push(`  For consistency between people, their real heights are ${heights.join(', ')} — keep these proportions, but the base person's on-screen scale wins over any absolute number.`);
+  } else {
+    L.push(
+      'SCALE — render every person at ONE consistent, true-to-life human scale, correct relative to each other AND to ' +
+        'every piece of furniture in the frame. Heads and faces must not be enlarged.',
+    );
+    if (heights.length) L.push(`  Real heights: ${heights.join(', ')}. Keep these height proportions between the people.`);
+  }
 
   const sp = spec.scaleProduct;
   if (sp) {
@@ -519,6 +538,17 @@ function scaleBlock(spec: GenerationSpec): string[] {
       '  Keep the Yogibo furniture at its true real-world size against these people — a Yogibo floor lounger is ' +
         'roughly as long as an adult is tall (about 170cm). Do NOT shrink the people so the furniture looks oversized, ' +
         'nor enlarge them so a large floor lounger reads like a small cushion.',
+    );
+  }
+
+  // 합성 티 방지 — 사람을 씬 안으로 '촬영해 넣는다'. 접촉 그림자·눌림·조명·질감을 원본에 맞춘다.
+  if (hasBase) {
+    L.push(
+      '  Integrate every person seamlessly INTO the photograph, not pasted on top: match the base image lighting ' +
+        'direction and softness, its depth of field and photographic grain. Where a person touches a bean bag or the ' +
+        'floor, the surface must visibly dent and compress under their weight, with a soft contact shadow in the ' +
+        'crease and correct ambient occlusion. No hard cut-out edges, no floating, no sticker look — same lens, same ' +
+        'grain, same colour temperature as the base.',
     );
   }
   return L;
