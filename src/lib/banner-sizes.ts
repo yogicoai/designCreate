@@ -27,26 +27,41 @@ export interface BannerSize {
    */
   content?: number;
   note?: string;
+  /**
+   * 목록에서 감춘다. 지우지 않고 감추는 이유:
+   *   - 예전에 이 규격으로 저장한 배너를 다시 열 때 findSize 가 크기를 찾아야 한다
+   *   - 나중에 쓸 일이 생기면 이 줄만 지우면 된다
+   * 지금은 자사몰이 실제로 쓰는 웹·모바일 둘만 내놓는다.
+   */
+  hidden?: boolean;
 }
 
 export const BANNER_SIZES: BannerSize[] = [
-  // ── 웹 (자사몰) ── 실제로 쓰는 규격
-  { id: 'web-main',   group: '웹', label: '자사몰 웹 메인',   w: 1900, h: 675, content: 1300, note: 'PC 첫 화면 · 본문 1300 에 맞춰 왼쪽 정렬' },
-  { id: 'web-detail', group: '웹', label: '상품상세 배너',    w: 1300, h: 500, note: '상세페이지 본문 폭 그대로' },
-  { id: 'web-sub',    group: '웹', label: '웹 서브·카테고리', w: 1200, h: 400 },
+  // ── 자사몰이 실제로 쓰는 규격 ──
+  { id: 'web-main',  group: '웹',     label: '자사몰 웹 메인',     w: 1900, h: 675, content: 1300, note: 'PC 첫 화면 · 본문 1300 에 맞춰 왼쪽 정렬' },
+  { id: 'mo-main',   group: '모바일', label: '자사몰 모바일 메인', w: 480,  h: 558, note: '문구를 위에 쌓고 버튼은 아래' },
 
-  // ── 모바일 ── 실제로 쓰는 규격
-  { id: 'mo-main',   group: '모바일', label: '자사몰 모바일 메인', w: 480, h: 558, note: '문구를 위에 쌓고 버튼은 아래' },
-  { id: 'mo-strip',  group: '모바일', label: '모바일 띠배너', w: 750, h: 200, note: '아주 납작해서 문구는 한 줄' },
-  { id: 'mo-popup',  group: '모바일', label: '앱·웹 팝업',   w: 800, h: 1000 },
+  // ── 아래는 지금 안 쓴다. 정의만 남겨둔다 (위 hidden 주석 참고) ──
+  { id: 'web-detail', group: '웹', label: '상품상세 배너',    w: 1300, h: 500, note: '상세페이지 본문 폭 그대로', hidden: true },
+  { id: 'web-sub',    group: '웹', label: '웹 서브·카테고리', w: 1200, h: 400, hidden: true },
 
-  // ── SNS ──
-  { id: 'ig-square', group: 'SNS', label: '인스타 피드 (정사각)', w: 1080, h: 1080, note: '컷 그대로 쓰기 좋다' },
-  { id: 'ig-port',   group: 'SNS', label: '인스타 피드 (세로)',   w: 1080, h: 1350 },
-  { id: 'ig-story',  group: 'SNS', label: '스토리·릴스',          w: 1080, h: 1920 },
-  { id: 'kakao',     group: 'SNS', label: '카카오 채널 메시지',    w: 800,  h: 800 },
-  { id: 'yt-thumb',  group: 'SNS', label: '유튜브 썸네일',        w: 1280, h: 720 },
+  { id: 'mo-strip',  group: '모바일', label: '모바일 띠배너', w: 750, h: 200, note: '아주 납작해서 문구는 한 줄', hidden: true },
+  { id: 'mo-popup',  group: '모바일', label: '앱·웹 팝업',   w: 800, h: 1000, hidden: true },
+
+  { id: 'ig-square', group: 'SNS', label: '인스타 피드 (정사각)', w: 1080, h: 1080, hidden: true },
+  { id: 'ig-port',   group: 'SNS', label: '인스타 피드 (세로)',   w: 1080, h: 1350, hidden: true },
+  { id: 'ig-story',  group: 'SNS', label: '스토리·릴스',          w: 1080, h: 1920, hidden: true },
+  { id: 'kakao',     group: 'SNS', label: '카카오 채널 메시지',    w: 800,  h: 800,  hidden: true },
+  { id: 'yt-thumb',  group: 'SNS', label: '유튜브 썸네일',        w: 1280, h: 720,  hidden: true },
 ];
+
+/** 화면 목록에 내놓는 규격. 감춘 것은 findSize 로만 찾힌다 */
+export const VISIBLE_SIZES = BANNER_SIZES.filter((s) => !s.hidden);
+
+/** 목록에 실제로 항목이 있는 무리만 — 빈 optgroup 이 뜨면 안 된다 */
+export const VISIBLE_GROUPS = ['웹', '모바일', 'SNS'].filter(
+  (g) => VISIBLE_SIZES.some((s) => s.group === g),
+) as BannerSize['group'][];
 
 export function findSize(id: string): BannerSize {
   return BANNER_SIZES.find((s) => s.id === id) ?? BANNER_SIZES[0];

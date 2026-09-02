@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ICONS, renderLayersToSvg, type DesignDoc, type DesignLayer } from '@/lib/design-render';
 import { TEMPLATES, THEMES, findTheme } from '@/lib/banner-templates';
-import { BANNER_SIZES, findSize, shapeOf, cropLoss } from '@/lib/banner-sizes';
+import { VISIBLE_SIZES, VISIBLE_GROUPS, findSize, shapeOf, cropLoss } from '@/lib/banner-sizes';
 
 /**
  * 배너 디자인 생성 — 간단한 포토샵.
@@ -421,9 +421,13 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
           <select className="input py-1 text-[12px]" value={sizeId}
                   onChange={(e) => { setSizeId(e.target.value); setResult(null); }}>
             <option value="">컷 크기 그대로 ({src.w}×{src.h})</option>
-            {['웹', '모바일', 'SNS'].map((g) => (
+            {/* 감춰둔 규격으로 저장한 배너를 다시 열었을 때 — 목록에 없으면 선택칸이 빈 것처럼 보인다 */}
+            {sizeId && !VISIBLE_SIZES.some((b) => b.id === sizeId) && (
+              <option value={sizeId}>{findSize(sizeId).label} · {dims.w}×{dims.h}</option>
+            )}
+            {VISIBLE_GROUPS.map((g) => (
               <optgroup key={g} label={g}>
-                {BANNER_SIZES.filter((b) => b.group === g).map((b) => (
+                {VISIBLE_SIZES.filter((b) => b.group === g).map((b) => (
                   <option key={b.id} value={b.id}>{b.label} · {b.w}×{b.h}</option>
                 ))}
               </optgroup>
