@@ -18,6 +18,7 @@ const NAV = [
       { href: '/', label: '대시보드', icon: '◆' },
       { href: '/create', label: '이미지 생성', icon: '✦' },
       { href: '/cuts', label: '컷 갤러리', icon: '▣' },
+      { href: '/design', label: '배너 디자인', icon: '✎' },
     ],
   },
   {

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { getDb, COLLECTIONS } from '@/lib/db';
 import { uploadBuffer, dailySubpath, ftpConfigured } from '@/lib/ftp';
-import { renderLayersToSvg, type DesignDoc } from '@/lib/design-render';
+import { renderLayersToSvg, type DesignDoc, type DesignLayer } from '@/lib/design-render';
 
 /**
  * 디자인 생성 — 이미지 위에 텍스트를 얹어 완성본을 만든다.
@@ -23,6 +23,43 @@ import { renderLayersToSvg, type DesignDoc } from '@/lib/design-render';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+
+/*
+ * 자동 배치 — 이 기능의 핵심.
+ *
+ * 쓰는 사람이 디자이너가 아니다. 슬라이더를 열 개 주는 것보다,
+ * 문구만 넣으면 알아서 읽히게 놓아주는 편이 훨씬 쓸모 있다.
+ *
+ * 하는 일:
+ *   1) 배경을 잘게 줄여 후보 영역(위/아래/왼/오른)의 밝기와 '복잡도'를 잰다.
+ *   2) 복잡도가 낮은 = 비어 있는 영역을 고른다. 인물·제품 위에 글자를 얹지 않기 위해서다.
+ *   3) 그 영역의 밝기로 글자색을 정한다. 밝으면 짙은 글씨, 어두우면 흰 글씨.
+ *   4) 대비가 모자라면 같은 색 계열의 그늘(scrim)을 깔아 읽히게 만든다.
+ *
+ * 복잡도는 표준편차로 잰다 — 하늘·벽처럼 고른 면은 낮고, 인물·소품이 있으면 높다.
+ */
+async function analyzeRegions(buf: Buffer) {
+  // 32x32 로 줄여서 본다. 세부는 필요 없고 '어디가 비었나'만 알면 된다
+  const { data, info } = await sharp(buf).removeAlpha().resize(32, 32, { fit: 'fill' })
+    .greyscale().raw().toBuffer({ resolveWithObject: true });
+  const at = (x: number, y: number) => data[y * info.width + x];
+
+  const stat = (x0: number, y0: number, x1: number, y1: number) => {
+    const v: number[] = [];
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) v.push(at(x, y));
+    const mean = v.reduce((a, b) => a + b, 0) / v.length;
+    const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length);
+    return { mean, sd };
+  };
+
+  return {
+    top:    { ...stat(0, 0, 32, 10),   x: 0.5,  y: 0.15, align: 'middle' as const },
+    bottom: { ...stat(0, 22, 32, 32),  x: 0.5,  y: 0.85, align: 'middle' as const },
+    left:   { ...stat(0, 6, 13, 26),   x: 0.09, y: 0.45, align: 'start'  as const },
+    right:  { ...stat(19, 6, 32, 26),  x: 0.91, y: 0.45, align: 'end'    as const },
+  };
+}
+
 export async function GET() {
   try {
     const db = await getDb();
@@ -42,7 +79,58 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { design?: DesignDoc; save?: boolean; title?: string };
+    const body = (await req.json()) as {
+      design?: DesignDoc; save?: boolean; title?: string;
+      auto?: { imageUrl: string; title: string; subtitle?: string; cta?: string };
+    };
+
+    // ── 자동 배치 ──
+    if (body.auto?.imageUrl) {
+      const r0 = await fetch(body.auto.imageUrl, { cache: 'no-store' });
+      if (!r0.ok) return NextResponse.json({ ok: false, error: '배경 이미지를 못 받았습니다.' }, { status: 502 });
+      const buf = Buffer.from(await r0.arrayBuffer());
+      const reg = await analyzeRegions(buf);
+
+      // 가장 비어 있는 곳 = 표준편차가 가장 낮은 곳
+      const best = Object.values(reg).sort((a, b) => a.sd - b.sd)[0];
+      const light = best.mean > 140;                       // 배경이 밝은가
+      const strong = light ? '#1b1d21' : '#ffffff';
+      const soft = light ? '#4a4f57' : '#e9e6e1';
+      const scrim = light ? '#ffffff' : '#000000';
+      // 면이 고르지 않을수록 그늘을 진하게 — 글자가 묻히지 않게
+      const scrimOp = Math.max(0.18, Math.min(0.62, best.sd / 90));
+
+      const vertical = best.y < 0.5 ? 'top' : 'bottom';
+      const layers: DesignLayer[] = [{
+        id: 'auto-scrim', kind: 'scrim',
+        x: 0.5, y: vertical === 'top' ? 0.16 : 0.84, w: 1, h: 0.36,
+        color: scrim, opacity: scrimOp, direction: vertical,
+      }];
+      const t = body.auto.title.trim();
+      if (t) layers.push({
+        id: 'auto-title', kind: 'text', x: best.x, y: best.y, text: t,
+        size: t.length > 14 ? 0.055 : 0.082, weight: 800, tracking: -0.01,
+        lineHeight: 1.2, align: best.align, color: strong, opacity: 1, shadow: true, curve: 0,
+      });
+      const sub = (body.auto.subtitle ?? '').trim();
+      if (sub) layers.push({
+        id: 'auto-sub', kind: 'text', x: best.x, y: best.y + 0.085, text: sub,
+        size: 0.030, weight: 500, tracking: 0.04, lineHeight: 1.3,
+        align: best.align, color: soft, opacity: 1, shadow: true, curve: 0,
+      });
+      const cta = (body.auto.cta ?? '').trim();
+      if (cta) {
+        const cy2 = vertical === 'top' ? 0.9 : 0.12;
+        layers.push({ id: 'auto-pill', kind: 'rect', x: 0.5, y: cy2, w: Math.min(0.72, 0.16 + cta.length * 0.034), h: 0.095, color: light ? '#2f3a5c' : '#ffffff', opacity: 0.95, radius: 0.05 });
+        layers.push({ id: 'auto-cta', kind: 'text', x: 0.5, y: cy2, text: cta, size: 0.030, weight: 600, tracking: 0.01, align: 'middle', color: light ? '#ffffff' : '#1b1d21', opacity: 1, shadow: false, curve: 0 });
+      }
+      return NextResponse.json({
+        ok: true,
+        layers,
+        picked: { where: vertical === 'top' ? '위쪽' : '아래쪽', light, sd: Math.round(best.sd) },
+      });
+    }
+
     const design = body.design;
     if (!design?.imageUrl) {
       return NextResponse.json({ ok: false, error: '배경 이미지가 필요합니다.' }, { status: 400 });
