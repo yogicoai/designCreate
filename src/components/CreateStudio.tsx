@@ -181,6 +181,8 @@ export default function CreateStudio(p: Props) {
   const [mainPlacement, setMainPlacement] = useState('');
   const [extraProducts, setExtraProducts] = useState<ExtraProduct[]>([]);
   const [freePeople, setFreePeople] = useState<FreePerson[]>([]);
+  // 전속 모델 / AI 가상 모델 — 섞어 쓸 수 있고, 탭은 보기만 가른다
+  const [modelTab, setModelTab] = useState<'own' | 'ai'>('own');
   const [baseTab, setBaseTab] = useState<'none' | 'cut' | 'posecut' | 'pose'>('none');
   const [baseCutUrl, setBaseCutUrl] = useState('');
   const [poseRefKey, setPoseRefKey] = useState('');
@@ -759,7 +761,7 @@ export default function CreateStudio(p: Props) {
                 {editTargets.includes('face') || editTargets.includes('person') || editTargets.includes('add-person') ? (
                   <div className="text-[10.5px] mt-2" style={{ color: 'var(--text-dim)' }}>
                     {editTargets.includes('add-person')
-                      ? '앉힐 모델을 아래 ④에서 고르세요. 사진 왼쪽 좌석부터 ①②③④ 순서로 앉습니다. 제품(③)은 비워두세요 — 사진의 빈백을 그대로 씁니다.'
+                      ? '앉힐 모델을 아래 모델 섹션에서 고르세요. 사진 왼쪽 좌석부터 ①②③④ 순서로 앉습니다. 제품은 비워두세요 — 사진의 빈백을 그대로 씁니다.'
                       : '교체할 모델을 아래 ④에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.'}
                   </div>
                 ) : null}
@@ -786,7 +788,8 @@ export default function CreateStudio(p: Props) {
           <Section n={flow === "ref" ? "3" : "2"} title="제품 · 컬러" hint={flow === "ref" ? "사진 속 제품을 그대로 쓸 거면 비워두세요. 다른 제품으로 바꿀 때만 고릅니다." : "선택하면 실측 치수·기하 서술·컬러 스와치가 자동으로 들어갑니다."}>
             <select className="input mb-2" value={line} onChange={(e) => { setLine(e.target.value); setColorKey(''); setPoseRefKey(''); setShapeRefKey(''); }}>
               <option value="">— 제품 없음 (인물/분위기만) —</option>
-              {p.products.map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>)}
+              {/* 메인 제품은 빈백류만 — 메이트 인형·소품은 '함께 놓을 제품'에서 고른다 */}
+              {p.products.filter((x) => !x.accessory).map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>)}
             </select>
             {product && (
               <>
@@ -802,12 +805,21 @@ export default function CreateStudio(p: Props) {
                     </button>
                   ))}
                 </div>
+              </>
+            )}
+          </Section>
 
-                {/*
-                  포즈 — 우리가 실제로 만든 썸네일 컷에서 고른다.
-                  촬영 실사 레퍼보다 이쪽이 실제 작업 소스다. 컬러로 거르지 않으므로
-                  다른 색 컷의 포즈도 쓸 수 있고, 제품·컬러는 위 선택이 적용된다.
-                */}
+          {/*
+            포즈 — 예전엔 제품 카드 안에 묻혀 있어 눈에 안 띄었다.
+            제품·컬러 다음에 바로 고르는 것이라 제 번호를 단 섹션으로 올린다.
+          */}
+          <Section n={flow === "ref" ? "4" : "3"} title="포즈"
+                   hint="우리가 실제로 만든 썸네일 컷에서 포즈·앵글만 가져옵니다. 다른 색 컷도 쓸 수 있고, 제품·컬러는 위 선택이 적용됩니다.">
+            {!product && (
+              <div className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>먼저 제품을 고르세요.</div>
+            )}
+            {product && (
+              <>
                 {poseCuts.length > 0 && (
                   <>
                     <div className="label mt-3 mb-1">
@@ -855,14 +867,21 @@ ${c.spec}`}
                 )}
               </>
             )}
+          </Section>
 
-            {/*
-              추가 제품 — 한 컷에 2~3종.
-              위치를 안 박으면 모델이 두 제품을 같은 형태·같은 색으로 뭉개버린다.
-              그래서 추가하는 순간 첫 제품에도 위치 선택이 생긴다.
-            */}
+          {/*
+            함께 놓을 제품 · 소품 — 한 컷에 2~3종.
+            위치를 안 박으면 모델이 두 제품을 같은 형태·같은 색으로 뭉개버린다.
+            그래서 추가하는 순간 첫 제품에도 위치 선택이 생긴다.
+            메이트 인형·필로우(소품)도 여기서 고른다 — youtube 제품 데이터에서 끌어왔다.
+          */}
+          <Section n={flow === "ref" ? "5" : "4"} title="함께 놓을 제품 · 소품"
+                   hint="한 컷에 2~3종. 메이트 인형·필로우 같은 소품도 여기서 고릅니다. 위치를 지정해야 형태·색이 안 섞입니다.">
+            {!line && (
+              <div className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>먼저 제품을 고르세요.</div>
+            )}
             {line && (
-              <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--line)' }}>
+              <div>
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <div className="label">
                     함께 놓을 제품{' '}
@@ -898,7 +917,13 @@ ${c.spec}`}
                                 onChange={(e) => setExtraProducts((c) =>
                                   c.map((x, j) => (j === i ? { ...x, line: e.target.value, colorKey: '' } : x)))}>
                           <option value="">— 제품 선택 —</option>
-                          {p.products.map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line}</option>)}
+                          <optgroup label="빈백">
+                            {p.products.filter((x) => !x.accessory).map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line}</option>)}
+                          </optgroup>
+                          {/* 메이트 인형·필로우·소품 — youtube 제품 데이터에서 끌어온 것들 */}
+                          <optgroup label="메이트 · 소품">
+                            {p.products.filter((x) => !!x.accessory).map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line}</option>)}
+                          </optgroup>
                         </select>
                         <select className="input py-1 text-[11px]" style={{ width: 110 }} value={ex.placement}
                                 onChange={(e) => setExtraProducts((c) =>
@@ -930,8 +955,22 @@ ${c.spec}`}
             )}
           </Section>
 
-          {/* ④ 모델 — 다중 선택, 클릭 순서 = 사진 왼쪽부터 */}
-          <Section n={flow === "ref" ? "4" : "3"} title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다. 다시 클릭하면 빠집니다.">
+          {/* 모델 — 전속과 AI 가상을 섞어 쓴다. 왼쪽부터 전속 ①… 다음에 가상 */}
+          <Section n={flow === "ref" ? "6" : "5"} title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다. 전속과 AI 가상 모델을 섞을 수 있습니다.">
+            <div className="flex gap-1.5 mb-3">
+              <button className={`btn flex-1 ${modelTab === 'own' ? 'btn-primary' : ''}`} onClick={() => setModelTab('own')}>
+                전속 모델{picks.length ? ` · ${picks.length}명` : ''}
+              </button>
+              <button className={`btn flex-1 ${modelTab === 'ai' ? 'btn-primary' : ''}`} onClick={() => setModelTab('ai')}>
+                AI 가상 모델{freePeople.length ? ` · ${freePeople.length}명` : ''}
+              </button>
+            </div>
+            {picks.length > 0 && freePeople.length > 0 && (
+              <div className="text-[11px] px-2.5 py-1.5 rounded-lg mb-2" style={{ background: 'var(--accent-soft)', color: 'var(--text-dim)' }}>
+                이 컷: 전속 {picks.length}명 + 가상 {freePeople.length}명 — 사진 왼쪽부터 전속, 그다음 가상 순서로 섭니다.
+              </div>
+            )}
+            {modelTab === 'own' && (<>
             <div className="flex flex-wrap gap-2 mb-3">
               {p.talents.map((t) => {
                 const idx = picks.findIndex((x) => x.code === t.code);
@@ -1053,27 +1092,42 @@ ${c.spec}`}
                 })}
               </div>
             )}
+            </>)}
 
             {/*
-              자유 인물 — 전속 모델에 없는 사람(가족 구성 등).
+              AI 가상 모델 — 전속 모델에 없는 사람(가족 구성 등).
               얼굴 시트가 없으니 프롬프트가 유일한 근거다. 그래서 한글만 받지 않고
               자주 쓰는 인물형은 영문 서술을 프리셋으로 박아둔다.
               전속 모델 뒤에 이어 붙으므로 위치를 지정해 자리를 못박는 게 좋다.
             */}
-            <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--line)' }}>
+            {modelTab === 'ai' && (
+            <div>
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="label">
-                  자유 인물{' '}
+                  몇 명을 만들까요{' '}
                   <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
-                    — 전속 모델에 없는 사람. 얼굴 레퍼런스 없이 서술로만 만듭니다.
+                    — 얼굴 레퍼런스 없이 서술로만 만드는 가상 인물. 전속 모델과 섞여 한 컷에 들어갑니다.
                   </span>
                 </div>
-                {picks.length + freePeople.length < 4 && (
-                  <button className="chip shrink-0"
-                          onClick={() => setFreePeople((c) => [...c, { presetKey: '', extra: '', placement: '' }])}>
-                    + 인물 추가
-                  </button>
-                )}
+              </div>
+              <div className="flex gap-1.5 mb-2">
+                {[0, 1, 2, 3].map((n) => {
+                  const cap = Math.max(0, 4 - picks.length);
+                  const target = Math.min(n, cap);
+                  return (
+                    <button key={n} className="chip"
+                            style={freePeople.length === n ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}
+                            disabled={n > cap}
+                            title={n > cap ? '전속 모델 포함 최대 4명입니다' : ''}
+                            onClick={() => setFreePeople((c) => {
+                              const next = c.slice(0, target);
+                              while (next.length < target) next.push({ presetKey: '', extra: '', placement: '' });
+                              return next;
+                            })}>
+                      {n === 0 ? '없음' : `${n}명`}
+                    </button>
+                  );
+                })}
               </div>
 
               {freePeople.map((f, i) => (
@@ -1100,11 +1154,12 @@ ${c.spec}`}
                 </div>
               ))}
             </div>
+            )}
           </Section>
 
-          {/* ⑤ 베이스 (자산) */}
+          {/* 베이스 (자산) */}
           {flow === 'direct' && (
-          <Section n="4" title="베이스 (선택)" hint="포즈는 위 제품 섹션에서 고릅니다. 여기서는 컷을 통째로 재현하거나 촬영 실사 레퍼를 앵커로 쓸 때만 씁니다.">
+          <Section n="6" title="베이스 (선택)" hint="포즈는 위 포즈 섹션에서 고릅니다. 여기서는 컷을 통째로 재현하거나 촬영 실사 레퍼를 앵커로 쓸 때만 씁니다.">
             <div className="flex gap-1.5 mb-3 flex-wrap">
               {([
                 ['none', '없음', ''],
@@ -1195,7 +1250,7 @@ ${c.spec}`}>
           */}
 
           {/* ⑤ 방향 지시 */}
-          <Section n={flow === "ref" ? "5" : "5"} title="방향 지시" hint="한글로 편하게 적으면 됩니다. 카메라 각도·조명·인물 구성도 여기에 함께 적으세요.">
+          <Section n="7" title="방향 지시" hint="한글로 편하게 적으면 됩니다. 카메라 각도·조명·인물 구성도 여기에 함께 적으세요.">
             <textarea className="input" rows={3} value={direction} onChange={(e) => setDirection(e.target.value)}
                       placeholder="예: 창가 자연광이 드는 아늑한 거실, 45도 측면에서, 옆에 작은 화분" />
           </Section>

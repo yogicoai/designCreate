@@ -73,6 +73,16 @@ export interface ProductDoc {
   colors: ProductColor[];
   order: number;
   active: boolean;
+
+  // ── youtube 프로젝트 제품 데이터에서 끌어온 필드 (scripts/sync-youtube-products.mjs) ──
+  /** 카테고리 (빈백 / 메이트(인형) / 바디필로우·스툴 / 악세서리 …) */
+  category?: string;
+  /** 소품 여부 — 메인 제품 선택지에는 안 띄우고 '함께 놓을 제품'에만 나온다 */
+  accessory?: boolean;
+  /** 사용법·연출 서술 (영문 섞임). '연출: <영문>' 조각은 프롬프트 staging 으로 쓴다 */
+  notes?: string;
+  /** 실제 판매 페이지의 연출 사진들 — 이름(sitting_recliner 등) → URL */
+  usageShots?: Record<string, string>;
 }
 
 /** 실사 포즈 레퍼 — 착석 썸네일 품질의 핵심 자산 */

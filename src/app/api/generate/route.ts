@@ -308,18 +308,23 @@ export async function POST(req: Request) {
         }
       }
 
-      // product_items.notes 의 "연출: <영문>" — 실제 판매 데이터에 박힌 연출 지침
+      // "연출: <영문>" 지침 — 컬러별 판매 데이터(product_items)가 우선,
+      // 없으면 제품 문서의 notes (youtube 에서 끌어온 사용법 서술)에서 찾는다
       let staging = '';
       if (pick.colorKey) {
         const item = await db.collection('product_items').findOne({ line: doc.line, colorKey: pick.colorKey });
         staging = String(item?.notes || '').match(/연출:\s*([^·]+)/)?.[1]?.trim() ?? '';
       }
+      if (!staging && doc.notes) {
+        staging = String(doc.notes).match(/연출:\s*([^·]+)/)?.[1]?.trim() ?? '';
+      }
 
       productSpecs.push({
         line: doc.line,
-        shape: doc.geometry.shape,
-        negative: doc.geometry.negative,
-        modes: doc.geometry.modes,
+        // 메이트 인형·소품은 기하 서술이 없다 — 뷰 사진과 실측 치수가 형태를 잡는다
+        shape: doc.geometry?.shape ?? `${doc.category || 'accessory'} — follow the reference views for its exact shape`,
+        negative: doc.geometry?.negative ?? '',
+        modes: doc.geometry?.modes ?? '',
         dims: doc.dims,
         scalePrompt: doc.scalePrompt,
         ...(col ? { color: { name: col.name, nameEn: col.nameEn || col.name, hex: col.hex } } : {}),
