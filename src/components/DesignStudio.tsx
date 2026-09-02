@@ -200,7 +200,13 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
    */
   const [result, setResult] = useState<
     | { kind: 'single'; preview: string; w: number; h: number }
-    | { kind: 'pair'; items: { label: string; w: number; h: number; preview: string }[] }
+    | {
+        kind: 'pair';
+        items: {
+          label: string; w: number; h: number; preview: string; sizeId: string;
+          layers: DesignLayer[]; fit: { mode: 'cover' | 'blur'; fx: number; fy: number };
+        }[];
+      }
     | null
   >(null);
   const [tweakOpen, setTweakOpen] = useState(false);
@@ -889,8 +895,29 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
               <div className="flex flex-col gap-3">
                 {result.items.map((it) => (
                   <div key={it.label}>
-                    <div className="text-[11px] mb-1 tabular-nums" style={{ color: 'var(--text-mute)' }}>
-                      {it.label} · {it.w}×{it.h}
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
+                        {it.label} · {it.w}×{it.h}
+                      </span>
+                      {/*
+                        * 한 장만 고치고 싶을 때 — 그 버전의 배치를 무대로 옮겨
+                        * 이어서 다듬는다. 저장은 다듬은 뒤 [완성 · 저장]으로.
+                        */}
+                      <button className="chip ml-auto"
+                              onClick={() => {
+                                applyingFocus.current = true;      // 규격 변경으로 자동 재배치가 돌면 가져온 배치를 덮는다
+                                setSizeId(it.sizeId);
+                                setLayers(it.layers);
+                                setFitMode(it.fit.mode);
+                                setFx(it.fit.fx);
+                                setFy(it.fit.fy);
+                                setFocusTouched(true);
+                                setSelected(null);
+                                setResult(null);
+                                setNote(`${it.label} 버전을 무대에 올렸습니다 — 다듬은 뒤 [✔ 완성 · 저장]을 누르세요.`);
+                              }}>
+                        이 버전 무대에서 다듬기
+                      </button>
                     </div>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={it.preview} alt={it.label} className="rounded-lg border mx-auto"

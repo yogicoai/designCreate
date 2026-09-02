@@ -86,15 +86,36 @@ async function fitToSize(
  * 낮은 곳에 글자를 놓아야 인물 위에 안 겹친다.
  */
 async function analyzeRegions(buf: Buffer) {
+  // 컬러로 받는다 — 밝기·복잡도 외에 채도도 재야 한다 (강한 원색 배경 판별)
   const { data, info } = await sharp(buf).removeAlpha().resize(32, 32, { fit: 'fill' })
-    .greyscale().raw().toBuffer({ resolveWithObject: true });
-  const at = (x: number, y: number) => data[y * info.width + x];
+    .raw().toBuffer({ resolveWithObject: true });
+  const ch = info.channels;
+  const px = (x: number, y: number) => {
+    const i = (y * info.width + x) * ch;
+    return [data[i], data[i + 1], data[i + 2]] as const;
+  };
   const stat = (x0: number, y0: number, x1: number, y1: number) => {
     const v: number[] = [];
-    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) v.push(at(x, y));
-    const mean = v.reduce((a, b) => a + b, 0) / v.length;
-    const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length);
-    return { mean, sd };
+    let rSum = 0;
+    let gSum = 0;
+    let bSum = 0;
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        const [pr, pg, pb] = px(x, y);
+        rSum += pr; gSum += pg; bSum += pb;
+        v.push(0.299 * pr + 0.587 * pg + 0.114 * pb);
+      }
+    }
+    const n = v.length;
+    const mean = v.reduce((a, b) => a + b, 0) / n;
+    const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+    // 평균색의 채도 — (최대채널-최소채널)/최대채널. 원색 벽이면 크고 회색·흰 벽이면 0 에 가깝다
+    const mr = rSum / n;
+    const mg = gSum / n;
+    const mb = bSum / n;
+    const mx = Math.max(mr, mg, mb);
+    const sat = mx === 0 ? 0 : (mx - Math.min(mr, mg, mb)) / mx;
+    return { mean, sd, sat };
   };
   // 사진에서 가장 넓게 쓰인 색 — 버튼 색을 여기서 가져온다
   const { dominant } = await sharp(buf).stats();
@@ -115,7 +136,13 @@ async function analyzeRegions(buf: Buffer) {
  * 작은 글씨를 흰색으로 하면 중간톤 위에서 뭉개진다.
  * 한 가지 색으로 통일하면 이 맛이 안 난다.
  */
-function inkOf(mean: number) {
+function inkOf(mean: number, sat = 0) {
+  /*
+   * 색이 강한 배경(채도 높은 원색 벽·원색 빈백)은 밝기가 어중간해도
+   * 짙은 글씨가 탁해 보인다 — 전부 흰 글씨가 정답이다 (사용자 요청).
+   * 임계 0.35: 회벽·크림벽(0.05~0.2)은 안 걸리고 원색(0.4~)만 걸린다.
+   */
+  if (sat > 0.35 && mean < 205) return { title: '#ffffff', small: '#f1eee8', scrim: '#000000', mid: false };
   if (mean < 120) return { title: '#ffffff', small: '#e9e6e1', scrim: '#000000', mid: false };
   if (mean > 190) return { title: '#1b1d21', small: '#4a4f57', scrim: '#ffffff', mid: false };
   return { title: '#ffffff', small: '#2a2c30', scrim: '#ffffff', mid: true };
@@ -189,7 +216,7 @@ function buildAuto(
     const colFrac = content && content < W ? (content * 0.55) / W : 0.42;
     const x = side === 'left' ? marginX : 1 - marginX;
     const align = side === 'left' ? ('start' as const) : ('end' as const);
-    const ink = inkOf(r.mean);
+    const ink = inkOf(r.mean, r.sat);
     const strong = ink.title;
     const soft = ink.small;
 
@@ -266,7 +293,7 @@ function buildAuto(
     const y0 = topSide
       ? (hasEye ? (big ? 0.20 : 0.245) : (big ? 0.14 : 0.16))
       : (hasEye ? (big ? 0.76 : 0.79) : (big ? 0.80 : 0.84));
-    const ink = inkOf(r.mean);
+    const ink = inkOf(r.mean, r.sat);
     const strong = ink.title;
     const soft = ink.small;
 
@@ -496,7 +523,7 @@ export async function POST(req: Request) {
       const c = await subjectCenter(raw);               // 초점은 원본에서 한 번만 재면 된다
       const pairId = Math.random().toString(36).slice(2, 10);
 
-      const items: { id?: string; url?: string; sizeId: string; w: number; h: number; label: string; preview?: string }[] = [];
+      const items: { id?: string; url?: string; sizeId: string; w: number; h: number; label: string; preview?: string; layers?: DesignLayer[]; fit?: { mode: 'cover' | 'blur'; fx: number; fy: number } }[] = [];
       for (const sid of (b.sizeIds ?? []).slice(0, 4)) {
         const sz = findSize(sid);
         const W = sz.w;
@@ -508,9 +535,14 @@ export async function POST(req: Request) {
         const design: DesignDoc = { imageUrl: b.imageUrl, layers: auto.layers, size: { id: sid, w: W, h: H }, fit, font: b.font };
         const svg = renderLayersToSvg(design, W, H);
         const out = await sharp(buf).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).jpeg({ quality: 94 }).toBuffer();
-        // 확인창용 — 저장 없이 그림만 돌려준다. 같은 입력이면 같은 결과라 확인 후 다시 만들어도 같다
+        // 확인창용 — 저장 없이 그림만 돌려준다. 같은 입력이면 같은 결과라 확인 후 다시 만들어도 같다.
+        // layers·fit 도 같이 준다 — "이 버전만 무대에서 다듬기"가 그대로 이어받아야 한다
         if (b.preview) {
-          items.push({ sizeId: sid, w: W, h: H, label: sz.label, preview: `data:image/jpeg;base64,${out.toString('base64')}` });
+          items.push({
+            sizeId: sid, w: W, h: H, label: sz.label,
+            preview: `data:image/jpeg;base64,${out.toString('base64')}`,
+            layers: auto.layers, fit,
+          });
           continue;
         }
         const saved = await saveRendered(out, design, W, H, `${texts.title || '배너'} — ${sz.label}`, {
