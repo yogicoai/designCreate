@@ -81,6 +81,11 @@ export interface DesignDoc {
    *   blur   자기 자신을 흐리게 깐 위에 통째로 얹는다 — 하나도 잘리지 않는다
    */
   fit?: { mode: 'cover' | 'blur'; fx: number; fy: number };
+  /**
+   * 이 배너 전체의 글꼴 가족 이름. fonts/ 폴더에 있는 파일의 name 테이블
+   * 이름이어야 한다 (banner-fonts 가 목록을 만든다). 없으면 FONT_STACK 순서.
+   */
+  font?: string;
 }
 
 /**
@@ -123,6 +128,8 @@ export const ICONS: Record<string, { label: string; path: string; fill?: boolean
   home:   { label: '집',       path: 'M3 11l9-7 9 7M6 10v10h12V10' },
   sparkle:{ label: '반짝임',   path: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z' },
   moon:   { label: '달',       path: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z' },
+  cart:   { label: '장바구니', path: 'M3 4h2l2.5 12h11L21 8H7M10 20a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM17 20a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z' },
+  chevron:{ label: '꺾쇠',     path: 'M9 5l7 7-7 7' },
 };
 
 /** XML 에 그대로 넣으면 깨지는 문자들 */
@@ -161,10 +168,18 @@ function rotWrap(inner: string, rotate: number | undefined, cx: number, cy: numb
 }
 
 /** 레이어들을 배경 크기(W×H)에 맞춰 SVG 한 장으로 그린다 */
+/** 배너가 고른 글꼴을 맨 앞에 세운 스택 — 그 글꼴이 없으면 기본 층계로 내려간다 */
+function stackFor(font?: string): string {
+  if (!font) return FONT_STACK;
+  const clean = font.replace(/["']/g, '');
+  return `'${clean}', ${FONT_STACK}`;
+}
+
 export function renderLayersToSvg(design: DesignDoc, W: number, H: number): string {
   // 글자·아이콘·모서리는 짧은 변을 기준으로 잰다.
   // 가로폭 기준이면 1920x600 배너에서 0.082 짜리 제목이 157px 가 되어 캔버스를 뚫는다.
   const S = Math.min(W, H);
+  const fontStack = stackFor(design.font);
   const parts: string[] = [];
   const defs: string[] = [];
 
@@ -239,7 +254,7 @@ export function renderLayersToSvg(design: DesignDoc, W: number, H: number): stri
       : '';
 
     const common =
-      `font-family="${FONT_STACK}" font-size="${fs}" font-weight="${l.weight ?? 700}"` +
+      `font-family="${fontStack}" font-size="${fs}" font-weight="${l.weight ?? 700}"` +
       ` letter-spacing="${ls}" fill="${l.color}" fill-opacity="${op}"`;
 
     /*

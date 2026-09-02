@@ -2,6 +2,7 @@ import PageHeader from '@/components/PageHeader';
 import DesignStudio from '@/components/DesignStudio';
 import { getCuts } from '@/lib/queries';
 import type { DesignDoc } from '@/lib/design-render';
+import { listBannerFonts } from '@/lib/banner-fonts';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,8 @@ export default async function DesignPage({
    * 이관 컷도 배너 소재가 아니라 제외한다.
    */
   const cuts = await getCuts({ source: 'imgcreate', notProvider: 'design', limit: 60 });
+  // fonts/ 폴더를 훑어 글꼴 목록을 만든다 — 파일을 넣으면 여기 바로 뜬다
+  const fonts = listBannerFonts();
 
   // 관리 게시판에서 '수정' 으로 들어온 경우 — 그때 그 배치를 그대로 연다
   let initial: DesignDoc | undefined;
@@ -41,6 +44,7 @@ export default async function DesignPage({
       <DesignStudio
         initial={initial}
         sourceId={initial ? load : undefined}
+        fonts={fonts}
         cuts={cuts.map((c) => ({
           id: c.id,
           url: c.url,

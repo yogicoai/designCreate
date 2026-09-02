@@ -170,11 +170,13 @@ function textOf(d: DesignDoc | undefined, id: string, fallback: string) {
   return d?.layers.find((l) => l.id === id)?.text ?? fallback;
 }
 
-export default function DesignStudio({ cuts, initial, sourceId }: {
+export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   cuts: CutOption[];
   initial?: DesignDoc;
   /** 관리 게시판에서 수정으로 연 배너의 id — 저장할 때 계보로 남긴다 */
   sourceId?: string;
+  /** fonts/ 폴더에서 찾은 글꼴들 — 파일만 넣으면 서버가 목록을 만든다 */
+  fonts?: { family: string; file: string }[];
 }) {
   /*
    * 배경은 고르고 시작한다. 첫 컷을 자동으로 물려두면 고르지도 않은 배경 위에
@@ -213,6 +215,11 @@ export default function DesignStudio({ cuts, initial, sourceId }: {
    * 4단계에서 손으로 다듬는 사람의 몫이다. MD 가 색을 고르는 것 자체가 개입이라서.
    */
   const [btnColor, setBtnColor] = useState('photo');
+  // 문구 크기·줄 간격 배율. 1 = 기존 자사몰 배너 실측값 — 고정이 아니라 출발점이다
+  const [tuneScale, setTuneScale] = useState(1);
+  const [tuneGap, setTuneGap] = useState(1);
+  // 배너 전체의 글꼴 — 저장본을 다시 열면 그때 글꼴로 돌아온다
+  const [fontFamily, setFontFamily] = useState(initial?.font ?? '');
   /*
    * 잘라내기 위치를 손댔는가. 안 댔으면 서버가 피사체를 보고 정한다.
    * 저장본을 다시 열었을 때는 그때 정한 위치를 존중한다 (true 로 시작).
@@ -254,8 +261,8 @@ export default function DesignStudio({ cuts, initial, sourceId }: {
   const fit = useMemo(() => ({ mode: fitMode, fx, fy }), [fitMode, fx, fy]);
 
   const design: DesignDoc = useMemo(
-    () => ({ imageUrl, layers, size: { id: sizeId || undefined, w: dims.w, h: dims.h }, fit }),
-    [imageUrl, layers, sizeId, dims, fit],
+    () => ({ imageUrl, layers, size: { id: sizeId || undefined, w: dims.w, h: dims.h }, fit, font: fontFamily || undefined }),
+    [imageUrl, layers, sizeId, dims, fit, fontFamily],
   );
 
   const loadTemplates = useCallback(async () => {
@@ -346,6 +353,7 @@ export default function DesignStudio({ cuts, initial, sourceId }: {
             size: { id: sizeId || undefined, w: dims.w, h: dims.h }, fit,
             autoFocus: wantAutoFocus,
             buttonColor: btnColor === 'photo' ? undefined : brandButtonHex(btnColor),
+            tune: { scale: tuneScale, gap: tuneGap },
           },
         }),
       });
@@ -366,7 +374,7 @@ export default function DesignStudio({ cuts, initial, sourceId }: {
         + `${j.picked.where} 여백에 배치 `
         + `(${j.picked.light ? '밝은 배경이라 짙은 글씨' : '어두운 배경이라 흰 글씨'}).`);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
-  }, [imageUrl, autoEyebrow, autoTitle, autoSub, autoCta, sizeId, dims, fit, fitMode, focusTouched, btnColor]);
+  }, [imageUrl, autoEyebrow, autoTitle, autoSub, autoCta, sizeId, dims, fit, fitMode, focusTouched, btnColor, tuneScale, tuneGap]);
 
   /*
    * 규격이나 자르기를 바꾸면 배치를 다시 잡는다.
@@ -393,7 +401,7 @@ export default function DesignStudio({ cuts, initial, sourceId }: {
     if (!imageUrl || cur.length === 0 || !cur.every(isAuto)) return;
     const t = setTimeout(() => { autoRef.current(true); }, 500);   // 슬라이더를 끄는 동안 매번 부르지 않게
     return () => clearTimeout(t);
-  }, [sizeId, fitMode, fx, fy, imageUrl, btnColor]);
+  }, [sizeId, fitMode, fx, fy, imageUrl, btnColor, tuneScale, tuneGap]);
 
   async function render(save: boolean) {
     if (!imageUrl) { setErr('배경 컷을 골라주세요.'); return; }
@@ -453,6 +461,8 @@ export default function DesignStudio({ cuts, initial, sourceId }: {
             imageUrl, eyebrow: autoEyebrow, title: autoTitle, subtitle: autoSub, cta: autoCta,
             sizeIds: ['web-main', 'mo-main'],
             buttonColor: btnColor === 'photo' ? undefined : brandButtonHex(btnColor),
+            tune: { scale: tuneScale, gap: tuneGap },
+            font: fontFamily || undefined,
             sourceId,
           },
         }),
@@ -486,6 +496,7 @@ export default function DesignStudio({ cuts, initial, sourceId }: {
   const grpLayers = selGroup ? layers.filter((l) => l.group === selGroup) : [];
   const btnLabel = grpLayers.find((l) => l.kind === 'text') ?? null;
   const btnPill = grpLayers.find((l) => l.kind === 'rect') ?? null;
+  const btnArrow = grpLayers.find((l) => l.kind === 'icon') ?? null;
   const isSel = (l: DesignLayer) => !!sel && groupOf(l) === groupOf(sel);
 
   /*
@@ -560,6 +571,21 @@ export default function DesignStudio({ cuts, initial, sourceId }: {
                (n) => setBtn({ size: n }), (n) => `${(n * 100).toFixed(1)}%`)}
           {num('모서리', btnPill.radius ?? 0.06, 0, 0.2, 0.005,
                (n) => patch(btnPill.id, { radius: n }), (n) => n.toFixed(3))}
+          {/* 버튼을 한 몸으로 묶으면서 사라졌던 아이콘 바꾸기 — 무리 패널에서 바로 고른다 */}
+          {btnArrow && (
+            <>
+              <div className="label mb-1 mt-1">아이콘</div>
+              <div className="flex flex-wrap gap-1 mb-2">
+                {Object.entries(ICONS).map(([key, v]) => (
+                  <button key={key} className="chip" title={v.label}
+                          style={btnArrow.icon === key ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}
+                          onClick={() => patch(btnArrow.id, { icon: key })}>
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           <div className="label mb-1 mt-1">버튼 색</div>
           <div className="flex items-center gap-2 mb-2">
             <input type="color" value={btnPill.color}
@@ -685,6 +711,14 @@ export default function DesignStudio({ cuts, initial, sourceId }: {
      * items-start 가 없으면 flex 가 자식을 끝까지 늘려서 sticky 가 먹지 않는다.
      */
     <div className="flex flex-col xl:flex-row gap-4 xl:items-start">
+      {/*
+        * 서버가 렌더에 쓰는 것과 같은 파일을 브라우저에도 물린다.
+        * 이게 없으면 작업 화면은 다른 글꼴로 그려져서 배치가 저장본과 어긋난다.
+        * Pretendard Variable 은 globals.css 가 이미 woff2 로 물려놨으니 뺀다.
+        */}
+      {fonts.filter((f) => f.family !== 'Pretendard Variable').map((f) => (
+        <style key={f.file}>{`@font-face{font-family:'${f.family.replace(/'/g, '')}';src:url('/api/font/${encodeURIComponent(f.file)}');font-display:swap;}`}</style>
+      ))}
       {/* ── 왼쪽: 결과만 크게 (고정) ── */}
       <div className="flex-1 min-w-0 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
         <div className="card p-3">
@@ -928,6 +962,24 @@ export default function DesignStudio({ cuts, initial, sourceId }: {
               </button>
             ))}
           </div>
+
+          {fonts.length > 1 && (
+            <>
+              <div className="label mb-1">글꼴</div>
+              <select className="input py-1 text-[11.5px] mb-2" value={fontFamily}
+                      onChange={(e) => { setFontFamily(e.target.value); setResult(null); }}>
+                {fonts.map((f) => (
+                  <option key={f.file} value={f.family}>{f.family}</option>
+                ))}
+              </select>
+            </>
+          )}
+
+          {/* 기본값(100%)이 기존 자사몰 배너 실측 — 취향껏 벌리고 줄일 수 있게 열어둔다 */}
+          {num('문구 크기', tuneScale, 0.7, 1.3, 0.01, (n) => { setTuneScale(n); setResult(null); },
+               (n) => `${Math.round(n * 100)}%`)}
+          {num('줄 간격', tuneGap, 0.7, 1.5, 0.01, (n) => { setTuneGap(n); setResult(null); },
+               (n) => `${Math.round(n * 100)}%`)}
 
           <button className="btn btn-primary w-full" onClick={() => autoLayout(false)} disabled={!!busy || !imageUrl}>
             {busy === 'auto' ? '분석 중…' : '✨ 자동 배치'}

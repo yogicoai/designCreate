@@ -155,8 +155,15 @@ function buildAuto(
   txt: { eyebrow: string; title: string; subtitle: string; cta: string },
   content?: number,
   buttonHex?: string,                                  // 브랜드색 지정 — 없으면 사진에서 뽑는다
+  tune?: { scale?: number; gap?: number },             // 문구 크기·줄 간격 배율 (기본 1 = 실측값)
 ) {
   const S = Math.min(W, H);
+  /*
+   * 배치 숫자는 실제 자사몰 배너 실측이 기본값이지만, 컷과 문구에 따라
+   * 취향이 갈려서 배율로 조절할 수 있게 열어둔다 — "고정을 수정 가능하게".
+   */
+  const k = Math.max(0.5, Math.min(2, tune?.scale ?? 1));   // 문구 크기 배율
+  const g = Math.max(0.5, Math.min(2, tune?.gap ?? 1));     // 줄 간격 배율
   /** 원하는 크기와 폭 제한 중 작은 쪽. 반환값은 짧은 변 대비 비율 */
   const fitText = (str: string, want: number, availFrac: number) =>
     Math.min(want, (availFrac * W) / (textEm(str) * S));
@@ -195,36 +202,37 @@ function buildAuto(
     });
 
     /*
-     * 세로 자리는 실제 자사몰 웹 배너를 재서 맞췄다.
-     * 눈썹 .27 / 제목 .415 / 혜택 .565 / 버튼 .71 — 줄 사이가 .15 씩.
-     * 처음엔 .17 씩 벌렸더니 한 덩어리로 안 읽히고 따로 놀았다.
+     * 세로 자리와 크기는 실제 자사몰 웹 배너(1091x345)를 재서 그대로 옮겼다.
+     * 눈썹 .245 / 제목 .43 / 혜택 .60 / 버튼 .79 · 제목 크기 .110.
+     * 제목을 이보다 키우면(.125) 덩어리가 눌려 보인다고 확인받았다.
+     * g(줄 간격)·k(크기) 배율은 제목을 축으로 위아래로 벌린다.
      */
     const hasEye = !!txt.eyebrow;
-    const ty = hasEye ? 0.415 : 0.36;
+    const ty = hasEye ? 0.43 : 0.36;
     // 눈썹과 혜택 줄은 작아서 흰색이면 중간톤 위에서 뭉갠다 — 제목만 흰색으로 둔다
     if (hasEye) layers.push({
-      id: 'auto-eyebrow', kind: 'text', x, y: 0.27, text: txt.eyebrow,
-      size: fitText(txt.eyebrow, 0.050, colFrac), weight: 600, tracking: 0.01,
+      id: 'auto-eyebrow', kind: 'text', x, y: ty - 0.185 * g, text: txt.eyebrow,
+      size: fitText(txt.eyebrow, 0.055 * k, colFrac), weight: 600, tracking: 0.01,
       lineHeight: 1.25, align, color: soft, opacity: 1, shadow: false, curve: 0,
     });
     if (txt.title) layers.push({
       id: 'auto-title', kind: 'text', x, y: ty, text: txt.title,
-      size: fitText(txt.title, hasEye ? 0.125 : 0.15, colFrac), weight: 800, tracking: -0.015,
+      size: fitText(txt.title, (hasEye ? 0.110 : 0.135) * k, colFrac), weight: 800, tracking: -0.015,
       lineHeight: 1.15, align, color: strong,
       opacity: 1, shadow: false, curve: 0,
     });
     if (txt.subtitle) layers.push({
-      id: 'auto-sub', kind: 'text', x, y: hasEye ? 0.565 : 0.53, text: txt.subtitle,
-      size: fitText(txt.subtitle, hasEye ? 0.046 : 0.055, colFrac), weight: 500, tracking: 0.03,
+      id: 'auto-sub', kind: 'text', x, y: ty + 0.17 * g, text: txt.subtitle,
+      size: fitText(txt.subtitle, (hasEye ? 0.049 : 0.055) * k, colFrac), weight: 500, tracking: 0.03,
       lineHeight: 1.3, align, color: soft,
       opacity: 1, shadow: false, curve: 0,
     });
     if (txt.cta) {
-      const cs = fitText(txt.cta, hasEye ? 0.044 : 0.05, colFrac * 0.8);
+      const cs = fitText(txt.cta, (hasEye ? 0.044 : 0.05) * k, colFrac * 0.8);
       // 화살표 자리까지 세어서 알약 폭을 잡는다
       const pw = ((textEm(txt.cta) + 3.2) * cs * S) / W;
       const px = side === 'left' ? marginX + pw / 2 : 1 - marginX - pw / 2;
-      const cy = 0.71;
+      const cy = Math.min(0.88, ty + 0.36 * g);
       const on = '#ffffff';
       layers.push({
         id: 'auto-pill', kind: 'rect', group: 'cta', x: px, y: cy, w: pw, h: (cs * S * 2.4) / H,
@@ -253,8 +261,8 @@ function buildAuto(
      * 문구를 위에 쌓고 버튼은 반대쪽 끝에 둔다.
      */
     const big = shape === 'tall';                       // 세로형은 더 크게 — 멀리서 본다
-    const gap = big ? 0.070 : 0.095;                    // 제목 → 혜택
-    const eyeGap = big ? 0.056 : 0.077;                 // 눈썹 → 제목
+    const gap = (big ? 0.070 : 0.095) * g;              // 제목 → 혜택
+    const eyeGap = (big ? 0.056 : 0.077) * g;           // 눈썹 → 제목
     const hasEye = !!txt.eyebrow;
     // 눈썹이 붙으면 한 줄이 더 늘어나므로 제목을 그만큼 밀어 넣는다
     const y0 = topSide
@@ -273,23 +281,23 @@ function buildAuto(
     });
     if (hasEye) layers.push({
       id: 'auto-eyebrow', kind: 'text', x: 0.5, y: y0 - eyeGap, text: txt.eyebrow,
-      size: fitText(txt.eyebrow, big ? 0.034 : 0.030, 0.82), weight: 600, tracking: 0.02,
+      size: fitText(txt.eyebrow, (big ? 0.034 : 0.030) * k, 0.82), weight: 600, tracking: 0.02,
       lineHeight: 1.25, align: 'middle', color: soft, opacity: 1, shadow: false, curve: 0,
     });
     if (txt.title) layers.push({
       id: 'auto-title', kind: 'text', x: 0.5, y: y0, text: txt.title,
-      size: fitText(txt.title, big ? 0.095 : 0.075, 0.86), weight: 800, tracking: -0.01,
+      size: fitText(txt.title, (big ? 0.095 : 0.075) * k, 0.86), weight: 800, tracking: -0.01,
       lineHeight: 1.2, align: 'middle', color: strong,
       opacity: 1, shadow: false, curve: 0,
     });
     if (txt.subtitle) layers.push({
       id: 'auto-sub', kind: 'text', x: 0.5, y: y0 + gap, text: txt.subtitle,
-      size: fitText(txt.subtitle, big ? 0.032 : 0.028, 0.82), weight: 500, tracking: 0.02,
+      size: fitText(txt.subtitle, (big ? 0.032 : 0.028) * k, 0.82), weight: 500, tracking: 0.02,
       lineHeight: 1.3, align: 'middle', color: soft,
       opacity: 1, shadow: false, curve: 0,
     });
     if (txt.cta) {
-      const cs = fitText(txt.cta, big ? 0.032 : 0.028, 0.7);
+      const cs = fitText(txt.cta, (big ? 0.032 : 0.028) * k, 0.7);
       // 화살표 자리까지 세어서 알약 폭을 잡는다 (가로형과 같은 규칙)
       const pw = Math.min(0.9, ((textEm(txt.cta) + 3.2) * cs * S) / W);
       const cy = topSide ? (big ? 0.9 : 0.87) : (big ? 0.10 : 0.13);
@@ -438,9 +446,11 @@ export async function POST(req: Request) {
         autoFocus?: boolean;
         /** 브랜드 버튼색 (hex). 없으면 사진에서 뽑는다 */
         buttonColor?: string;
+        /** 문구 크기·줄 간격 배율 (기본 1 = 실측값) */
+        tune?: { scale?: number; gap?: number };
       };
       /** 같은 문구로 여러 규격을 한 번에 만들어 짝으로 저장 */
-      batch?: AutoTexts & { imageUrl: string; sizeIds: string[]; buttonColor?: string; sourceId?: string };
+      batch?: AutoTexts & { imageUrl: string; sizeIds: string[]; buttonColor?: string; sourceId?: string; tune?: { scale?: number; gap?: number }; font?: string };
     };
 
     // ── 1차 배치 ──
@@ -470,7 +480,7 @@ export async function POST(req: Request) {
         title: (a.title ?? '').trim(),
         subtitle: (a.subtitle ?? '').trim(),
         cta: (a.cta ?? '').trim(),
-      }, content, a.buttonColor);
+      }, content, a.buttonColor, a.tune);
       return NextResponse.json({
         ok: true, ...out, size: { w: W, h: H }, source: { w: srcW, h: srcH }, fit,
       });
@@ -500,8 +510,8 @@ export async function POST(req: Request) {
         const fit = { mode: 'cover' as const, ...focusFor(srcW, srcH, W, H, c.cx, c.cy) };
         const buf = W !== srcW || H !== srcH ? await fitToSize(raw, W, H, fit) : raw;
         const reg = await analyzeRegions(buf);
-        const auto = buildAuto(shapeOf(W, H), reg, W, H, texts, sz.content, b.buttonColor);
-        const design: DesignDoc = { imageUrl: b.imageUrl, layers: auto.layers, size: { id: sid, w: W, h: H }, fit };
+        const auto = buildAuto(shapeOf(W, H), reg, W, H, texts, sz.content, b.buttonColor, b.tune);
+        const design: DesignDoc = { imageUrl: b.imageUrl, layers: auto.layers, size: { id: sid, w: W, h: H }, fit, font: b.font };
         const svg = renderLayersToSvg(design, W, H);
         const out = await sharp(buf).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).jpeg({ quality: 94 }).toBuffer();
         const saved = await saveRendered(out, design, W, H, `${texts.title || '배너'} — ${sz.label}`, {
