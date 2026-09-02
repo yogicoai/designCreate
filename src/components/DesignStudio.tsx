@@ -170,13 +170,11 @@ function textOf(d: DesignDoc | undefined, id: string, fallback: string) {
   return d?.layers.find((l) => l.id === id)?.text ?? fallback;
 }
 
-export default function DesignStudio({ cuts, initial, sourceId, copyIdeas = [] }: {
+export default function DesignStudio({ cuts, initial, sourceId }: {
   cuts: CutOption[];
   initial?: DesignDoc;
   /** 관리 게시판에서 수정으로 연 배너의 id — 저장할 때 계보로 남긴다 */
   sourceId?: string;
-  /** 이달의 추천 문구 — copy-ideas 가 server-only 라 페이지(서버)가 계산해서 내려준다 */
-  copyIdeas?: string[];
 }) {
   /*
    * 배경은 고르고 시작한다. 첫 컷을 자동으로 물려두면 고르지도 않은 배경 위에
@@ -915,14 +913,6 @@ export default function DesignStudio({ cuts, initial, sourceId, copyIdeas = [] }
           <input className="input py-1 text-[11.5px] mb-2" value={autoCta}
                  onChange={(e) => setAutoCta(e.target.value)} placeholder="버튼 문구 (선택)" />
 
-          {/* 이달의 추천 문구 — 빈백 트렌드의 시즌 캘린더에서 온다. 문구 고민까지 줄여준다 */}
-          {copyIdeas.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-2">
-              {copyIdeas.map((c) => (
-                <button key={c} className="chip" title="제목으로 넣기" onClick={() => setAutoTitle(c)}>{c}</button>
-              ))}
-            </div>
-          )}
 
           <div className="label mb-1">버튼 색</div>
           <div className="flex flex-wrap gap-1.5 mb-2">

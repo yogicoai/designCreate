@@ -2,7 +2,6 @@ import PageHeader from '@/components/PageHeader';
 import DesignStudio from '@/components/DesignStudio';
 import { getCuts } from '@/lib/queries';
 import type { DesignDoc } from '@/lib/design-render';
-import { buildSuggestions } from '@/lib/copy-ideas';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +41,6 @@ export default async function DesignPage({
       <DesignStudio
         initial={initial}
         sourceId={initial ? load : undefined}
-        copyIdeas={buildSuggestions(new Date().getMonth() + 1).slice(0, 5)}
         cuts={cuts.map((c) => ({
           id: c.id,
           url: c.url,

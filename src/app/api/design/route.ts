@@ -228,7 +228,7 @@ function buildAuto(
       const on = '#ffffff';
       layers.push({
         id: 'auto-pill', kind: 'rect', group: 'cta', x: px, y: cy, w: pw, h: (cs * S * 2.4) / H,
-        color: buttonHex ?? pillFrom(reg.dominant), opacity: 0.95, radius: 0.06,
+        color: buttonHex ?? pillFrom(reg.dominant), opacity: 0.95, radius: 10 / S,   // 모서리는 규격이 달라도 10px — 사이트 버튼과 같은 값
       });
       layers.push({
         id: 'auto-cta', kind: 'text', group: 'cta', x: px - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
@@ -296,7 +296,7 @@ function buildAuto(
       const on = '#ffffff';
       layers.push({
         id: 'auto-pill', kind: 'rect', group: 'cta', x: 0.5, y: cy, w: pw,
-        h: (cs * S * 2.6) / H, color: buttonHex ?? pillFrom(reg.dominant), opacity: 0.95, radius: 0.06,
+        h: (cs * S * 2.6) / H, color: buttonHex ?? pillFrom(reg.dominant), opacity: 0.95, radius: 10 / S,   // 모서리는 규격이 달라도 10px — 사이트 버튼과 같은 값
       });
       layers.push({
         id: 'auto-cta', kind: 'text', group: 'cta', x: 0.5 - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
