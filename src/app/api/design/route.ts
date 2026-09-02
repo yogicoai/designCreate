@@ -96,26 +96,24 @@ async function analyzeRegions(buf: Buffer) {
   };
   const stat = (x0: number, y0: number, x1: number, y1: number) => {
     const v: number[] = [];
-    let rSum = 0;
-    let gSum = 0;
-    let bSum = 0;
+    /*
+     * 채도는 픽셀별로 재서 평균한다. 평균색의 채도로 재면 청록 벽에
+     * 흰 선반·액자가 섞이는 순간 평균이 회색으로 물타기돼 "색이 강한
+     * 배경"이 안 걸렸다 (실측). 픽셀별 평균은 섞임에 훨씬 강하다.
+     */
+    let satSum = 0;
     for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) {
         const [pr, pg, pb] = px(x, y);
-        rSum += pr; gSum += pg; bSum += pb;
+        const mx = Math.max(pr, pg, pb);
+        satSum += mx === 0 ? 0 : (mx - Math.min(pr, pg, pb)) / mx;
         v.push(0.299 * pr + 0.587 * pg + 0.114 * pb);
       }
     }
     const n = v.length;
     const mean = v.reduce((a, b) => a + b, 0) / n;
     const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
-    // 평균색의 채도 — (최대채널-최소채널)/최대채널. 원색 벽이면 크고 회색·흰 벽이면 0 에 가깝다
-    const mr = rSum / n;
-    const mg = gSum / n;
-    const mb = bSum / n;
-    const mx = Math.max(mr, mg, mb);
-    const sat = mx === 0 ? 0 : (mx - Math.min(mr, mg, mb)) / mx;
-    return { mean, sd, sat };
+    return { mean, sd, sat: satSum / n };
   };
   // 사진에서 가장 넓게 쓰인 색 — 버튼 색을 여기서 가져온다
   const { dominant } = await sharp(buf).stats();
@@ -138,11 +136,14 @@ async function analyzeRegions(buf: Buffer) {
  */
 function inkOf(mean: number, sat = 0) {
   /*
-   * 색이 강한 배경(채도 높은 원색 벽·원색 빈백)은 밝기가 어중간해도
+   * 색이 강한 배경(채도 있는 색 벽·원색 빈백)은 밝기가 어중간해도
    * 짙은 글씨가 탁해 보인다 — 전부 흰 글씨가 정답이다 (사용자 요청).
-   * 임계 0.35: 회벽·크림벽(0.05~0.2)은 안 걸리고 원색(0.4~)만 걸린다.
+   * 임계 0.16 (픽셀별 채도 평균 기준): 크림·모브 배경(0.05~0.13)은 안
+   * 걸리고, 청록 벽에 소품이 섞인 영역(~0.2)과 원색·우드톤은 걸린다.
+   * 처음엔 평균색 채도 0.35 로 잡았더니 청록 벽에서 작은 글씨가 짙게
+   * 나와 사용자가 흰색을 다시 요청했다 — 측정 방식째 바꿨다.
    */
-  if (sat > 0.35 && mean < 205) return { title: '#ffffff', small: '#f1eee8', scrim: '#000000', mid: false };
+  if (sat > 0.16 && mean < 205) return { title: '#ffffff', small: '#f1eee8', scrim: '#000000', mid: false };
   if (mean < 120) return { title: '#ffffff', small: '#e9e6e1', scrim: '#000000', mid: false };
   if (mean > 190) return { title: '#1b1d21', small: '#4a4f57', scrim: '#ffffff', mid: false };
   return { title: '#ffffff', small: '#2a2c30', scrim: '#ffffff', mid: true };
@@ -227,16 +228,16 @@ function buildAuto(
      */
 
     /*
-     * 세로 자리와 크기는 실측에서 출발해 사용자 피드백으로 줄였다.
-     * 처음 실측(눈썹 .245/제목 .43/혜택 .60)은 "너무 떨어져 있다"였다 —
-     * 눈썹은 더 붙이고(0.185→0.15) 혜택 줄은 조금만(0.17→0.155).
-     * 제목 크기 .110, g(줄 간격)·k(크기) 배율은 제목을 축으로 벌린다.
+     * 세로 자리는 사용자가 화면에서 직접 잡아준 배치의 실측이다 (2026-09):
+     * 눈썹 .20 / 제목 .365 / 혜택 .54 / 버튼 .85 — 문구 덩어리는 위로,
+     * 버튼은 아래로 떨어뜨린 형태. 제목 크기 .110,
+     * g(줄 간격)·k(크기) 배율은 제목을 축으로 벌린다.
      */
     const hasEye = !!txt.eyebrow;
-    const ty = hasEye ? 0.43 : 0.36;
+    const ty = hasEye ? 0.365 : 0.30;
     // 눈썹과 혜택 줄은 작아서 흰색이면 중간톤 위에서 뭉갠다 — 제목만 흰색으로 둔다
     if (hasEye) layers.push({
-      id: 'auto-eyebrow', kind: 'text', x, y: ty - 0.15 * g, text: txt.eyebrow,
+      id: 'auto-eyebrow', kind: 'text', x, y: ty - 0.165 * g, text: txt.eyebrow,
       size: fitText(txt.eyebrow, 0.055 * k, colFrac), weight: 600, tracking: 0.01,
       lineHeight: 1.25, align, color: soft, opacity: 1, shadow: false, curve: 0,
     });
@@ -247,7 +248,7 @@ function buildAuto(
       opacity: 1, shadow: false, curve: 0,
     });
     if (txt.subtitle) layers.push({
-      id: 'auto-sub', kind: 'text', x, y: ty + 0.155 * g, text: txt.subtitle,
+      id: 'auto-sub', kind: 'text', x, y: ty + 0.175 * g, text: txt.subtitle,
       size: fitText(txt.subtitle, (hasEye ? 0.049 : 0.055) * k, colFrac), weight: 500, tracking: 0.03,
       lineHeight: 1.3, align, color: soft,
       opacity: 1, shadow: false, curve: 0,
@@ -257,7 +258,7 @@ function buildAuto(
       // 화살표 자리까지 세어서 알약 폭을 잡는다
       const pw = ((textEm(txt.cta) + 3.2) * cs * S) / W;
       const px = side === 'left' ? marginX + pw / 2 : 1 - marginX - pw / 2;
-      const cy = Math.min(0.88, ty + 0.34 * g);
+      const cy = Math.min(0.88, ty + 0.485 * g);   // 버튼은 문구 덩어리에서 떨어뜨려 아래쪽에
       const on = '#ffffff';
       layers.push({
         id: 'auto-pill', kind: 'rect', group: 'cta', x: px, y: cy, w: pw, h: (cs * S * 2.4) / H,
@@ -289,9 +290,13 @@ function buildAuto(
     const gap = (big ? 0.070 : 0.095) * g;              // 제목 → 혜택
     const eyeGap = (big ? 0.056 : 0.077) * g;           // 눈썹 → 제목
     const hasEye = !!txt.eyebrow;
-    // 눈썹이 붙으면 한 줄이 더 늘어나므로 제목을 그만큼 밀어 넣는다
+    /*
+     * 위 자리도 사용자 배치를 따라 올렸다 (웹과 같은 폭 -0.065).
+     * 모바일 스크린샷은 잘린 크롭이라 정확 좌표를 못 읽었다 — 화면에서 잡은
+     * 배치를 저장해주면 그 좌표를 그대로 기본값으로 옮길 것.
+     */
     const y0 = topSide
-      ? (hasEye ? (big ? 0.20 : 0.245) : (big ? 0.14 : 0.16))
+      ? (hasEye ? (big ? 0.15 : 0.18) : (big ? 0.11 : 0.13))
       : (hasEye ? (big ? 0.76 : 0.79) : (big ? 0.80 : 0.84));
     const ink = inkOf(r.mean, r.sat);
     const strong = ink.title;
