@@ -783,7 +783,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
                    onChange={(e) => patchColor(btnPill.id, e.target.value)}
                    style={{ width: 40, height: 28, padding: 0, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'none' }} />
             <div className="flex gap-1 flex-wrap">
-              {[theme.accent, theme.strong, theme.scrim, '#2f3a5c'].map((c) => (
+              {[...new Set([theme.accent, theme.strong, theme.scrim, '#2f3a5c'])].map((c) => (
                 <button key={c} onClick={() => patchColor(btnPill.id, c)} title={c}
                         className="w-6 h-6 rounded" style={{ background: c, border: '1px solid var(--line)' }} />
               ))}
@@ -880,7 +880,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
           <input type="color" value={sel.color} onChange={(e) => patchColor(sel.id, e.target.value)}
                  style={{ width: 40, height: 28, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'none' }} />
           <div className="flex gap-1 flex-wrap">
-            {[theme.strong, theme.soft, theme.accent, theme.accentText, theme.scrim].map((c) => (
+            {/* 같은 색이 두 칸 나오면 키도 겹치고 보기에도 무의미하다 — 겹침을 걷어낸다 */}
+            {[...new Set([theme.strong, theme.soft, theme.accent, theme.accentText, theme.scrim])].map((c) => (
               <button key={c} onClick={() => patchColor(sel.id, c)} title={c}
                       className="w-6 h-6 rounded" style={{ background: c, border: '1px solid var(--line)' }} />
             ))}
