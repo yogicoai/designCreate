@@ -2,19 +2,25 @@ import { NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { getDb, COLLECTIONS } from '@/lib/db';
 import { uploadBuffer, dailySubpath, ftpConfigured } from '@/lib/ftp';
-import { renderLayersToSvg, type DesignDoc, type DesignLayer } from '@/lib/design-render';
+import { renderLayersToSvg, textEm, type DesignDoc, type DesignLayer } from '@/lib/design-render';
+import { shapeOf, type BannerShape } from '@/lib/banner-sizes';
 
 /**
- * 디자인 생성 — 이미지 위에 텍스트를 얹어 완성본을 만든다.
+ * 배너 디자인 생성 — 이미지 위에 텍스트를 얹어 완성본을 만든다.
  *
  * 왜 필요한가:
  *   생성 모델은 글자를 그림으로 그려서 반드시 뭉갠다 (로고 태그에서 확인).
  *   글자는 실제 폰트로 찍어야 한다. 그래서 이미지 생성과 텍스트 합성을 나눈다.
  *
- * 화면에서는 CSS 로 미리 보고, 저장할 때 여기서 SVG 로 다시 그린다.
+ * 순서가 중요하다: **규격 → 배경 맞추기 → 배치**.
+ * 배너는 걸릴 자리가 먼저 정해지는 물건이라, 1920x600 웹 배너와 1080x1920
+ * 스토리는 같은 문구라도 배치가 달라야 한다.
+ *
+ * 화면에서는 같은 SVG 를 미리 그리고, 저장할 때 여기서 다시 그린다.
  * 두 렌더러가 같은 숫자(0~1 비율)를 읽기 때문에 화면에서 본 그대로 저장된다.
  *
  * GET                        저장된 내 템플릿 목록
+ * POST { auto }              규격을 보고 1차 배치를 잡아준다
  * POST { design, save }      렌더 → 미리보기(base64) 또는 FTP 저장 + 갤러리 등록
  * PUT  { name, design }      템플릿으로 저장
  * DELETE { id }              템플릿 삭제
@@ -23,27 +29,64 @@ import { renderLayersToSvg, type DesignDoc, type DesignLayer } from '@/lib/desig
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * 배경 컷을 배너 규격에 맞춘다.
+ *
+ * 컷은 대개 1:1 로 생성되는데 배너는 1920x600 처럼 납작하거나 1080x1920 처럼
+ * 길쭉하다. 그냥 늘리면 사람이 찌그러지므로 둘 중 하나를 골라야 한다.
+ *
+ *   cover  꽉 채우고 넘치는 부분을 잘라낸다. fx/fy 로 어디를 남길지 정한다.
+ *          (0.5/0.5 = 가운데. 인물이 아래쪽이면 fy 를 올린다)
+ *   blur   자기 자신을 흐리게 깐 위에 통째로 얹는다. 하나도 잘리지 않지만
+ *          좌우에 흐린 띠가 생긴다 — 세로 컷을 가로 배너에 쓸 때 쓸 만하다.
+ *
+ * 화면 미리보기는 CSS object-fit/object-position 으로 같은 계산을 한다.
+ */
+async function fitToSize(
+  buf: Buffer, W: number, H: number,
+  fit: { mode: 'cover' | 'blur'; fx: number; fy: number },
+): Promise<Buffer> {
+  const meta = await sharp(buf).metadata();
+  const sw = meta.width ?? W;
+  const sh = meta.height ?? H;
 
-/*
- * 자동 배치 — 이 기능의 핵심.
+  if (fit.mode === 'blur') {
+    // 흐린 배경은 잘라서 채우고, 그 위에 원본을 통째로 얹는다
+    const bg = await sharp(buf).resize(W, H, { fit: 'cover' })
+      .blur(Math.max(8, Math.round(Math.min(W, H) / 22)))
+      .modulate({ brightness: 0.82 }).toBuffer();
+    const fg = await sharp(buf).resize(W, H, { fit: 'inside' }).toBuffer();
+    const fm = await sharp(fg).metadata();
+    return sharp(bg).composite([{
+      input: fg,
+      left: Math.round((W - (fm.width ?? W)) / 2),
+      top: Math.round((H - (fm.height ?? H)) / 2),
+    }]).jpeg({ quality: 95 }).toBuffer();
+  }
+
+  // cover — 배율을 맞춘 뒤 fx/fy 위치에서 잘라낸다
+  const k = Math.max(W / sw, H / sh);
+  const rw = Math.max(W, Math.round(sw * k));
+  const rh = Math.max(H, Math.round(sh * k));
+  const resized = await sharp(buf).resize(rw, rh).toBuffer();
+  return sharp(resized).extract({
+    left: Math.round((rw - W) * Math.max(0, Math.min(1, fit.fx))),
+    top: Math.round((rh - H) * Math.max(0, Math.min(1, fit.fy))),
+    width: W, height: H,
+  }).jpeg({ quality: 95 }).toBuffer();
+}
+
+/**
+ * 배경의 '어디가 비었나'를 잰다.
  *
- * 쓰는 사람이 디자이너가 아니다. 슬라이더를 열 개 주는 것보다,
- * 문구만 넣으면 알아서 읽히게 놓아주는 편이 훨씬 쓸모 있다.
- *
- * 하는 일:
- *   1) 배경을 잘게 줄여 후보 영역(위/아래/왼/오른)의 밝기와 '복잡도'를 잰다.
- *   2) 복잡도가 낮은 = 비어 있는 영역을 고른다. 인물·제품 위에 글자를 얹지 않기 위해서다.
- *   3) 그 영역의 밝기로 글자색을 정한다. 밝으면 짙은 글씨, 어두우면 흰 글씨.
- *   4) 대비가 모자라면 같은 색 계열의 그늘(scrim)을 깔아 읽히게 만든다.
- *
- * 복잡도는 표준편차로 잰다 — 하늘·벽처럼 고른 면은 낮고, 인물·소품이 있으면 높다.
+ * 32x32 로 줄여서 후보 영역의 밝기(mean)와 복잡도(sd)를 본다.
+ * 복잡도는 표준편차 — 하늘·벽처럼 고른 면은 낮고, 인물·소품이 있으면 높다.
+ * 낮은 곳에 글자를 놓아야 인물 위에 안 겹친다.
  */
 async function analyzeRegions(buf: Buffer) {
-  // 32x32 로 줄여서 본다. 세부는 필요 없고 '어디가 비었나'만 알면 된다
   const { data, info } = await sharp(buf).removeAlpha().resize(32, 32, { fit: 'fill' })
     .greyscale().raw().toBuffer({ resolveWithObject: true });
   const at = (x: number, y: number) => data[y * info.width + x];
-
   const stat = (x0: number, y0: number, x1: number, y1: number) => {
     const v: number[] = [];
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) v.push(at(x, y));
@@ -51,13 +94,148 @@ async function analyzeRegions(buf: Buffer) {
     const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length);
     return { mean, sd };
   };
-
   return {
-    top:    { ...stat(0, 0, 32, 10),   x: 0.5,  y: 0.15, align: 'middle' as const },
-    bottom: { ...stat(0, 22, 32, 32),  x: 0.5,  y: 0.85, align: 'middle' as const },
-    left:   { ...stat(0, 6, 13, 26),   x: 0.09, y: 0.45, align: 'start'  as const },
-    right:  { ...stat(19, 6, 32, 26),  x: 0.91, y: 0.45, align: 'end'    as const },
+    top: stat(0, 0, 32, 11),
+    bottom: stat(0, 21, 32, 32),
+    left: stat(0, 4, 14, 28),
+    right: stat(18, 4, 32, 28),
   };
+}
+
+/**
+ * 1차 배치를 잡는다.
+ *
+ * 규격의 비율에 따라 완전히 다른 배치를 쓴다:
+ *   wide   가로로 길다 → 문구를 한쪽 옆에 세운다. 위아래로 쌓으면 눌린다.
+ *   tall   세로로 길다 → 위나 아래에 크게 쌓고 반대쪽 끝에 버튼을 둔다.
+ *   square 정사각     → 비어 있는 위/아래에 쌓는다.
+ *
+ * 글자 크기는 '원하는 비율'과 '캔버스를 안 뚫는 최대치' 중 작은 쪽을 쓴다.
+ * 긴 제목이 알아서 줄어들기 때문에 쓰는 사람이 크기를 만질 일이 줄어든다.
+ */
+function buildAuto(
+  shape: BannerShape,
+  reg: Awaited<ReturnType<typeof analyzeRegions>>,
+  W: number, H: number,
+  txt: { title: string; subtitle: string; cta: string },
+) {
+  const S = Math.min(W, H);
+  /** 원하는 크기와 폭 제한 중 작은 쪽. 반환값은 짧은 변 대비 비율 */
+  const fitText = (str: string, want: number, availFrac: number) =>
+    Math.min(want, (availFrac * W) / (textEm(str) * S));
+
+  const layers: DesignLayer[] = [];
+  let where: string;
+  let light: boolean;
+  let sd: number;
+
+  if (shape === 'wide') {
+    // 비어 있는 쪽에 문구를 세운다
+    const side = reg.left.sd <= reg.right.sd ? 'left' : 'right';
+    const r = side === 'left' ? reg.left : reg.right;
+    where = side === 'left' ? '왼쪽' : '오른쪽';
+    light = r.mean > 140;
+    sd = r.sd;
+    const colFrac = 0.42;                              // 문구가 쓸 수 있는 가로 비중
+    const x = side === 'left' ? 0.06 : 0.94;
+    const align = side === 'left' ? ('start' as const) : ('end' as const);
+
+    layers.push({
+      id: 'auto-scrim', kind: 'scrim', x: 0.5, y: 0.5, w: 1, h: 1,
+      color: light ? '#ffffff' : '#000000',
+      opacity: Math.max(0.22, Math.min(0.66, r.sd / 80)),
+      direction: side,
+    });
+    if (txt.title) layers.push({
+      id: 'auto-title', kind: 'text', x, y: 0.36, text: txt.title,
+      size: fitText(txt.title, 0.155, colFrac), weight: 800, tracking: -0.015,
+      lineHeight: 1.15, align, color: light ? '#1b1d21' : '#ffffff',
+      opacity: 1, shadow: true, curve: 0,
+    });
+    if (txt.subtitle) layers.push({
+      id: 'auto-sub', kind: 'text', x, y: 0.56, text: txt.subtitle,
+      size: fitText(txt.subtitle, 0.058, colFrac), weight: 500, tracking: 0.03,
+      lineHeight: 1.3, align, color: light ? '#4a4f57' : '#e9e6e1',
+      opacity: 1, shadow: true, curve: 0,
+    });
+    if (txt.cta) {
+      const cs = fitText(txt.cta, 0.055, colFrac * 0.8);
+      const pw = ((textEm(txt.cta) + 1.8) * cs * S) / W;
+      const px = side === 'left' ? 0.06 + pw / 2 : 0.94 - pw / 2;
+      layers.push({
+        id: 'auto-pill', kind: 'rect', x: px, y: 0.78, w: pw, h: (cs * S * 2.3) / H,
+        color: light ? '#2f3a5c' : '#ffffff', opacity: 0.95, radius: 0.06,
+      });
+      layers.push({
+        id: 'auto-cta', kind: 'text', x: px, y: 0.78, text: txt.cta, size: cs,
+        weight: 600, tracking: 0.01, align: 'middle',
+        color: light ? '#ffffff' : '#1b1d21', opacity: 1, shadow: false, curve: 0,
+      });
+    }
+  } else {
+    // 정사각·세로형 — 비어 있는 위/아래에 쌓는다
+    const topSide = reg.top.sd <= reg.bottom.sd;
+    const r = topSide ? reg.top : reg.bottom;
+    where = topSide ? '위쪽' : '아래쪽';
+    light = r.mean > 140;
+    sd = r.sd;
+    const big = shape === 'tall';                       // 세로형은 더 크게 — 멀리서 본다
+    const y0 = topSide ? (big ? 0.14 : 0.16) : (big ? 0.80 : 0.84);
+    const gap = big ? 0.055 : 0.085;
+
+    layers.push({
+      id: 'auto-scrim', kind: 'scrim', x: 0.5, y: topSide ? y0 + 0.02 : y0 - 0.02,
+      w: 1, h: big ? 0.30 : 0.40, color: light ? '#ffffff' : '#000000',
+      opacity: Math.max(0.18, Math.min(0.62, r.sd / 90)),
+      direction: topSide ? 'top' : 'bottom',
+    });
+    if (txt.title) layers.push({
+      id: 'auto-title', kind: 'text', x: 0.5, y: y0, text: txt.title,
+      size: fitText(txt.title, big ? 0.105 : 0.085, 0.86), weight: 800, tracking: -0.01,
+      lineHeight: 1.2, align: 'middle', color: light ? '#1b1d21' : '#ffffff',
+      opacity: 1, shadow: true, curve: 0,
+    });
+    if (txt.subtitle) layers.push({
+      id: 'auto-sub', kind: 'text', x: 0.5, y: y0 + gap, text: txt.subtitle,
+      size: fitText(txt.subtitle, big ? 0.038 : 0.032, 0.82), weight: 500, tracking: 0.04,
+      lineHeight: 1.3, align: 'middle', color: light ? '#4a4f57' : '#e9e6e1',
+      opacity: 1, shadow: true, curve: 0,
+    });
+    if (txt.cta) {
+      const cs = fitText(txt.cta, big ? 0.036 : 0.032, 0.7);
+      const pw = ((textEm(txt.cta) + 2.0) * cs * S) / W;
+      const cy = topSide ? (big ? 0.9 : 0.88) : (big ? 0.10 : 0.12);
+      layers.push({
+        id: 'auto-pill', kind: 'rect', x: 0.5, y: cy, w: Math.min(0.9, pw),
+        h: (cs * S * 2.4) / H, color: light ? '#2f3a5c' : '#ffffff', opacity: 0.95, radius: 0.06,
+      });
+      layers.push({
+        id: 'auto-cta', kind: 'text', x: 0.5, y: cy, text: txt.cta, size: cs,
+        weight: 600, tracking: 0.01, align: 'middle',
+        color: light ? '#ffffff' : '#1b1d21', opacity: 1, shadow: false, curve: 0,
+      });
+    }
+  }
+
+  return { layers, picked: { where, light, sd: Math.round(sd), shape } };
+}
+
+/** 배경 컷을 받아 규격에 맞춘 버퍼와 최종 크기를 돌려준다 */
+async function prepareBase(design: Pick<DesignDoc, 'imageUrl' | 'size' | 'fit'>) {
+  const res = await fetch(design.imageUrl, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`배경 이미지를 못 받았습니다 (HTTP ${res.status})`);
+  // Buffer<ArrayBufferLike> — sharp 가 돌려주는 것을 다시 담아야 해서 기본 제네릭으로 둔다
+  let buf: Buffer = Buffer.from(await res.arrayBuffer());
+  const meta = await sharp(buf).metadata();
+  const srcW = meta.width ?? 1000;
+  const srcH = meta.height ?? 1000;
+
+  const W = design.size?.w ?? srcW;
+  const H = design.size?.h ?? srcH;
+  if (W !== srcW || H !== srcH) {
+    buf = await fitToSize(buf, W, H, design.fit ?? { mode: 'cover', fx: 0.5, fy: 0.5 });
+  }
+  return { buf, W, H, srcW, srcH };
 }
 
 export async function GET() {
@@ -81,53 +259,24 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
       design?: DesignDoc; save?: boolean; title?: string;
-      auto?: { imageUrl: string; title: string; subtitle?: string; cta?: string };
+      auto?: {
+        imageUrl: string; title: string; subtitle?: string; cta?: string;
+        size?: { id?: string; w: number; h: number };
+        fit?: { mode: 'cover' | 'blur'; fx: number; fy: number };
+      };
     };
 
-    // ── 자동 배치 ──
+    // ── 1차 배치 ──
     if (body.auto?.imageUrl) {
-      const r0 = await fetch(body.auto.imageUrl, { cache: 'no-store' });
-      if (!r0.ok) return NextResponse.json({ ok: false, error: '배경 이미지를 못 받았습니다.' }, { status: 502 });
-      const buf = Buffer.from(await r0.arrayBuffer());
-      const reg = await analyzeRegions(buf);
-
-      // 가장 비어 있는 곳 = 표준편차가 가장 낮은 곳
-      const best = Object.values(reg).sort((a, b) => a.sd - b.sd)[0];
-      const light = best.mean > 140;                       // 배경이 밝은가
-      const strong = light ? '#1b1d21' : '#ffffff';
-      const soft = light ? '#4a4f57' : '#e9e6e1';
-      const scrim = light ? '#ffffff' : '#000000';
-      // 면이 고르지 않을수록 그늘을 진하게 — 글자가 묻히지 않게
-      const scrimOp = Math.max(0.18, Math.min(0.62, best.sd / 90));
-
-      const vertical = best.y < 0.5 ? 'top' : 'bottom';
-      const layers: DesignLayer[] = [{
-        id: 'auto-scrim', kind: 'scrim',
-        x: 0.5, y: vertical === 'top' ? 0.16 : 0.84, w: 1, h: 0.36,
-        color: scrim, opacity: scrimOp, direction: vertical,
-      }];
-      const t = body.auto.title.trim();
-      if (t) layers.push({
-        id: 'auto-title', kind: 'text', x: best.x, y: best.y, text: t,
-        size: t.length > 14 ? 0.055 : 0.082, weight: 800, tracking: -0.01,
-        lineHeight: 1.2, align: best.align, color: strong, opacity: 1, shadow: true, curve: 0,
+      const { buf, W, H, srcW, srcH } = await prepareBase(body.auto);
+      const reg = await analyzeRegions(buf);            // 규격에 맞춘 뒤의 그림을 본다
+      const out = buildAuto(shapeOf(W, H), reg, W, H, {
+        title: (body.auto.title ?? '').trim(),
+        subtitle: (body.auto.subtitle ?? '').trim(),
+        cta: (body.auto.cta ?? '').trim(),
       });
-      const sub = (body.auto.subtitle ?? '').trim();
-      if (sub) layers.push({
-        id: 'auto-sub', kind: 'text', x: best.x, y: best.y + 0.085, text: sub,
-        size: 0.030, weight: 500, tracking: 0.04, lineHeight: 1.3,
-        align: best.align, color: soft, opacity: 1, shadow: true, curve: 0,
-      });
-      const cta = (body.auto.cta ?? '').trim();
-      if (cta) {
-        const cy2 = vertical === 'top' ? 0.9 : 0.12;
-        layers.push({ id: 'auto-pill', kind: 'rect', x: 0.5, y: cy2, w: Math.min(0.72, 0.16 + cta.length * 0.034), h: 0.095, color: light ? '#2f3a5c' : '#ffffff', opacity: 0.95, radius: 0.05 });
-        layers.push({ id: 'auto-cta', kind: 'text', x: 0.5, y: cy2, text: cta, size: 0.030, weight: 600, tracking: 0.01, align: 'middle', color: light ? '#ffffff' : '#1b1d21', opacity: 1, shadow: false, curve: 0 });
-      }
       return NextResponse.json({
-        ok: true,
-        layers,
-        picked: { where: vertical === 'top' ? '위쪽' : '아래쪽', light, sd: Math.round(best.sd) },
+        ok: true, ...out, size: { w: W, h: H }, source: { w: srcW, h: srcH },
       });
     }
 
@@ -136,25 +285,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: '배경 이미지가 필요합니다.' }, { status: 400 });
     }
 
-    // 배경 이미지를 받아온다 (cafe24 공개 URL)
-    const res = await fetch(design.imageUrl, { cache: 'no-store' });
-    if (!res.ok) {
-      return NextResponse.json({ ok: false, error: `배경 이미지를 못 받았습니다 (HTTP ${res.status})` }, { status: 502 });
-    }
-    const base = sharp(Buffer.from(await res.arrayBuffer()));
-    const meta = await base.metadata();
-    const W = meta.width ?? 1000;
-    const H = meta.height ?? 1000;
-
+    const { buf, W, H } = await prepareBase(design);
     // 화면과 같은 숫자로 SVG 를 만들어 겹친다
     const svg = renderLayersToSvg(design, W, H);
-    const out = await base
+    const out = await sharp(buf)
       .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
       .jpeg({ quality: 94 })
       .toBuffer();
 
     if (!body.save) {
-      // 미리보기 — 저장하지 않고 돌려준다
       return NextResponse.json({
         ok: true, preview: `data:image/jpeg;base64,${out.toString('base64')}`, width: W, height: H,
       });
@@ -174,13 +313,13 @@ export async function POST(req: Request) {
     const ins = await db.collection(COLLECTIONS.cuts).insertOne({
       line: '', colorKey: '', colorName: '', hex: '',
       url, title,
-      spec: `디자인 · ${design.templateId ?? '직접'} · ${W}×${H}`,
+      spec: `배너 · ${design.size?.id ?? '원본 크기'} · ${W}×${H}`,
       recipe: { talentCodes: [] },
       source: 'imgcreate' as const,
       promptMode: 'manual',
       aiModel: 'design-composer',
       provider: 'design',
-      sizeValue: `${W}x${H}`, sizeLabel: '디자인 생성', aspect: `${W}:${H}`,
+      sizeValue: `${W}x${H}`, sizeLabel: '배너 디자인', aspect: `${W}:${H}`,
       // 어떤 컷 위에 얹었는지 남긴다 — 나중에 원본을 되찾을 수 있어야 한다
       inputImages: [{ kind: 'base' as const, title: '배경 컷', url: design.imageUrl, role: 'base' }],
       direction: '', width: W, height: H,

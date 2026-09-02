@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ICONS, renderLayersToSvg, type DesignDoc, type DesignLayer } from '@/lib/design-render';
 import { TEMPLATES, THEMES, findTheme } from '@/lib/banner-templates';
+import { BANNER_SIZES, findSize, shapeOf, cropLoss } from '@/lib/banner-sizes';
 
 /**
  * 배너 디자인 생성 — 간단한 포토샵.
@@ -38,27 +39,49 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const [result, setResult] = useState<string | null>(null);
-  const [dims, setDims] = useState({ w: 1000, h: 1000 });
+  // 원본 컷의 크기와 '걸릴 자리'의 규격은 다른 값이다. 둘을 섞으면 미리보기가 어긋난다
+  const [src, setSrc] = useState({ w: 1000, h: 1000 });
+  const [sizeId, setSizeId] = useState('');            // '' = 컷 크기 그대로
+  const [fitMode, setFitMode] = useState<'cover' | 'blur'>('cover');
+  const [fx, setFx] = useState(0.5);                   // 잘라낼 때 남길 가로 위치
+  const [fy, setFy] = useState(0.45);                  // 세로 위치 — 인물이 아래면 올린다
   // 자동 배치 입력 — 이 화면의 기본 사용법이다
   const [autoTitle, setAutoTitle] = useState('요기보 Week');
   const [autoSub, setAutoSub] = useState('보름달처럼 꽉 찬 휴식');
   const [autoCta, setAutoCta] = useState('마음을 전하는 선물 특가');
-  const [picked, setPicked] = useState<{ where: string; light: boolean; sd: number } | null>(null);
+  const [picked, setPicked] = useState<{ where: string; light: boolean; sd: number; shape: string } | null>(null);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
 
   const theme = findTheme(themeId);
-  const design: DesignDoc = useMemo(() => ({ imageUrl, layers }), [imageUrl, layers]);
   const sel = layers.find((l) => l.id === selected) ?? null;
 
-  // 배경 컷의 실제 비율을 알아야 미리보기가 저장본과 같아진다
+  // 원본 컷의 실제 크기 — 얼마나 잘리는지 알려주려면 필요하다
   useEffect(() => {
     if (!imageUrl) return;
     const img = new window.Image();
-    img.onload = () => setDims({ w: img.naturalWidth || 1000, h: img.naturalHeight || 1000 });
+    img.onload = () => setSrc({ w: img.naturalWidth || 1000, h: img.naturalHeight || 1000 });
     img.src = imageUrl;
   }, [imageUrl]);
+
+  // 최종 규격. 고르지 않았으면 컷 크기를 그대로 쓴다
+  const dims = useMemo(() => {
+    if (!sizeId) return src;
+    const b = findSize(sizeId);
+    return { w: b.w, h: b.h };
+  }, [sizeId, src]);
+
+  const shape = shapeOf(dims.w, dims.h);
+  // 규격과 컷의 비율이 다를 때만 '맞추는 방법'을 물어본다
+  const needsFit = Math.abs(dims.w / dims.h - src.w / src.h) > 0.01;
+  const loss = needsFit ? cropLoss(src.w, src.h, dims.w, dims.h) : 0;
+  const fit = useMemo(() => ({ mode: fitMode, fx, fy }), [fitMode, fx, fy]);
+
+  const design: DesignDoc = useMemo(
+    () => ({ imageUrl, layers, size: { id: sizeId || undefined, w: dims.w, h: dims.h }, fit }),
+    [imageUrl, layers, sizeId, dims, fit],
+  );
 
   const loadTemplates = useCallback(async () => {
     const r = await fetch('/api/design');
@@ -130,7 +153,12 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
     try {
       const r = await fetch('/api/design', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ auto: { imageUrl, title: autoTitle, subtitle: autoSub, cta: autoCta } }),
+        body: JSON.stringify({
+          auto: {
+            imageUrl, title: autoTitle, subtitle: autoSub, cta: autoCta,
+            size: { id: sizeId || undefined, w: dims.w, h: dims.h }, fit,
+          },
+        }),
       });
       const j = await r.json();
       if (!j.ok) { setErr(j.error || '실패'); return; }
@@ -138,7 +166,9 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
       setPicked(j.picked);
       setSelected(null);
       setResult(null);
-      setNote(`${j.picked.where} 여백에 배치했습니다 (${j.picked.light ? '밝은 배경 → 짙은 글씨' : '어두운 배경 → 흰 글씨'}).`);
+      const kind = j.picked.shape === 'wide' ? '가로형' : j.picked.shape === 'tall' ? '세로형' : '정사각';
+      setNote(`${kind} ${dims.w}×${dims.h} — ${j.picked.where} 여백에 배치했습니다 `
+        + `(${j.picked.light ? '밝은 배경이라 짙은 글씨' : '어두운 배경이라 흰 글씨'}).`);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
 
@@ -215,9 +245,26 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
             className="relative w-full select-none rounded-lg overflow-hidden"
             style={{ aspectRatio: `${dims.w} / ${dims.h}`, background: 'var(--surface-2)', touchAction: 'none' }}
           >
+            {/*
+              * 서버의 fitToSize 와 같은 계산을 CSS 로 한다.
+              * cover = object-fit:cover + object-position(fx,fy),
+              * blur  = 흐린 사본을 깔고 그 위에 통째로 얹기.
+              * 두 계산이 어긋나면 화면에서 본 자리와 저장본이 달라진다.
+              */}
+            {imageUrl && fitMode === 'blur' && needsFit && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={imageUrl} alt="" aria-hidden
+                   className="absolute inset-0 w-full h-full object-cover"
+                   style={{ filter: 'blur(18px) brightness(0.82)', transform: 'scale(1.1)' }} draggable={false} />
+            )}
             {imageUrl && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={imageUrl} alt="배경" className="absolute inset-0 w-full h-full object-cover" draggable={false} />
+              <img src={imageUrl} alt="배경" draggable={false}
+                   className="absolute inset-0 w-full h-full"
+                   style={{
+                     objectFit: fitMode === 'blur' && needsFit ? 'contain' : 'cover',
+                     objectPosition: `${Math.round(fx * 100)}% ${Math.round(fy * 100)}%`,
+                   }} />
             )}
             {/* 저장본과 같은 SVG 를 그대로 얹는다 */}
             <div className="absolute inset-0 pointer-events-none"
@@ -257,9 +304,62 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
 
       {/* ── 조작 ── */}
       <aside className="w-full xl:w-[330px] shrink-0">
+        {/* 배너는 '어디에 걸리나'가 먼저 정해지는 물건이라 규격이 1단계다 */}
+        <div className="card p-3 mb-3">
+          <div className="label mb-1.5">1. 배너 규격</div>
+          <select className="input py-1 text-[12px]" value={sizeId}
+                  onChange={(e) => { setSizeId(e.target.value); setResult(null); }}>
+            <option value="">컷 크기 그대로 ({src.w}×{src.h})</option>
+            {['웹', '모바일', 'SNS'].map((g) => (
+              <optgroup key={g} label={g}>
+                {BANNER_SIZES.filter((b) => b.group === g).map((b) => (
+                  <option key={b.id} value={b.id}>{b.label} · {b.w}×{b.h}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <div className="text-[10.5px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+            {shape === 'wide' ? '가로형 — 문구를 한쪽 옆에 세웁니다.'
+              : shape === 'tall' ? '세로형 — 위나 아래에 크게 쌓습니다.'
+              : '정사각 — 비어 있는 위/아래에 쌓습니다.'}
+          </div>
+
+          {needsFit && (
+            <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--line)' }}>
+              <div className="label mb-1.5">컷을 규격에 맞추기</div>
+              <div className="flex gap-1.5 mb-1.5">
+                <button className={`btn flex-1 ${fitMode === 'cover' ? 'btn-primary' : ''}`}
+                        onClick={() => { setFitMode('cover'); setResult(null); }}>
+                  잘라서 채우기
+                </button>
+                <button className={`btn flex-1 ${fitMode === 'blur' ? 'btn-primary' : ''}`}
+                        onClick={() => { setFitMode('blur'); setResult(null); }}>
+                  여백 채우기
+                </button>
+              </div>
+              {fitMode === 'cover' ? (
+                <>
+                  {num('남길 위치 ↔', fx, 0, 1, 0.01, (n) => { setFx(n); setResult(null); },
+                       (n) => `${Math.round(n * 100)}%`)}
+                  {num('남길 위치 ↕', fy, 0, 1, 0.01, (n) => { setFy(n); setResult(null); },
+                       (n) => `${Math.round(n * 100)}%`)}
+                  <div className="text-[10.5px] leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                    이 규격에서는 컷의 <b style={{ color: 'var(--warn, var(--text-dim))' }}>약 {Math.round(loss * 100)}%</b> 가 잘립니다.
+                    인물이 잘리면 위 막대로 남길 곳을 옮기세요.
+                  </div>
+                </>
+              ) : (
+                <div className="text-[10.5px] leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                  컷을 통째로 넣고 남는 자리는 같은 사진을 흐리게 깔아 채웁니다. 하나도 잘리지 않습니다.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* 기본 동선 — 문구만 넣고 누르면 끝난다 */}
         <div className="card p-3 mb-3" style={{ borderColor: 'var(--accent-dim)' }}>
-          <div className="label mb-1.5">1. 문구만 넣고 자동 배치</div>
+          <div className="label mb-1.5">2. 문구만 넣고 자동 배치</div>
           <input className="input py-1 text-[12px] mb-1.5" value={autoTitle}
                  onChange={(e) => setAutoTitle(e.target.value)} placeholder="제목" />
           <input className="input py-1 text-[11.5px] mb-1.5" value={autoSub}
@@ -276,7 +376,7 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
         </div>
 
         <div className="card p-3 mb-3">
-          <div className="label mb-1.5">2. 다른 배치로 바꾸기 (선택)</div>
+          <div className="label mb-1.5">3. 다른 배치로 바꾸기 (선택)</div>
           <div className="flex flex-wrap gap-1.5 mb-2">
             {TEMPLATES.map((t) => (
               <button key={t.id} className="chip" title={t.hint} onClick={() => applyTemplate(t.id)}>{t.name}</button>
@@ -303,7 +403,7 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
 
         <div className="card p-3 mb-3">
           <div className="flex items-center justify-between mb-1.5">
-            <div className="label">3. 손으로 다듬기 (선택)</div>
+            <div className="label">4. 손으로 다듬기 (선택)</div>
             <div className="flex gap-1">
               {(['text', 'icon', 'rect', 'scrim'] as const).map((k) => (
                 <button key={k} className="chip" title={`${k} 추가`}
