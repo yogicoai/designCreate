@@ -65,6 +65,7 @@ export default function TrendBoard() {
   /** 크게 보기 팝업 — 새 창으로 튕기지 않고 이 자리에서 확인한다 */
   const [zoom, setZoom] = useState<{ src: string; label: string; href: string } | null>(null);
   const [brandFilter, setBrandFilter] = useState('');   // 담아둔 이미지의 업체 필터
+  const [archives, setArchives] = useState<{ brand: string; month: string; waybackUrl: string }[]>([]);
   const [snapping, setSnapping] = useState(false);      // 스냅샷 수집 중
   const [copyData, setCopyData] = useState<{
     month: number;
@@ -98,6 +99,7 @@ export default function TrendBoard() {
     setSaved(j.items ?? []);
     setPromos(j.promos ?? []);
     setBrands(j.brands ?? []);
+    setArchives(j.archives ?? []);
   }, []);
   useEffect(() => { load(month); }, [load, month]);
 
@@ -577,7 +579,20 @@ export default function TrendBoard() {
           이미지의 월 = <b>수집한 달</b> (네이버 이미지 검색엔 게시일이 없어 과거 배너를 소급할 수 없습니다).
           매달 스냅샷을 누르면 그 시점의 경쟁사 비주얼이 쌓여 시점별 비교가 됩니다.
           이벤트 <b>글</b>은 게시일이 있어 작년 것까지 실제 날짜로 쌓입니다.
+          스냅샷에는 경쟁사 <b>자사몰 메인에 걸린 배너</b>도 직접 담깁니다 (키워드 &apos;자사몰 메인&apos;).
         </div>
+        {/* 과거는 웨이백이 유일한 소급 경로 — 그 시점의 메인을 그대로 보여준다 */}
+        {archives.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            <span className="text-[10.5px]" style={{ color: 'var(--text-dim)' }}>과거 메인화면 보기 (웨이백):</span>
+            {archives.map((a) => (
+              <a key={a.waybackUrl} href={a.waybackUrl} target="_blank" rel="noreferrer" className="chip"
+                 title={`${a.brand} ${a.month} 시점의 자사몰 메인 (웨이백머신 보관본)`}>
+                {a.brand} {a.month}
+              </a>
+            ))}
+          </div>
+        )}
       </div>
       )}
 

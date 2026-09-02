@@ -193,25 +193,23 @@ function buildAuto(
     const strong = ink.title;
     const soft = ink.small;
 
-    layers.push({
-      id: 'auto-scrim', kind: 'scrim', x: 0.5, y: 0.5, w: 1, h: 1,
-      color: ink.scrim,
-      // 중간톤에서는 그늘을 얕게 — 짙게 깔면 흰 제목이 오히려 묻힌다
-      opacity: Math.max(0.22, Math.min(0.66, r.sd / 80)) * (ink.mid ? 0.55 : 1),
-      direction: side,
-    });
+    /*
+     * 그늘(scrim)은 처음엔 깔지 않는다 (사용자 결정) — 실제 자사몰 배너는
+     * 사진 위에 바로 글자를 얹고, 색 규칙(inkOf)이 읽히게 만든다.
+     * 배경이 복잡해 묻히면 5단계에서 그늘을 손으로 추가하면 된다.
+     */
 
     /*
-     * 세로 자리와 크기는 실제 자사몰 웹 배너(1091x345)를 재서 그대로 옮겼다.
-     * 눈썹 .245 / 제목 .43 / 혜택 .60 / 버튼 .79 · 제목 크기 .110.
-     * 제목을 이보다 키우면(.125) 덩어리가 눌려 보인다고 확인받았다.
-     * g(줄 간격)·k(크기) 배율은 제목을 축으로 위아래로 벌린다.
+     * 세로 자리와 크기는 실측에서 출발해 사용자 피드백으로 줄였다.
+     * 처음 실측(눈썹 .245/제목 .43/혜택 .60)은 "너무 떨어져 있다"였다 —
+     * 눈썹은 더 붙이고(0.185→0.15) 혜택 줄은 조금만(0.17→0.155).
+     * 제목 크기 .110, g(줄 간격)·k(크기) 배율은 제목을 축으로 벌린다.
      */
     const hasEye = !!txt.eyebrow;
     const ty = hasEye ? 0.43 : 0.36;
     // 눈썹과 혜택 줄은 작아서 흰색이면 중간톤 위에서 뭉갠다 — 제목만 흰색으로 둔다
     if (hasEye) layers.push({
-      id: 'auto-eyebrow', kind: 'text', x, y: ty - 0.185 * g, text: txt.eyebrow,
+      id: 'auto-eyebrow', kind: 'text', x, y: ty - 0.15 * g, text: txt.eyebrow,
       size: fitText(txt.eyebrow, 0.055 * k, colFrac), weight: 600, tracking: 0.01,
       lineHeight: 1.25, align, color: soft, opacity: 1, shadow: false, curve: 0,
     });
@@ -222,7 +220,7 @@ function buildAuto(
       opacity: 1, shadow: false, curve: 0,
     });
     if (txt.subtitle) layers.push({
-      id: 'auto-sub', kind: 'text', x, y: ty + 0.17 * g, text: txt.subtitle,
+      id: 'auto-sub', kind: 'text', x, y: ty + 0.155 * g, text: txt.subtitle,
       size: fitText(txt.subtitle, (hasEye ? 0.049 : 0.055) * k, colFrac), weight: 500, tracking: 0.03,
       lineHeight: 1.3, align, color: soft,
       opacity: 1, shadow: false, curve: 0,
@@ -232,7 +230,7 @@ function buildAuto(
       // 화살표 자리까지 세어서 알약 폭을 잡는다
       const pw = ((textEm(txt.cta) + 3.2) * cs * S) / W;
       const px = side === 'left' ? marginX + pw / 2 : 1 - marginX - pw / 2;
-      const cy = Math.min(0.88, ty + 0.36 * g);
+      const cy = Math.min(0.88, ty + 0.34 * g);
       const on = '#ffffff';
       layers.push({
         id: 'auto-pill', kind: 'rect', group: 'cta', x: px, y: cy, w: pw, h: (cs * S * 2.4) / H,
@@ -272,13 +270,7 @@ function buildAuto(
     const strong = ink.title;
     const soft = ink.small;
 
-    layers.push({
-      id: 'auto-scrim', kind: 'scrim', x: 0.5, y: topSide ? 0.18 : 0.82,
-      w: 1, h: big ? 0.34 : 0.46, color: ink.scrim,
-      // 중간톤에서는 그늘을 얕게 — 짙게 깔면 흰 제목이 오히려 묻힌다
-      opacity: Math.max(0.18, Math.min(0.62, r.sd / 90)) * (ink.mid ? 0.55 : 1),
-      direction: topSide ? 'top' : 'bottom',
-    });
+    // 그늘은 처음엔 깔지 않는다 — 가로형과 같은 이유 (사용자 결정)
     if (hasEye) layers.push({
       id: 'auto-eyebrow', kind: 'text', x: 0.5, y: y0 - eyeGap, text: txt.eyebrow,
       size: fitText(txt.eyebrow, (big ? 0.034 : 0.030) * k, 0.82), weight: 600, tracking: 0.02,

@@ -276,6 +276,14 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   const shape = shapeOf(dims.w, dims.h);
   // 규격과 컷의 비율이 다를 때만 '맞추는 방법'을 물어본다
   const needsFit = Math.abs(dims.w / dims.h - src.w / src.h) > 0.01;
+  /*
+   * 어느 축이 잘리는가. 1:1 컷을 1900x675 로 덮으면 가로는 통째로 들어가고
+   * 세로만 잘린다 — 그때 좌우(↔) 슬라이더는 움직여도 아무 일이 없다.
+   * 조절할 게 없는 슬라이더는 숨기고, 왜 없는지 한 줄로 말해준다.
+   */
+  const coverK = Math.max(dims.w / src.w, dims.h / src.h);
+  const cropX = src.w * coverK - dims.w > 1;   // 가로가 잘리는 조합인가
+  const cropY = src.h * coverK - dims.h > 1;
   const loss = needsFit ? cropLoss(src.w, src.h, dims.w, dims.h) : 0;
   const fit = useMemo(() => ({ mode: fitMode, fx, fy }), [fitMode, fx, fy]);
 
@@ -729,7 +737,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   // 자동완성 묶음의 이름과 크기 — 버튼·설명에 그대로 쓴다
   const autoSet = AUTO_SET[channel].map(findSize);
   const autoSetText = autoSet.map((b) => `${b.label} ${b.w}×${b.h}`).join(' · ');
-  const autoBtnLabel = channel === 'SNS' ? '정사각·세로 자동완성 저장' : '웹·모바일 자동완성 저장';
+  // '저장' 을 붙이지 않는다 — 누르면 두 장을 먼저 보여주고, 확인해야 저장된다
+  const autoBtnLabel = channel === 'SNS' ? '정사각·세로 자동완성' : '웹·모바일 자동완성';
   const shapeWord = shape === 'wide' ? '가로형' : shape === 'tall' ? '세로형' : '정사각';
 
   return (
@@ -1018,10 +1027,17 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
               </div>
               {fitMode === 'cover' ? (
                 <>
-                  {num('남길 위치 ↔', fx, 0, 1, 0.01, (n) => { setFx(n); setFocusTouched(true); setResult(null); },
+                  {cropX && num('남길 위치 ↔', fx, 0, 1, 0.01, (n) => { setFx(n); setFocusTouched(true); setResult(null); },
                        (n) => `${Math.round(n * 100)}%`)}
-                  {num('남길 위치 ↕', fy, 0, 1, 0.01, (n) => { setFy(n); setFocusTouched(true); setResult(null); },
+                  {cropY && num('남길 위치 ↕', fy, 0, 1, 0.01, (n) => { setFy(n); setFocusTouched(true); setResult(null); },
                        (n) => `${Math.round(n * 100)}%`)}
+                  {!(cropX && cropY) && (
+                    <div className="text-[10.5px] mb-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                      {cropY
+                        ? '이 조합은 가로가 통째로 들어가서 위아래로만 잘립니다 — 좌우는 조절할 게 없습니다.'
+                        : '이 조합은 세로가 통째로 들어가서 좌우로만 잘립니다 — 위아래는 조절할 게 없습니다.'}
+                    </div>
+                  )}
                   {!focusTouched && (
                     <div className="text-[10.5px] mb-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
                       지금은 <b>인물을 피해서</b> 남길 곳을 자동으로 정합니다. 슬라이더를 만지면 그때부터 손 위치를 따릅니다.

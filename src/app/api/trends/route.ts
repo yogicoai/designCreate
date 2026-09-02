@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb, COLLECTIONS } from '@/lib/db';
 import { searchImages, searchPosts, naverConfigured, NaverError, BEANBAG_BRANDS, OUR_BRAND } from '@/lib/naver';
+import { fetchMallBanners, fetchWaybackMonths } from '@/lib/mall-scrape';
 import { SEASONS, harvestPhrases, buildSuggestions } from '@/lib/copy-ideas';
 
 /**
@@ -41,12 +42,19 @@ export async function GET(req: Request) {
     const promoCol = db.collection(COLLECTIONS.trendPromos);
     const promos = await promoCol.find(q).sort({ date: -1, collectedAt: -1 }).limit(400).toArray();
 
+    // 웨이백 과거 메인 링크 — 월 필터와 무관하게 전부 준다 (몇 개 안 된다)
+    const archives = await db.collection(COLLECTIONS.trendArchives)
+      .find({}).sort({ month: -1 }).limit(80).toArray();
+
     return NextResponse.json({
       ok: true,
       configured: naverConfigured(),
       // 추적 업체 — 화면이 검색 없이 바로 이미지를 띄우는 데 쓴다
       brands: BEANBAG_BRANDS,
       months,
+      archives: archives.map((d) => ({
+        brand: d.brand ?? '', month: d.month ?? '', waybackUrl: d.waybackUrl ?? '',
+      })),
       items: docs.map((d) => ({
         id: String(d._id),
         thumb: d.thumb,
@@ -167,6 +175,39 @@ export async function POST(req: Request) {
       let imgNew = 0;
       let imgSeen = 0;
       let promoNew = 0;
+      let mallNew = 0;
+
+      /*
+       * 자사몰 메인 배너 직접 수집 — 이 스냅샷의 진짜 알맹이.
+       * 네이버 이미지 검색은 상품 썸네일 위주지만, 자사몰 메인에는 진행 중인
+       * 프로모션 배너가 그대로 걸려 있다. keyword 를 '자사몰 메인' 으로 박아
+       * 보드에서 출처가 구분되게 한다.
+       */
+      try {
+        for (const b of await fetchMallBanners()) {
+          const r = await ic.updateOne(
+            { sourceUrl: b.url },
+            {
+              $set: { thumb: b.url, title: `자사몰 메인 · ${b.brand}`, brand: b.brand, keyword: '자사몰 메인', width: 0, height: 0 },
+              $setOnInsert: { sourceUrl: b.url, month, collectedAt: new Date() },
+            },
+            { upsert: true },
+          );
+          if (r.upsertedCount) { mallNew++; imgNew++; }
+        }
+      } catch { /* 몰이 막혀도 검색 수집은 계속 */ }
+
+      // 웨이백 과거 메인 링크 — "그때 걔네 메인" 을 소급해서 볼 유일한 길
+      try {
+        const ac = db.collection(COLLECTIONS.trendArchives);
+        for (const w of await fetchWaybackMonths()) {
+          await ac.updateOne(
+            { waybackUrl: w.waybackUrl },
+            { $set: { brand: w.brand, month: w.month, page: w.page }, $setOnInsert: { waybackUrl: w.waybackUrl, collectedAt: new Date() } },
+            { upsert: true },
+          );
+        }
+      } catch { /* 웨이백이 느려도 스냅샷 본체는 산다 */ }
       for (const b of BEANBAG_BRANDS) {
         const links = new Set<string>();
         for (const q of queriesFor(b)) {
@@ -217,7 +258,7 @@ export async function POST(req: Request) {
 
       return NextResponse.json({
         ok: true, month,
-        images: { new: imgNew, seen: imgSeen },
+        images: { new: imgNew, seen: imgSeen, mall: mallNew },
         promos: { new: promoNew },
         cleaned: cleaned.modifiedCount,
       });
