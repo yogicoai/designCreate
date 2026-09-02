@@ -1,3 +1,5 @@
+// 폰트 등록이 sharp 의 첫 글자 렌더보다 먼저여야 한다 — 반드시 첫 import 로 둔다
+import '@/lib/fonts';
 import { NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { getDb, COLLECTIONS } from '@/lib/db';

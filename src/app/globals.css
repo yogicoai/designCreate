@@ -63,6 +63,19 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * 서버가 배너에 찍는 것과 같은 Pretendard.
+ * 이게 없으면 작업 화면(브라우저 폰트)과 저장본(서버 폰트)의 글자 폭이 미세하게
+ * 달라서, 화면에서 맞춘 배치가 저장본에서 삐끗한다.
+ */
+@font-face {
+  font-family: 'Pretendard Variable';
+  src: url('/fonts/PretendardVariable.woff2') format('woff2-variations');
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* 스크롤바 — 다크에서 기본 스크롤바는 너무 튄다 */
 * { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 *::-webkit-scrollbar { width: 10px; height: 10px; }

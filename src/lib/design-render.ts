@@ -140,8 +140,14 @@ function esc(s: string): string {
  * 서버 OS 마다 있는 폰트가 다르므로 넉넉히 나열한다 —
  * 하나라도 있으면 한글이 렌더된다. 없으면 두부(□)가 나온다.
  */
+/*
+ * 첫 항목이 저장소에 담긴 fonts/PretendardVariable.ttf 다 (instrumentation 이 등록).
+ * 파일의 name 테이블을 읽어보면 가족 이름이 'Pretendard' 가 아니라
+ * 'Pretendard Variable' 이라서, 이 이름이 스택에 없으면 파일이 있어도 못 찾는다.
+ * 뒤는 폰트 파일이 없을 때(로컬 개발 등)를 위한 층계다.
+ */
 const FONT_STACK = [
-  'Pretendard', 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕',
+  'Pretendard Variable', 'Pretendard', 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕',
   'Apple SD Gothic Neo', 'NanumGothic', 'Nanum Gothic',
   'DejaVu Sans', 'sans-serif',
 ].map((f) => (f.includes(' ') ? `'${f}'` : f)).join(', ');
