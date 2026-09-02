@@ -154,6 +154,7 @@ function buildAuto(
   W: number, H: number,
   txt: { eyebrow: string; title: string; subtitle: string; cta: string },
   content?: number,
+  buttonHex?: string,                                  // 브랜드색 지정 — 없으면 사진에서 뽑는다
 ) {
   const S = Math.min(W, H);
   /** 원하는 크기와 폭 제한 중 작은 쪽. 반환값은 짧은 변 대비 비율 */
@@ -227,7 +228,7 @@ function buildAuto(
       const on = '#ffffff';
       layers.push({
         id: 'auto-pill', kind: 'rect', group: 'cta', x: px, y: cy, w: pw, h: (cs * S * 2.4) / H,
-        color: pillFrom(reg.dominant), opacity: 0.95, radius: 0.06,
+        color: buttonHex ?? pillFrom(reg.dominant), opacity: 0.95, radius: 0.06,
       });
       layers.push({
         id: 'auto-cta', kind: 'text', group: 'cta', x: px - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
@@ -295,7 +296,7 @@ function buildAuto(
       const on = '#ffffff';
       layers.push({
         id: 'auto-pill', kind: 'rect', group: 'cta', x: 0.5, y: cy, w: pw,
-        h: (cs * S * 2.6) / H, color: pillFrom(reg.dominant), opacity: 0.95, radius: 0.06,
+        h: (cs * S * 2.6) / H, color: buttonHex ?? pillFrom(reg.dominant), opacity: 0.95, radius: 0.06,
       });
       layers.push({
         id: 'auto-cta', kind: 'text', group: 'cta', x: 0.5 - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
@@ -312,16 +313,58 @@ function buildAuto(
   return { layers, picked: { where, light, sd: Math.round(sd), shape } };
 }
 
-/** 배경 컷을 받아 규격에 맞춘 버퍼와 최종 크기를 돌려준다 */
-async function prepareBase(design: Pick<DesignDoc, 'imageUrl' | 'size' | 'fit'>) {
-  const res = await fetch(design.imageUrl, { cache: 'no-store' });
+/** 배경 이미지를 받아온다 (cafe24 공개 URL) */
+async function fetchImage(url: string) {
+  const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`배경 이미지를 못 받았습니다 (HTTP ${res.status})`);
   // Buffer<ArrayBufferLike> — sharp 가 돌려주는 것을 다시 담아야 해서 기본 제네릭으로 둔다
-  let buf: Buffer = Buffer.from(await res.arrayBuffer());
+  const buf: Buffer = Buffer.from(await res.arrayBuffer());
   const meta = await sharp(buf).metadata();
-  const srcW = meta.width ?? 1000;
-  const srcH = meta.height ?? 1000;
+  return { buf, srcW: meta.width ?? 1000, srcH: meta.height ?? 1000 };
+}
 
+/**
+ * 피사체(대개 인물)가 어디쯤인지 어림한다.
+ *
+ * 얼굴 인식까지는 없어도, "복잡한 곳의 무게중심"이면 자르기 사고를 대부분
+ * 막는다 — 인물·제품이 있는 곳은 밝기가 요동치고, 벽·바닥은 고르기 때문이다.
+ * 32x32 그레이스케일에서 이웃과의 밝기 차이를 무게로 쓴 무게중심 (0~1).
+ */
+async function subjectCenter(buf: Buffer) {
+  const { data, info } = await sharp(buf).removeAlpha().resize(32, 32, { fit: 'fill' })
+    .greyscale().raw().toBuffer({ resolveWithObject: true });
+  const at = (x: number, y: number) => data[y * info.width + x];
+  let wsum = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let y = 1; y < 31; y++) {
+    for (let x = 1; x < 31; x++) {
+      const g = Math.abs(at(x, y) - at(x - 1, y)) + Math.abs(at(x, y) - at(x, y - 1));
+      wsum += g; cx += g * x; cy += g * y;
+    }
+  }
+  if (!wsum) return { cx: 0.5, cy: 0.5 };
+  return { cx: cx / wsum / 32, cy: cy / wsum / 32 };
+}
+
+/**
+ * 잘라내기(cover)에서 피사체가 창 가운데에 오는 fx/fy 를 구한다.
+ * 사람 사진은 머리 쪽이 잘리면 못 쓰므로 세로는 살짝 위로 당긴다.
+ */
+function focusFor(srcW: number, srcH: number, W: number, H: number, cx: number, cy: number) {
+  const k = Math.max(W / srcW, H / srcH);
+  const visX = W / k / srcW;                          // 원본에서 보이는 가로 비중
+  const visY = H / k / srcH;
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  const fx = visX >= 1 ? 0.5 : clamp((cx - visX / 2) / (1 - visX));
+  const fy = visY >= 1 ? 0.5 : clamp((cy - 0.06 - visY / 2) / (1 - visY));
+  return { fx: Math.round(fx * 100) / 100, fy: Math.round(fy * 100) / 100 };
+}
+
+/** 배경 컷을 받아 규격에 맞춘 버퍼와 최종 크기를 돌려준다 */
+async function prepareBase(design: Pick<DesignDoc, 'imageUrl' | 'size' | 'fit'>) {
+  const { buf: raw, srcW, srcH } = await fetchImage(design.imageUrl);
+  let buf = raw;
   const W = design.size?.w ?? srcW;
   const H = design.size?.h ?? srcH;
   if (W !== srcW || H !== srcH) {
@@ -347,32 +390,127 @@ export async function GET() {
   }
 }
 
+/** 렌더된 배너를 FTP 에 올리고 갤러리(cuts)에 등록한다 — 단건 저장과 짝 저장이 같이 쓴다 */
+async function saveRendered(
+  out: Buffer, design: DesignDoc, W: number, H: number, title: string,
+  extra: Record<string, unknown> = {},
+) {
+  const iso = new Date().toISOString();
+  const stamp = iso.replace(/[-:T]/g, '').slice(0, 14);
+  const rand = Math.random().toString(36).slice(2, 7);
+  const url = await uploadBuffer(dailySubpath(iso), `design_${stamp}_${rand}.jpg`, out);
+
+  const db = await getDb();
+  const now = new Date(iso);
+  const ins = await db.collection(COLLECTIONS.cuts).insertOne({
+    line: '', colorKey: '', colorName: '', hex: '',
+    url, title: title.slice(0, 120),
+    spec: `배너 · ${design.size?.id ?? '원본 크기'} · ${W}×${H}`,
+    recipe: { talentCodes: [] },
+    source: 'imgcreate' as const,
+    promptMode: 'manual',
+    aiModel: 'design-composer',
+    provider: 'design',
+    sizeValue: `${W}x${H}`, sizeLabel: '배너 디자인', aspect: `${W}:${H}`,
+    // 어떤 컷 위에 얹었는지 남긴다 — 나중에 원본을 되찾을 수 있어야 한다
+    inputImages: [{ kind: 'base' as const, title: '배경 컷', url: design.imageUrl, role: 'base' }],
+    direction: '', width: W, height: H,
+    deltaE: null, measuredHex: null, note: '',
+    design,                                   // 그대로 다시 열어 편집할 수 있게 통째로 남긴다
+    hidden: false, createdAt: now, updatedAt: now,
+    ...extra,
+  });
+  return { url, id: String(ins.insertedId) };
+}
+
 export async function POST(req: Request) {
   try {
+    interface AutoTexts { eyebrow?: string; title: string; subtitle?: string; cta?: string }
     const body = (await req.json()) as {
       design?: DesignDoc; save?: boolean; title?: string;
-      auto?: {
-        imageUrl: string; eyebrow?: string; title: string; subtitle?: string; cta?: string;
+      /** 수정으로 연 배너의 원본 id — 계보를 이으려면 저장 때 같이 온다 */
+      sourceId?: string;
+      auto?: AutoTexts & {
+        imageUrl: string;
         size?: { id?: string; w: number; h: number };
         fit?: { mode: 'cover' | 'blur'; fx: number; fy: number };
+        /** true 면 잘라내기 위치를 피사체에 맞춰 서버가 정한다 */
+        autoFocus?: boolean;
+        /** 브랜드 버튼색 (hex). 없으면 사진에서 뽑는다 */
+        buttonColor?: string;
       };
+      /** 같은 문구로 여러 규격을 한 번에 만들어 짝으로 저장 */
+      batch?: AutoTexts & { imageUrl: string; sizeIds: string[]; buttonColor?: string; sourceId?: string };
     };
 
     // ── 1차 배치 ──
     if (body.auto?.imageUrl) {
-      const { buf, W, H, srcW, srcH } = await prepareBase(body.auto);
+      const a = body.auto;
+      const { buf: raw, srcW, srcH } = await fetchImage(a.imageUrl);
+      const W = a.size?.w ?? srcW;
+      const H = a.size?.h ?? srcH;
+
+      /*
+       * 자르는 위치. 손대지 않았으면(autoFocus) 피사체 무게중심이 창 안에
+       * 오도록 서버가 정하고, 정한 숫자를 그대로 돌려준다 — 화면 미리보기(CSS)가
+       * 같은 숫자로 잘라야 저장본과 어긋나지 않아서 숫자로 주고받는다.
+       */
+      let fit = a.fit ?? { mode: 'cover' as const, fx: 0.5, fy: 0.5 };
+      if (a.autoFocus && fit.mode === 'cover') {
+        const c = await subjectCenter(raw);
+        fit = { ...fit, ...focusFor(srcW, srcH, W, H, c.cx, c.cy) };
+      }
+
+      const buf = W !== srcW || H !== srcH ? await fitToSize(raw, W, H, fit) : raw;
       const reg = await analyzeRegions(buf);            // 규격에 맞춘 뒤의 그림을 본다
       // 본문 폭은 규격표에서 가져온다 — 글자 왼쪽 줄을 페이지 본문에 맞추기 위해서다
-      const content = body.auto.size?.id ? findSize(body.auto.size.id).content : undefined;
+      const content = a.size?.id ? findSize(a.size.id).content : undefined;
       const out = buildAuto(shapeOf(W, H), reg, W, H, {
-        eyebrow: (body.auto.eyebrow ?? '').trim(),
-        title: (body.auto.title ?? '').trim(),
-        subtitle: (body.auto.subtitle ?? '').trim(),
-        cta: (body.auto.cta ?? '').trim(),
-      }, content);
+        eyebrow: (a.eyebrow ?? '').trim(),
+        title: (a.title ?? '').trim(),
+        subtitle: (a.subtitle ?? '').trim(),
+        cta: (a.cta ?? '').trim(),
+      }, content, a.buttonColor);
       return NextResponse.json({
-        ok: true, ...out, size: { w: W, h: H }, source: { w: srcW, h: srcH },
+        ok: true, ...out, size: { w: W, h: H }, source: { w: srcW, h: srcH }, fit,
       });
+    }
+
+    // ── 웹+모바일 짝 저장 — 같은 문구로 여러 규격을 자동 배치해 한 번에 만든다 ──
+    if (body.batch?.imageUrl) {
+      if (!ftpConfigured()) {
+        return NextResponse.json({ ok: false, error: 'FTP 설정이 없습니다 (.env.local).' }, { status: 500 });
+      }
+      const b = body.batch;
+      const texts = {
+        eyebrow: (b.eyebrow ?? '').trim(),
+        title: (b.title ?? '').trim(),
+        subtitle: (b.subtitle ?? '').trim(),
+        cta: (b.cta ?? '').trim(),
+      };
+      const { buf: raw, srcW, srcH } = await fetchImage(b.imageUrl);
+      const c = await subjectCenter(raw);               // 초점은 원본에서 한 번만 재면 된다
+      const pairId = Math.random().toString(36).slice(2, 10);
+
+      const items: { id: string; url: string; sizeId: string; w: number; h: number; label: string }[] = [];
+      for (const sid of (b.sizeIds ?? []).slice(0, 4)) {
+        const sz = findSize(sid);
+        const W = sz.w;
+        const H = sz.h;
+        const fit = { mode: 'cover' as const, ...focusFor(srcW, srcH, W, H, c.cx, c.cy) };
+        const buf = W !== srcW || H !== srcH ? await fitToSize(raw, W, H, fit) : raw;
+        const reg = await analyzeRegions(buf);
+        const auto = buildAuto(shapeOf(W, H), reg, W, H, texts, sz.content, b.buttonColor);
+        const design: DesignDoc = { imageUrl: b.imageUrl, layers: auto.layers, size: { id: sid, w: W, h: H }, fit };
+        const svg = renderLayersToSvg(design, W, H);
+        const out = await sharp(buf).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).jpeg({ quality: 94 }).toBuffer();
+        const saved = await saveRendered(out, design, W, H, `${texts.title || '배너'} — ${sz.label}`, {
+          pairId,
+          ...(b.sourceId ? { revisedFrom: b.sourceId } : {}),
+        });
+        items.push({ ...saved, sizeId: sid, w: W, h: H, label: sz.label });
+      }
+      return NextResponse.json({ ok: true, pairId, items });
     }
 
     const design = body.design;
@@ -397,33 +535,12 @@ export async function POST(req: Request) {
     if (!ftpConfigured()) {
       return NextResponse.json({ ok: false, error: 'FTP 설정이 없습니다 (.env.local).' }, { status: 500 });
     }
-    const iso = new Date().toISOString();
-    const stamp = iso.replace(/[-:T]/g, '').slice(0, 14);
-    const rand = Math.random().toString(36).slice(2, 7);
-    const url = await uploadBuffer(dailySubpath(iso), `design_${stamp}_${rand}.jpg`, out);
+    const title = String(body.title || design.layers.find((l) => l.text)?.text || '디자인');
+    const saved = await saveRendered(out, design, W, H, title,
+      // 수정으로 연 배너면 원본 id 를 계보로 남긴다 — 게시판에서 판(버전)을 묶어 보여준다
+      body.sourceId ? { revisedFrom: body.sourceId } : {});
 
-    const db = await getDb();
-    const now = new Date(iso);
-    const title = String(body.title || design.layers.find((l) => l.text)?.text || '디자인').slice(0, 120);
-    const ins = await db.collection(COLLECTIONS.cuts).insertOne({
-      line: '', colorKey: '', colorName: '', hex: '',
-      url, title,
-      spec: `배너 · ${design.size?.id ?? '원본 크기'} · ${W}×${H}`,
-      recipe: { talentCodes: [] },
-      source: 'imgcreate' as const,
-      promptMode: 'manual',
-      aiModel: 'design-composer',
-      provider: 'design',
-      sizeValue: `${W}x${H}`, sizeLabel: '배너 디자인', aspect: `${W}:${H}`,
-      // 어떤 컷 위에 얹었는지 남긴다 — 나중에 원본을 되찾을 수 있어야 한다
-      inputImages: [{ kind: 'base' as const, title: '배경 컷', url: design.imageUrl, role: 'base' }],
-      direction: '', width: W, height: H,
-      deltaE: null, measuredHex: null, note: '',
-      design,                                   // 그대로 다시 열어 편집할 수 있게 통째로 남긴다
-      hidden: false, createdAt: now, updatedAt: now,
-    });
-
-    return NextResponse.json({ ok: true, url, id: String(ins.insertedId), width: W, height: H });
+    return NextResponse.json({ ok: true, ...saved, width: W, height: H });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });
   }

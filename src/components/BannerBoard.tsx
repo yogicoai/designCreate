@@ -26,6 +26,10 @@ export interface BannerRow {
   /** 이 배너가 어떤 컷 위에 얹혔는지 */
   baseUrl: string | null;
   editable: boolean;
+  /** 웹+모바일을 한 번에 만든 짝의 묶음 표식 */
+  pairId: string | null;
+  /** 수정으로 만들어진 판이면 원본 id */
+  revisedFrom: string | null;
 }
 
 function when(iso: string) {
@@ -94,8 +98,20 @@ export default function BannerBoard({ rows }: { rows: BannerRow[] }) {
 
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>{row.title}</div>
-              <div className="text-[11px] mt-0.5 tabular-nums" style={{ color: 'var(--text-mute)' }}>
-                {row.sizeLabel} · {row.width}×{row.height} · {when(row.createdAt)}
+              <div className="text-[11px] mt-0.5 tabular-nums flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--text-mute)' }}>
+                <span>{row.sizeLabel} · {row.width}×{row.height} · {when(row.createdAt)}</span>
+                {row.pairId && (
+                  <span className="chip" style={{ padding: '1px 7px', fontSize: 10 }}
+                        title="웹+모바일 짝 저장으로 함께 만들어진 배너입니다">
+                    짝 {row.pairId.slice(0, 4)}
+                  </span>
+                )}
+                {row.revisedFrom && (
+                  <span className="chip" style={{ padding: '1px 7px', fontSize: 10, color: 'var(--info)' }}
+                        title="저장된 배너를 수정해서 만든 판입니다. 원본은 그대로 남아 있습니다.">
+                    수정본
+                  </span>
+                )}
               </div>
               {row.baseUrl && (
                 <div className="text-[10.5px] mt-0.5 truncate" style={{ color: 'var(--text-mute)' }}>

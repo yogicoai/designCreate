@@ -25,6 +25,8 @@ export default async function BannerManagePage() {
     baseUrl: c.inputImages?.find((i) => i.role === 'base')?.url ?? null,
     // 설계도가 있어야 그때 그 배치로 다시 열 수 있다
     editable: !!c.design?.layers?.length,
+    pairId: c.pairId ?? null,
+    revisedFrom: c.revisedFrom ?? null,
   }));
 
   return (

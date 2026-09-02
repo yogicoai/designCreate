@@ -5,6 +5,7 @@ import { ICONS, renderLayersToSvg, textEm, type DesignDoc, type DesignLayer } fr
 import { TEMPLATES, THEMES, findTheme } from '@/lib/banner-templates';
 import { VISIBLE_SIZES, VISIBLE_GROUPS, findSize, shapeOf, cropLoss } from '@/lib/banner-sizes';
 import { shrinkForUpload } from '@/lib/client-image';
+import { BRAND_BUTTON_COLORS, brandButtonHex } from '@/lib/brand';
 
 /**
  * 배너 디자인 생성 — 간단한 포토샵.
@@ -169,7 +170,14 @@ function textOf(d: DesignDoc | undefined, id: string, fallback: string) {
   return d?.layers.find((l) => l.id === id)?.text ?? fallback;
 }
 
-export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; initial?: DesignDoc }) {
+export default function DesignStudio({ cuts, initial, sourceId, copyIdeas = [] }: {
+  cuts: CutOption[];
+  initial?: DesignDoc;
+  /** 관리 게시판에서 수정으로 연 배너의 id — 저장할 때 계보로 남긴다 */
+  sourceId?: string;
+  /** 이달의 추천 문구 — copy-ideas 가 server-only 라 페이지(서버)가 계산해서 내려준다 */
+  copyIdeas?: string[];
+}) {
   /*
    * 배경은 고르고 시작한다. 첫 컷을 자동으로 물려두면 고르지도 않은 배경 위에
    * 문구가 얹힌 채 화면이 열려서, 자기가 무엇을 만들고 있는지 헷갈린다.
@@ -202,6 +210,18 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
   const [autoSub, setAutoSub] = useState(() => textOf(initial, 'auto-sub', '상시할인 · 전 구성 무료배송 · 5% 추가 적립까지'));
   const [autoCta, setAutoCta] = useState(() => textOf(initial, 'auto-cta', '세트 구매하기'));
   const [picked, setPicked] = useState<{ where: string; light: boolean; sd: number; shape: string } | null>(null);
+  /*
+   * 버튼 색은 '사진에서 뽑기' 아니면 브랜드 목록 중 하나만 — 자유 색상은
+   * 4단계에서 손으로 다듬는 사람의 몫이다. MD 가 색을 고르는 것 자체가 개입이라서.
+   */
+  const [btnColor, setBtnColor] = useState('photo');
+  /*
+   * 잘라내기 위치를 손댔는가. 안 댔으면 서버가 피사체를 보고 정한다.
+   * 저장본을 다시 열었을 때는 그때 정한 위치를 존중한다 (true 로 시작).
+   */
+  const [focusTouched, setFocusTouched] = useState(!!initial);
+  // 서버가 정해준 초점을 슬라이더에 반영할 때 재배치 효과가 또 돌지 않게 막는 표식
+  const applyingFocus = useRef(false);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
@@ -319,17 +339,26 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
     if (!imageUrl) { setErr('배경 컷을 골라주세요.'); return; }
     setBusy('auto'); setErr(''); setNote('');
     try {
+      const wantAutoFocus = fitMode === 'cover' && !focusTouched;
       const r = await fetch('/api/design', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           auto: {
             imageUrl, eyebrow: autoEyebrow, title: autoTitle, subtitle: autoSub, cta: autoCta,
             size: { id: sizeId || undefined, w: dims.w, h: dims.h }, fit,
+            autoFocus: wantAutoFocus,
+            buttonColor: btnColor === 'photo' ? undefined : brandButtonHex(btnColor),
           },
         }),
       });
       const j = await r.json();
       if (!j.ok) { setErr(j.error || '실패'); return; }
+      // 서버가 피사체를 보고 정한 자르기 위치 — 미리보기가 같은 숫자로 잘라야 해서 받아온다
+      if (wantAutoFocus && j.fit) {
+        applyingFocus.current = true;
+        setFx(j.fit.fx);
+        setFy(j.fit.fy);
+      }
       setLayers(j.layers);
       setPicked(j.picked);
       setSelected(null);
@@ -339,7 +368,7 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
         + `${j.picked.where} 여백에 배치 `
         + `(${j.picked.light ? '밝은 배경이라 짙은 글씨' : '어두운 배경이라 흰 글씨'}).`);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
-  }, [imageUrl, autoEyebrow, autoTitle, autoSub, autoCta, sizeId, dims, fit]);
+  }, [imageUrl, autoEyebrow, autoTitle, autoSub, autoCta, sizeId, dims, fit, fitMode, focusTouched, btnColor]);
 
   /*
    * 규격이나 자르기를 바꾸면 배치를 다시 잡는다.
@@ -360,11 +389,13 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
   const firstRun = useRef(true);
   useEffect(() => {
     if (firstRun.current) { firstRun.current = false; return; }
+    // 서버가 정해준 초점을 슬라이더에 옮긴 것뿐이면 또 돌 필요가 없다 — 돌면 무한 왕복한다
+    if (applyingFocus.current) { applyingFocus.current = false; return; }
     const cur = layersRef.current;
     if (!imageUrl || cur.length === 0 || !cur.every(isAuto)) return;
     const t = setTimeout(() => { autoRef.current(true); }, 500);   // 슬라이더를 끄는 동안 매번 부르지 않게
     return () => clearTimeout(t);
-  }, [sizeId, fitMode, fx, fy, imageUrl]);
+  }, [sizeId, fitMode, fx, fy, imageUrl, btnColor]);
 
   async function render(save: boolean) {
     if (!imageUrl) { setErr('배경 컷을 골라주세요.'); return; }
@@ -372,7 +403,7 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
     try {
       const r = await fetch('/api/design', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ design, save }),
+        body: JSON.stringify({ design, save, sourceId }),
       });
       const j = await r.json();
       if (!j.ok) { setErr(j.error || '실패'); return; }
@@ -405,6 +436,35 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
       setImageUrl(j.url);
       setResult(null);
       setNote(`"${f.name}" 을(를) 배경으로 올렸습니다. (${j.width}×${j.height})`);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
+  }
+
+  /**
+   * 웹+모바일 짝 저장 — 3단계 문구로 두 규격을 서버가 자동 배치해 한 번에 만든다.
+   * 배너는 항상 짝으로 나가는 물건이라 이게 실전의 기본 동선이다.
+   * 손으로 다듬은 배치는 여기 안 들어간다 (규격마다 배치가 다시 잡히므로).
+   */
+  async function saveBoth() {
+    if (!imageUrl) { setErr('배경 컷을 골라주세요.'); return; }
+    setBusy('save'); setErr(''); setNote('');
+    try {
+      const r = await fetch('/api/design', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          batch: {
+            imageUrl, eyebrow: autoEyebrow, title: autoTitle, subtitle: autoSub, cta: autoCta,
+            sizeIds: ['web-main', 'mo-main'],
+            buttonColor: btnColor === 'photo' ? undefined : brandButtonHex(btnColor),
+            sourceId,
+          },
+        }),
+      });
+      const j = await r.json();
+      if (!j.ok) { setErr(j.error || '실패'); return; }
+      const made = (j.items as { label: string; w: number; h: number }[])
+        .map((i) => `${i.label} ${i.w}×${i.h}`).join(' · ');
+      setNote(`짝으로 저장했습니다 — ${made}. 배너 디자인 관리에서 볼 수 있습니다.`);
+      setResult(null);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
 
@@ -702,6 +762,10 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
             <button className="btn btn-primary" onClick={() => render(true)} disabled={!!busy || !layers.length}>
               {busy === 'save' ? '저장 중…' : '완성 · 갤러리에 저장'}
             </button>
+            <button className="btn" onClick={saveBoth} disabled={!!busy || !imageUrl}
+                    title="3단계 문구로 웹·모바일 두 규격을 자동 배치해 한 번에 저장합니다. 손으로 다듬은 배치는 이 저장에는 들어가지 않습니다.">
+              웹+모바일 짝 저장
+            </button>
             <button className="btn" onClick={() => render(false)} disabled={!!busy || !layers.length}>미리보기</button>
             <button className="btn" onClick={saveTemplate} disabled={!!busy || !layers.length}>템플릿으로 저장</button>
           </div>
@@ -730,7 +794,7 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
               <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">
                 {mine.map((c) => (
                   <div key={c.id} className="relative shrink-0">
-                    <button onClick={() => { setImageUrl(c.url); setResult(null); }} title={c.label}
+                    <button onClick={() => { setImageUrl(c.url); setFocusTouched(false); setResult(null); }} title={c.label}
                             className="block rounded-lg overflow-hidden border" style={{ padding: 0 }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={c.url} alt={c.label} loading="lazy" className="object-cover"
@@ -752,7 +816,7 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
           <div className="label mb-1.5">생성한 컷</div>
           <div className="flex gap-1.5 overflow-x-auto pb-1">
             {cuts.map((c) => (
-              <button key={c.id} onClick={() => { setImageUrl(c.url); setResult(null); }} title={c.label}
+              <button key={c.id} onClick={() => { setImageUrl(c.url); setFocusTouched(false); setResult(null); }} title={c.label}
                       className="shrink-0 rounded-lg overflow-hidden border" style={{ padding: 0 }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={c.url} alt={c.label} loading="lazy" className="object-cover"
@@ -781,7 +845,7 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
         {/* 배너는 '어디에 걸리나'가 먼저 정해지는 물건이라 문구보다 규격이 먼저다 */}
         <Step n={2} title="어디에 걸 배너인가" done={!!sizeId} disabled={!imageUrl}>
           <select className="input py-1 text-[12px]" value={sizeId}
-                  onChange={(e) => { setSizeId(e.target.value); setResult(null); }}>
+                  onChange={(e) => { setSizeId(e.target.value); setFocusTouched(false); setResult(null); }}>
             <option value="">컷 크기 그대로 ({src.w}×{src.h})</option>
             {/* 감춰둔 규격으로 저장한 배너를 다시 열었을 때 — 목록에 없으면 선택칸이 빈 것처럼 보인다 */}
             {sizeId && !VISIBLE_SIZES.some((b) => b.id === sizeId) && (
@@ -816,10 +880,15 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
               </div>
               {fitMode === 'cover' ? (
                 <>
-                  {num('남길 위치 ↔', fx, 0, 1, 0.01, (n) => { setFx(n); setResult(null); },
+                  {num('남길 위치 ↔', fx, 0, 1, 0.01, (n) => { setFx(n); setFocusTouched(true); setResult(null); },
                        (n) => `${Math.round(n * 100)}%`)}
-                  {num('남길 위치 ↕', fy, 0, 1, 0.01, (n) => { setFy(n); setResult(null); },
+                  {num('남길 위치 ↕', fy, 0, 1, 0.01, (n) => { setFy(n); setFocusTouched(true); setResult(null); },
                        (n) => `${Math.round(n * 100)}%`)}
+                  {!focusTouched && (
+                    <div className="text-[10.5px] mb-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                      지금은 <b>인물을 피해서</b> 남길 곳을 자동으로 정합니다. 슬라이더를 만지면 그때부터 손 위치를 따릅니다.
+                    </div>
+                  )}
                   <div className="text-[10.5px] leading-relaxed" style={{ color: 'var(--text-mute)' }}>
                     컷의 <b style={{ color: 'var(--warn)' }}>약 {Math.round(loss * 100)}%</b> 가 잘립니다.
                     인물이 잘리면 위 막대로 남길 곳을 옮기세요.
@@ -845,6 +914,31 @@ export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; ini
                  onChange={(e) => setAutoSub(e.target.value)} placeholder="혜택 한 줄 (선택)" />
           <input className="input py-1 text-[11.5px] mb-2" value={autoCta}
                  onChange={(e) => setAutoCta(e.target.value)} placeholder="버튼 문구 (선택)" />
+
+          {/* 이달의 추천 문구 — 빈백 트렌드의 시즌 캘린더에서 온다. 문구 고민까지 줄여준다 */}
+          {copyIdeas.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-2">
+              {copyIdeas.map((c) => (
+                <button key={c} className="chip" title="제목으로 넣기" onClick={() => setAutoTitle(c)}>{c}</button>
+              ))}
+            </div>
+          )}
+
+          <div className="label mb-1">버튼 색</div>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            <button className="chip" onClick={() => setBtnColor('photo')}
+                    style={btnColor === 'photo' ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+              사진에서 뽑기
+            </button>
+            {BRAND_BUTTON_COLORS.map((c) => (
+              <button key={c.id} className="chip" onClick={() => setBtnColor(c.id)}
+                      style={btnColor === c.id ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: c.hex }} />
+                {c.name}
+              </button>
+            ))}
+          </div>
+
           <button className="btn btn-primary w-full" onClick={() => autoLayout(false)} disabled={!!busy || !imageUrl}>
             {busy === 'auto' ? '분석 중…' : '✨ 자동 배치'}
           </button>

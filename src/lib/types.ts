@@ -208,6 +208,10 @@ export interface CutDoc {
    * 이게 있어야 저장한 배너를 다시 열어 고칠 수 있다.
    */
   design?: DesignDoc;
+  /** 웹+모바일을 한 번에 만든 짝의 묶음 표식 */
+  pairId?: string;
+  /** 수정으로 만들어진 판이면 원본 배너의 id — 게시판에서 계보를 보여준다 */
+  revisedFrom?: string;
 
   hidden: boolean;
   note: string;
