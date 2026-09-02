@@ -457,6 +457,8 @@ export async function POST(req: Request) {
       design?: DesignDoc; save?: boolean; title?: string;
       /** 수정으로 연 배너의 원본 id — 계보를 이으려면 저장 때 같이 온다 */
       sourceId?: string;
+      /** 웹·모바일을 각각 손본 뒤 짝으로 묶어 저장할 때 — 클라이언트가 만든 묶음 표식 */
+      pairId?: string;
       auto?: AutoTexts & {
         imageUrl: string;
         size?: { id?: string; w: number; h: number };
@@ -577,9 +579,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'FTP 설정이 없습니다 (.env.local).' }, { status: 500 });
     }
     const title = String(body.title || design.layers.find((l) => l.text)?.text || '디자인');
-    const saved = await saveRendered(out, design, W, H, title,
+    const saved = await saveRendered(out, design, W, H, title, {
       // 수정으로 연 배너면 원본 id 를 계보로 남긴다 — 게시판에서 판(버전)을 묶어 보여준다
-      body.sourceId ? { revisedFrom: body.sourceId } : {});
+      ...(body.sourceId ? { revisedFrom: body.sourceId } : {}),
+      ...(body.pairId ? { pairId: body.pairId } : {}),
+    });
 
     return NextResponse.json({ ok: true, ...saved, width: W, height: H });
   } catch (e) {

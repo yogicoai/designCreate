@@ -236,6 +236,12 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   const [autoCta, setAutoCta] = useState(() => textOf(initial, 'auto-cta', '세트 구매하기'));
   const [picked, setPicked] = useState<{ where: string; light: boolean; sd: number; shape: string } | null>(null);
   /*
+   * 버전 보관함 — 웹/모바일을 탭으로 오가며 각각 다듬기 위한 자리.
+   * 무대에는 한 규격만 올라가고, 내려간 버전은 여기 남는다.
+   * 위치·크기는 버전마다 따로지만, 색은 patchColor 가 양쪽에 같이 넣는다.
+   */
+  const [variants, setVariants] = useState<Record<string, { layers: DesignLayer[]; fit: { mode: 'cover' | 'blur'; fx: number; fy: number } }>>({});
+  /*
    * 버튼 색은 '사진에서 뽑기' 아니면 브랜드 목록 중 하나만 — 자유 색상은
    * 4단계에서 손으로 다듬는 사람의 몫이다. MD 가 색을 고르는 것 자체가 개입이라서.
    */
@@ -310,6 +316,77 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
 
   function patch(id: string, next: Partial<DesignLayer>) {
     setLayers((cur) => cur.map((l) => (l.id === id ? { ...l, ...next } : l)));
+  }
+
+  /**
+   * 색은 두 버전에 같이 들어간다 (사용자 결정: "위치는 아니고 컬러는 둘 다").
+   * 자동 배치가 두 버전에 같은 레이어 id 를 쓰기 때문에 id 로 짝을 찾는다.
+   */
+  function patchColor(id: string, color: string) {
+    patch(id, { color });
+    setVariants((v) => {
+      const out: typeof v = {};
+      for (const [k, doc] of Object.entries(v)) {
+        out[k] = { ...doc, layers: doc.layers.map((l) => (l.id === id ? { ...l, color } : l)) };
+      }
+      return out;
+    });
+  }
+
+  /** 무대에 있는 버전을 보관함에 내려둔다 */
+  function stashActive() {
+    if (!sizeId || !layers.length) return;
+    setVariants((v) => ({ ...v, [sizeId]: { layers, fit: { mode: fitMode, fx, fy } } }));
+  }
+
+  /** 특정 규격의 자동 배치를 서버에서 받아온다 — 탭 전환과 짝 최신화가 같이 쓴다 */
+  async function fetchAutoFor(sid: string) {
+    const b = findSize(sid);
+    const res = await fetch('/api/design', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        auto: {
+          imageUrl, eyebrow: autoEyebrow, title: autoTitle, subtitle: autoSub, cta: autoCta,
+          size: { id: sid, w: b.w, h: b.h },
+          autoFocus: true,
+          buttonColor: btnColor === 'photo' ? undefined : brandButtonHex(btnColor),
+          tune: { scale: tuneScale, gap: tuneGap },
+        },
+      }),
+    });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || '자동 배치 실패');
+    return { layers: j.layers as DesignLayer[], fit: j.fit as { mode: 'cover' | 'blur'; fx: number; fy: number } };
+  }
+
+  /**
+   * 버전 탭 전환 — 지금 것을 내려두고 그 규격을 올린다.
+   * 보관함에 없으면 같은 문구로 자동 배치를 새로 받아온다.
+   */
+  async function switchVariant(sid: string) {
+    if (sid === sizeId) return;
+    if (!imageUrl) { setErr('배경 컷을 골라주세요.'); return; }
+    stashActive();
+    const stored = variants[sid];
+    applyingFocus.current = true;                        // 규격 변경으로 자동 재배치가 돌아 덮지 않게
+    setSizeId(sid);
+    setFocusTouched(true);
+    setSelected(null);
+    setResult(null);
+    if (stored) {
+      setLayers(stored.layers);
+      setFitMode(stored.fit.mode);
+      setFx(stored.fit.fx);
+      setFy(stored.fit.fy);
+      return;
+    }
+    setBusy('auto'); setErr('');
+    try {
+      const got = await fetchAutoFor(sid);
+      setLayers(got.layers);
+      if (got.fit) { setFitMode(got.fit.mode); setFx(got.fit.fx); setFy(got.fit.fy); }
+      setVariants((v) => ({ ...v, [sid]: got }));
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
 
   function applyTemplate(tplId: string) {
@@ -406,6 +483,13 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
       setNote(`${again ? '규격이 바뀌어 다시 잡았습니다 — ' : ''}${kind} ${dims.w}×${dims.h}, `
         + `${j.picked.where} 여백에 배치 `
         + `(${j.picked.light ? '밝은 배경이라 짙은 글씨' : '어두운 배경이라 흰 글씨'}).`);
+      // 짝 버전도 같은 문구로 조용히 최신화 — 탭을 눌렀을 때 옛 문구가 남아 있으면 안 된다
+      const partner = AUTO_SET[channel].find((id) => id !== sizeId);
+      if (partner) {
+        fetchAutoFor(partner)
+          .then((got) => setVariants((v) => ({ ...v, [partner]: got })))
+          .catch(() => { /* 짝 최신화 실패는 조용히 — 탭 전환 때 다시 받는다 */ });
+      }
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }, [imageUrl, autoEyebrow, autoTitle, autoSub, autoCta, sizeId, dims, fit, fitMode, focusTouched, btnColor, tuneScale, tuneGap]);
 
@@ -474,6 +558,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
       saveMine([row, ...mine.filter((m) => m.url !== j.url)]);
       setImageUrl(j.url);
       setResult(null);
+      setVariants({});                                   // 배경이 바뀌면 옛 배치는 소용없다
       setNote(`"${f.name}" 을(를) 배경으로 올렸습니다. (${j.width}×${j.height})`);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
@@ -483,10 +568,68 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
    * 배너는 항상 짝으로 나가는 물건이라 이게 실전의 기본 동선이다.
    * 손으로 다듬은 배치는 여기 안 들어간다 (규격마다 배치가 다시 잡히므로).
    */
+  /** 짝 규격들 각각의 설계도 — 무대의 것과 보관함의 것을 모은다. 하나라도 없으면 null */
+  function localPairDocs(): { sizeId: string; label: string; w: number; h: number; design: DesignDoc }[] | null {
+    const out: { sizeId: string; label: string; w: number; h: number; design: DesignDoc }[] = [];
+    for (const sid of AUTO_SET[channel]) {
+      const b = findSize(sid);
+      const doc = sid === sizeId
+        ? (layers.length ? { layers, fit: { mode: fitMode, fx, fy } } : null)
+        : variants[sid] ?? null;
+      if (!doc || !doc.layers.length) return null;
+      out.push({
+        sizeId: sid, label: b.label, w: b.w, h: b.h,
+        design: { imageUrl, layers: doc.layers, size: { id: sid, w: b.w, h: b.h }, fit: doc.fit, font: fontFamily || undefined },
+      });
+    }
+    return out;
+  }
+
   async function saveBoth(previewOnly: boolean) {
     if (!imageUrl) { setErr('배경 컷을 골라주세요.'); return; }
     setBusy('save'); setErr(''); setNote('');
     try {
+      /*
+       * 두 버전을 탭에서 각각 손봤다면 **그 손본 배치 그대로** 저장해야 한다.
+       * 서버 자동(batch)으로 다시 만들면 다듬은 게 날아간다.
+       * 손본 버전이 다 있으면 로컬 설계도로, 아니면 서버 자동으로 간다.
+       */
+      const local = localPairDocs();
+      if (local) {
+        if (previewOnly) {
+          const items = [];
+          for (const it of local) {
+            const r = await fetch('/api/design', {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ design: it.design, save: false }),
+            });
+            const j = await r.json();
+            if (!j.ok) { setErr(j.error || '실패'); return; }
+            items.push({
+              label: it.label, w: it.w, h: it.h, preview: j.preview,
+              sizeId: it.sizeId, layers: it.design.layers, fit: it.design.fit!,
+            });
+          }
+          setResult({ kind: 'pair', items });
+          return;
+        }
+        const pairId = Math.random().toString(36).slice(2, 10);
+        for (const it of local) {
+          const r = await fetch('/api/design', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              design: it.design, save: true, sourceId, pairId,
+              title: `${autoTitle || '배너'} — ${it.label}`,
+            }),
+          });
+          const j = await r.json();
+          if (!j.ok) { setErr(j.error || '실패'); return; }
+        }
+        setNote(`짝으로 저장했습니다 — ${local.map((i) => `${i.label} ${i.w}×${i.h}`).join(' · ')}. 배너 디자인 관리에서 볼 수 있습니다.`);
+        setResult(null);
+        return;
+      }
+
       const r = await fetch('/api/design', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -504,7 +647,6 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
       const j = await r.json();
       if (!j.ok) { setErr(j.error || '실패'); return; }
       if (previewOnly) {
-        // 확인창 — 두 장을 보여주고 [모두 저장]을 기다린다
         setResult({ kind: 'pair', items: j.items });
         return;
       }
@@ -567,12 +709,21 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     setResult(null);
   }
 
-  /** 버튼의 글자와 화살표는 같은 색이어야 한다 */
+  /** 버튼의 글자와 화살표는 같은 색이어야 한다 — 그리고 두 버전에 같이 들어간다 */
   function setBtnInk(color: string) {
     if (!selGroup) return;
     setLayers((cur) => cur.map((l) => (
       l.group === selGroup && (l.kind === 'text' || l.kind === 'icon') ? { ...l, color } : l
     )));
+    setVariants((v) => {
+      const out: typeof v = {};
+      for (const [k, doc] of Object.entries(v)) {
+        out[k] = { ...doc, layers: doc.layers.map((l) => (
+          l.group === selGroup && (l.kind === 'text' || l.kind === 'icon') ? { ...l, color } : l
+        )) };
+      }
+      return out;
+    });
   }
 
   const num = (label: string, v: number, min: number, max: number, step: number, on: (n: number) => void, fmt?: (n: number) => string) => (
@@ -625,14 +776,14 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
               </div>
             </>
           )}
-          <div className="label mb-1 mt-1">버튼 색</div>
+          <div className="label mb-1 mt-1">버튼 색 <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>— 두 버전에 같이</span></div>
           <div className="flex items-center gap-2 mb-2">
             <input type="color" value={btnPill.color}
-                   onChange={(e) => patch(btnPill.id, { color: e.target.value })}
+                   onChange={(e) => patchColor(btnPill.id, e.target.value)}
                    style={{ width: 40, height: 28, padding: 0, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'none' }} />
             <div className="flex gap-1 flex-wrap">
               {[theme.accent, theme.strong, theme.scrim, '#2f3a5c'].map((c) => (
-                <button key={c} onClick={() => patch(btnPill.id, { color: c })} title={c}
+                <button key={c} onClick={() => patchColor(btnPill.id, c)} title={c}
                         className="w-6 h-6 rounded" style={{ background: c, border: '1px solid var(--line)' }} />
               ))}
             </div>
@@ -723,13 +874,13 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
         {num('불투명도', sel.opacity ?? 1, 0, 1, 0.02, (n) => patch(sel.id, { opacity: n }), (n) => `${(n * 100).toFixed(0)}%`)}
         {num('회전', sel.rotate ?? 0, -45, 45, 1, (n) => patch(sel.id, { rotate: n }), (n) => `${n}°`)}
 
-        <div className="label mb-1 mt-2">색</div>
+        <div className="label mb-1 mt-2">색 <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>— 두 버전에 같이 적용</span></div>
         <div className="flex items-center gap-2">
-          <input type="color" value={sel.color} onChange={(e) => patch(sel.id, { color: e.target.value })}
+          <input type="color" value={sel.color} onChange={(e) => patchColor(sel.id, e.target.value)}
                  style={{ width: 40, height: 28, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'none' }} />
           <div className="flex gap-1 flex-wrap">
             {[theme.strong, theme.soft, theme.accent, theme.accentText, theme.scrim].map((c) => (
-              <button key={c} onClick={() => patch(sel.id, { color: c })} title={c}
+              <button key={c} onClick={() => patchColor(sel.id, c)} title={c}
                       className="w-6 h-6 rounded" style={{ background: c, border: '1px solid var(--line)' }} />
             ))}
           </div>
@@ -803,6 +954,27 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
             <b>{autoBtnLabel.replace(' 저장', '')}</b> = 문구만으로 {channel}용 두 규격({autoSetText})을 자동 배치해 함께 저장
             — 둘 다 저장 전에 결과를 먼저 보여드리고, 확인을 눌러야 저장됩니다.
           </div>
+
+          {/*
+            버전 탭 — 웹/모바일을 오가며 각각 다듬는다.
+            위치·크기는 버전마다 따로, 색은 두 버전에 같이 들어간다.
+          */}
+          {autoSet.length > 1 && (
+            <div className="flex gap-1.5 mb-2 items-center flex-wrap">
+              <span className="label">버전</span>
+              {autoSet.map((b) => (
+                <button key={b.id} className="chip" disabled={!!busy}
+                        onClick={() => switchVariant(b.id)}
+                        style={sizeId === b.id ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
+                        title={`${b.label} ${b.w}×${b.h}${variants[b.id] || sizeId === b.id ? '' : ' — 누르면 같은 문구로 자동 배치됩니다'}`}>
+                  {b.label.replace(/^(자사몰|스마트스토어)\s*/, '')} {b.w}×{b.h}
+                </button>
+              ))}
+              <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>
+                위치는 버전마다 따로 · 색은 두 버전에 같이 적용
+              </span>
+            </div>
+          )}
 
           <div className="flex justify-center">
           <div
@@ -905,6 +1077,14 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
                         */}
                       <button className="chip ml-auto"
                               onClick={() => {
+                                // 두 버전을 다 보관함에 담아둔다 — 탭으로 오가며 다듬고 짝 저장까지 이어진다
+                                if (result?.kind === 'pair') {
+                                  setVariants((v) => {
+                                    const next = { ...v };
+                                    for (const x of result.items) next[x.sizeId] = { layers: x.layers, fit: x.fit };
+                                    return next;
+                                  });
+                                }
                                 applyingFocus.current = true;      // 규격 변경으로 자동 재배치가 돌면 가져온 배치를 덮는다
                                 setSizeId(it.sizeId);
                                 setLayers(it.layers);
@@ -914,7 +1094,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
                                 setFocusTouched(true);
                                 setSelected(null);
                                 setResult(null);
-                                setNote(`${it.label} 버전을 무대에 올렸습니다 — 다듬은 뒤 [✔ 완성 · 저장]을 누르세요.`);
+                                setNote(`${it.label} 버전을 무대에 올렸습니다 — 버전 탭으로 오가며 다듬고, [${'웹·모바일 자동완성'}]으로 짝 저장하세요.`);
                               }}>
                         이 버전 무대에서 다듬기
                       </button>
@@ -953,6 +1133,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
                         setSizeId(defaultSizeFor(ch));   // 채널의 대표 규격으로 바로 맞춘다
                         setFocusTouched(false);
                         setResult(null);
+                        setVariants({});                 // 채널이 다르면 짝 규격도 달라진다
                       }}>
                 {ch}
               </button>
@@ -972,7 +1153,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
               <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2">
                 {mine.map((c) => (
                   <div key={c.id} className="relative shrink-0">
-                    <button onClick={() => { setImageUrl(c.url); setFocusTouched(false); setResult(null); }} title={c.label}
+                    <button onClick={() => { setImageUrl(c.url); setFocusTouched(false); setResult(null); setVariants({}); }} title={c.label}
                             className="block rounded-lg overflow-hidden border" style={{ padding: 0 }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={c.url} alt={c.label} loading="lazy" className="object-cover"
@@ -994,7 +1175,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
           <div className="label mb-1.5">생성한 컷</div>
           <div className="flex gap-1.5 overflow-x-auto pb-1">
             {cuts.map((c) => (
-              <button key={c.id} onClick={() => { setImageUrl(c.url); setFocusTouched(false); setResult(null); }} title={c.label}
+              <button key={c.id} onClick={() => { setImageUrl(c.url); setFocusTouched(false); setResult(null); setVariants({}); }} title={c.label}
                       className="shrink-0 rounded-lg overflow-hidden border" style={{ padding: 0 }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={c.url} alt={c.label} loading="lazy" className="object-cover"
