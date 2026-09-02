@@ -1251,6 +1251,30 @@ ${c.spec}`}>
 
           {/* ⑤ 방향 지시 */}
           <Section n="7" title="방향 지시" hint="한글로 편하게 적으면 됩니다. 카메라 각도·조명·인물 구성도 여기에 함께 적으세요.">
+            {/*
+              광각 배너(21:9·16:9) 힌트 — 넓게 뽑으면 한쪽을 비워야 글자가 들어간다.
+              애초에 빈 쪽이 없으면 배너 스튜디오의 자동 배치도 놓을 자리가 없다.
+              그래서 배너급 가로 규격을 고르면 '한쪽 비우기' 한 줄을 제안한다 (넣을지는 사용자 선택).
+            */}
+            {size && (size.genAspect === '21:9' || size.genAspect === '16:9') && (
+              <div className="mb-2">
+                <div className="text-[11px] mb-1" style={{ color: 'var(--text-dim)' }}>
+                  가로로 넓은 배너예요 — 글자 들어갈 자리를 비워두면 좋습니다:
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    ['왼쪽 비우기', '인물과 제품을 화면 오른쪽에 배치하고, 왼쪽 1/3은 벽·여백으로 비워 글자 자리를 남긴다'],
+                    ['오른쪽 비우기', '인물과 제품을 화면 왼쪽에 배치하고, 오른쪽 1/3은 벽·여백으로 비워 글자 자리를 남긴다'],
+                  ].map(([label, hint]) => (
+                    <button key={label} type="button" className="chip"
+                            onClick={() => setDirection((d) => d.includes(hint) ? d : (d.trim() ? `${d.trim()}
+${hint}` : hint))}>
+                      + {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <textarea className="input" rows={3} value={direction} onChange={(e) => setDirection(e.target.value)}
                       placeholder="예: 창가 자연광이 드는 아늑한 거실, 45도 측면에서, 옆에 작은 화분" />
           </Section>
