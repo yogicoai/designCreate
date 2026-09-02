@@ -30,14 +30,13 @@ export interface BannerSize {
 }
 
 export const BANNER_SIZES: BannerSize[] = [
-  // ── 웹 (자사몰) ──
-  { id: 'web-main',   group: '웹', label: '웹 메인 배너',     w: 1910, h: 600, content: 1300, note: 'PC 첫 화면 · 본문 1300 에 맞춰 왼쪽 정렬' },
-  { id: 'web-main-s', group: '웹', label: '웹 메인 (낮게)',   w: 1910, h: 480, content: 1300 },
+  // ── 웹 (자사몰) ── 실제로 쓰는 규격
+  { id: 'web-main',   group: '웹', label: '자사몰 웹 메인',   w: 1900, h: 675, content: 1300, note: 'PC 첫 화면 · 본문 1300 에 맞춰 왼쪽 정렬' },
   { id: 'web-detail', group: '웹', label: '상품상세 배너',    w: 1300, h: 500, note: '상세페이지 본문 폭 그대로' },
   { id: 'web-sub',    group: '웹', label: '웹 서브·카테고리', w: 1200, h: 400 },
 
-  // ── 모바일 ──
-  { id: 'mo-main',   group: '모바일', label: '모바일 메인',  w: 750, h: 600 },
+  // ── 모바일 ── 실제로 쓰는 규격
+  { id: 'mo-main',   group: '모바일', label: '자사몰 모바일 메인', w: 480, h: 558, note: '문구를 위에 쌓고 버튼은 아래' },
   { id: 'mo-strip',  group: '모바일', label: '모바일 띠배너', w: 750, h: 200, note: '아주 납작해서 문구는 한 줄' },
   { id: 'mo-popup',  group: '모바일', label: '앱·웹 팝업',   w: 800, h: 1000 },
 

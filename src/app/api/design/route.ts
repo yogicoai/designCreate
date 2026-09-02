@@ -94,12 +94,41 @@ async function analyzeRegions(buf: Buffer) {
     const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length);
     return { mean, sd };
   };
+  // 사진에서 가장 넓게 쓰인 색 — 버튼 색을 여기서 가져온다
+  const { dominant } = await sharp(buf).stats();
   return {
     top: stat(0, 0, 32, 11),
     bottom: stat(0, 21, 32, 32),
     left: stat(0, 4, 14, 28),
     right: stat(18, 4, 32, 28),
+    dominant,
   };
+}
+
+/**
+ * 글자색을 밝기 세 구간으로 나눈다.
+ *
+ * 실제 자사몰 배너를 보면 중간톤 배경에서 **제목만 흰색**이고 작은 글씨는 짙다.
+ * 제목은 덩치가 커서 대비가 좀 모자라도 읽히고 흰색이 눈에 먼저 걸리는 반면,
+ * 작은 글씨를 흰색으로 하면 중간톤 위에서 뭉개진다.
+ * 한 가지 색으로 통일하면 이 맛이 안 난다.
+ */
+function inkOf(mean: number) {
+  if (mean < 120) return { title: '#ffffff', small: '#e9e6e1', scrim: '#000000', mid: false };
+  if (mean > 190) return { title: '#1b1d21', small: '#4a4f57', scrim: '#ffffff', mid: false };
+  return { title: '#ffffff', small: '#2a2c30', scrim: '#ffffff', mid: true };
+}
+
+/**
+ * 버튼 색을 사진에서 가져온다 — 참고 배너들이 전부 사진 속 색을 쓴다.
+ * 흰 글씨가 읽혀야 하므로 너무 밝으면 눌러서 쓴다.
+ */
+function pillFrom(c: { r: number; g: number; b: number } | undefined) {
+  if (!c) return '#2f3a5c';
+  const lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+  const k = lum > 140 ? 140 / lum : 1;
+  const hex = (v: number) => Math.round(Math.max(0, Math.min(255, v * k))).toString(16).padStart(2, '0');
+  return `#${hex(c.r)}${hex(c.g)}${hex(c.b)}`;
 }
 
 /**
@@ -150,23 +179,26 @@ function buildAuto(
     const colFrac = content && content < W ? (content * 0.55) / W : 0.42;
     const x = side === 'left' ? marginX : 1 - marginX;
     const align = side === 'left' ? ('start' as const) : ('end' as const);
-    const strong = light ? '#1b1d21' : '#ffffff';
-    const soft = light ? '#4a4f57' : '#e9e6e1';
+    const ink = inkOf(r.mean);
+    const strong = ink.title;
+    const soft = ink.small;
 
     layers.push({
       id: 'auto-scrim', kind: 'scrim', x: 0.5, y: 0.5, w: 1, h: 1,
-      color: light ? '#ffffff' : '#000000',
-      opacity: Math.max(0.22, Math.min(0.66, r.sd / 80)),
+      color: ink.scrim,
+      // 중간톤에서는 그늘을 얕게 — 짙게 깔면 흰 제목이 오히려 묻힌다
+      opacity: Math.max(0.22, Math.min(0.66, r.sd / 80)) * (ink.mid ? 0.55 : 1),
       direction: side,
     });
 
     // 눈썹 문구가 있으면 제목을 아래로 내려 네 줄로 쌓는다
     const hasEye = !!txt.eyebrow;
     const ty = hasEye ? 0.43 : 0.36;
+    // 눈썹과 혜택 줄은 작아서 흰색이면 중간톤 위에서 뭉갠다 — 제목만 흰색으로 둔다
     if (hasEye) layers.push({
       id: 'auto-eyebrow', kind: 'text', x, y: 0.26, text: txt.eyebrow,
       size: fitText(txt.eyebrow, 0.055, colFrac), weight: 600, tracking: 0.01,
-      lineHeight: 1.25, align, color: strong, opacity: 1, shadow: false, curve: 0,
+      lineHeight: 1.25, align, color: soft, opacity: 1, shadow: false, curve: 0,
     });
     if (txt.title) layers.push({
       id: 'auto-title', kind: 'text', x, y: ty, text: txt.title,
@@ -186,10 +218,10 @@ function buildAuto(
       const pw = ((textEm(txt.cta) + 3.2) * cs * S) / W;
       const px = side === 'left' ? marginX + pw / 2 : 1 - marginX - pw / 2;
       const cy = 0.78;
-      const on = light ? '#ffffff' : '#1b1d21';
+      const on = '#ffffff';
       layers.push({
         id: 'auto-pill', kind: 'rect', x: px, y: cy, w: pw, h: (cs * S * 2.4) / H,
-        color: light ? '#2f3a5c' : '#ffffff', opacity: 0.95, radius: 0.06,
+        color: pillFrom(reg.dominant), opacity: 0.95, radius: 0.06,
       });
       layers.push({
         id: 'auto-cta', kind: 'text', x: px - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
@@ -208,47 +240,56 @@ function buildAuto(
     where = topSide ? '위쪽' : '아래쪽';
     light = r.mean > 140;
     sd = r.sd;
+    /*
+     * 간격과 크기는 실제 모바일 배너(480x558)를 재서 맞췄다.
+     * 눈썹 0.168 · 제목 0.245 · 혜택 0.34 · 버튼 0.87 (세로 비율)
+     * 문구를 위에 쌓고 버튼은 반대쪽 끝에 둔다.
+     */
     const big = shape === 'tall';                       // 세로형은 더 크게 — 멀리서 본다
-    const gap = big ? 0.055 : 0.085;
+    const gap = big ? 0.070 : 0.095;                    // 제목 → 혜택
+    const eyeGap = big ? 0.056 : 0.077;                 // 눈썹 → 제목
     const hasEye = !!txt.eyebrow;
-    // 눈썹 문구가 붙으면 한 줄이 더 늘어나므로 제목을 그만큼 아래로 민다
-    const base = topSide ? (big ? 0.14 : 0.16) : (big ? 0.80 : 0.84);
-    const y0 = hasEye ? base + gap * 0.7 : base;
-    const strong = light ? '#1b1d21' : '#ffffff';
-    const soft = light ? '#4a4f57' : '#e9e6e1';
+    // 눈썹이 붙으면 한 줄이 더 늘어나므로 제목을 그만큼 밀어 넣는다
+    const y0 = topSide
+      ? (hasEye ? (big ? 0.20 : 0.245) : (big ? 0.14 : 0.16))
+      : (hasEye ? (big ? 0.76 : 0.79) : (big ? 0.80 : 0.84));
+    const ink = inkOf(r.mean);
+    const strong = ink.title;
+    const soft = ink.small;
 
     layers.push({
-      id: 'auto-scrim', kind: 'scrim', x: 0.5, y: topSide ? base + 0.02 : base - 0.02,
-      w: 1, h: big ? 0.30 : 0.40, color: light ? '#ffffff' : '#000000',
-      opacity: Math.max(0.18, Math.min(0.62, r.sd / 90)),
+      id: 'auto-scrim', kind: 'scrim', x: 0.5, y: topSide ? 0.18 : 0.82,
+      w: 1, h: big ? 0.34 : 0.46, color: ink.scrim,
+      // 중간톤에서는 그늘을 얕게 — 짙게 깔면 흰 제목이 오히려 묻힌다
+      opacity: Math.max(0.18, Math.min(0.62, r.sd / 90)) * (ink.mid ? 0.55 : 1),
       direction: topSide ? 'top' : 'bottom',
     });
     if (hasEye) layers.push({
-      id: 'auto-eyebrow', kind: 'text', x: 0.5, y: y0 - gap * 0.72, text: txt.eyebrow,
-      size: fitText(txt.eyebrow, big ? 0.036 : 0.030, 0.82), weight: 600, tracking: 0.02,
-      lineHeight: 1.25, align: 'middle', color: strong, opacity: 1, shadow: false, curve: 0,
+      id: 'auto-eyebrow', kind: 'text', x: 0.5, y: y0 - eyeGap, text: txt.eyebrow,
+      size: fitText(txt.eyebrow, big ? 0.034 : 0.030, 0.82), weight: 600, tracking: 0.02,
+      lineHeight: 1.25, align: 'middle', color: soft, opacity: 1, shadow: false, curve: 0,
     });
     if (txt.title) layers.push({
       id: 'auto-title', kind: 'text', x: 0.5, y: y0, text: txt.title,
-      size: fitText(txt.title, big ? 0.105 : 0.085, 0.86), weight: 800, tracking: -0.01,
+      size: fitText(txt.title, big ? 0.095 : 0.075, 0.86), weight: 800, tracking: -0.01,
       lineHeight: 1.2, align: 'middle', color: strong,
       opacity: 1, shadow: false, curve: 0,
     });
     if (txt.subtitle) layers.push({
       id: 'auto-sub', kind: 'text', x: 0.5, y: y0 + gap, text: txt.subtitle,
-      size: fitText(txt.subtitle, big ? 0.038 : 0.032, 0.82), weight: 500, tracking: 0.04,
+      size: fitText(txt.subtitle, big ? 0.032 : 0.028, 0.82), weight: 500, tracking: 0.02,
       lineHeight: 1.3, align: 'middle', color: soft,
       opacity: 1, shadow: false, curve: 0,
     });
     if (txt.cta) {
-      const cs = fitText(txt.cta, big ? 0.036 : 0.032, 0.7);
+      const cs = fitText(txt.cta, big ? 0.032 : 0.028, 0.7);
       // 화살표 자리까지 세어서 알약 폭을 잡는다 (가로형과 같은 규칙)
       const pw = Math.min(0.9, ((textEm(txt.cta) + 3.2) * cs * S) / W);
-      const cy = topSide ? (big ? 0.9 : 0.88) : (big ? 0.10 : 0.12);
-      const on = light ? '#ffffff' : '#1b1d21';
+      const cy = topSide ? (big ? 0.9 : 0.87) : (big ? 0.10 : 0.13);
+      const on = '#ffffff';
       layers.push({
         id: 'auto-pill', kind: 'rect', x: 0.5, y: cy, w: pw,
-        h: (cs * S * 2.4) / H, color: light ? '#2f3a5c' : '#ffffff', opacity: 0.95, radius: 0.06,
+        h: (cs * S * 2.6) / H, color: pillFrom(reg.dominant), opacity: 0.95, radius: 0.06,
       });
       layers.push({
         id: 'auto-cta', kind: 'text', x: 0.5 - (cs * S * 0.6) / W, y: cy, text: txt.cta, size: cs,
