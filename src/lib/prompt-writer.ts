@@ -152,6 +152,13 @@ export interface GenerationSpec {
   /** 업로드 base 에서 무엇을 바꿀지 */
   editTargets?: EditTarget[];
 
+  /**
+   * 레퍼런스(베이스)에 담긴 제품 — 인물 대비 스케일을 못박기 위한 것.
+   * ref 흐름은 products[] 가 비어 제품 실측이 안 들어간다. 이걸 채우면
+   * 모델 키와 이 제품 치수를 숫자로 비교해 빈백 대비 사람 크기를 잡는다.
+   */
+  scaleProduct?: { line: string; dims: { w?: number; d?: number; h?: number }; scalePrompt: string };
+
   /** 제품 형태 레퍼 (모델 제거본) */
   shapeRef?: { url: string; name: string };
   /** 포즈·각도 레퍼 (모델 포함본) */
@@ -469,6 +476,54 @@ function wherePhrase(placement: string): string {
   return `on the ${p}`;
 }
 
+/**
+ * 인물-가구 스케일 블록.
+ *
+ * 빈백 대비 사람 크기가 흔들리는 걸 막는다. 모델별 실측 키를 한데 모아
+ * "하나의 일관된 사람 크기"로 못박고, 레퍼런스에 담긴 제품이 지정되면
+ * 그 제품 치수와 숫자로 비교한다. 제품이 없으면 일반적인 가구 현실성 문장만.
+ *
+ * ref(베이스 교체) 흐름은 productBlock 이 비어 스케일 앵커가 통째로 빠졌다 —
+ * 그래서 모델이 사람을 크게/작게 그렸다. 이 블록이 그 구멍을 메운다.
+ */
+function scaleBlock(spec: GenerationSpec): string[] {
+  const talents = spec.talents ?? [];
+  if (!talents.length) return [];
+  const heights = talents
+    .map((t, i) => {
+      const h = (t.sizeEn.match(/(\d{2,3})\s?cm/) || [])[1];
+      if (!h) return null;
+      return talents.length > 1 ? `PERSON ${i + 1} ${h}cm` : `${h}cm`;
+    })
+    .filter(Boolean) as string[];
+
+  const L: string[] = [''];
+  L.push(
+    'SCALE — render every person at ONE consistent, true-to-life human scale, correct relative to each other AND to ' +
+      'every piece of furniture in the frame. Heads and faces must not be enlarged.',
+  );
+  if (heights.length) L.push(`  Real heights: ${heights.join(', ')}. Keep these height proportions between the people.`);
+
+  const sp = spec.scaleProduct;
+  if (sp) {
+    const d = sp.dims || {};
+    const dims = [d.w && `${d.w}cm wide`, d.d && `${d.d}cm deep`, d.h && `${d.h}cm long/tall`].filter(Boolean).join(' x ');
+    L.push(
+      `  The Yogibo ${sp.line} in this scene measures ${dims || 'its real size'} — ${sp.scalePrompt}. ` +
+        'Size every person against it: a seated adult sinks into it and their body takes up a large part of it, ' +
+        'and an adult lying along it spans nearly its whole length. Do not shrink the people so it looks oversized, ' +
+        'nor enlarge them so it looks like a small cushion.',
+    );
+  } else {
+    L.push(
+      '  Keep the Yogibo furniture at its true real-world size against these people — a Yogibo floor lounger is ' +
+        'roughly as long as an adult is tall (about 170cm). Do NOT shrink the people so the furniture looks oversized, ' +
+        'nor enlarge them so a large floor lounger reads like a small cushion.',
+    );
+  }
+  return L;
+}
+
 function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
   const talents = spec.talents ?? [];
   if (!talents.length) return [];
@@ -669,6 +724,9 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
   const tb = talentBlock(spec, refs);
   if (tb.length) { L.push(...tb); L.push(''); }
 
+  const sb = scaleBlock(spec);
+  if (sb.length) { L.push(...sb); L.push(''); }
+
   L.push(compositionFor(spec));
 
   if (spec.size.retention < 0.97) {
@@ -767,6 +825,9 @@ function specToBrief(spec: GenerationSpec, refs: RefSlot[]): string {
 
   const tb = talentBlock(spec, refs);
   if (tb.length) { L.push(''); L.push('인물 정보 (여러 명이면 사진 왼쪽부터 순서 배정):'); L.push(...tb.map((x) => '  ' + x)); }
+
+  const sb = scaleBlock(spec);
+  if (sb.length) { L.push(''); L.push('스케일 (빈백 대비 사람 크기 — 반드시 반영):'); L.push(...sb.filter(Boolean).map((x) => '  ' + x)); }
 
   const vars = (spec.variations ?? []).filter((v) => v.hint);
   if (vars.length) { L.push(''); L.push('연출 옵션: ' + vars.map((v) => `${v.label}(${v.hint})`).join(', ')); }

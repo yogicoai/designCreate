@@ -192,6 +192,8 @@ export default function CreateStudio(p: Props) {
   const [showLibrary, setShowLibrary] = useState(false);
   const [preservation, setPreservation] = useState('similar');
   const [editTargets, setEditTargets] = useState<EditTarget[]>([]);
+  // 레퍼런스에 담긴 제품 — 인물 대비 스케일용 (사진 속 빈백이 무엇인지)
+  const [refProduct, setRefProduct] = useState('');
   const [direction, setDirection] = useState('');
   const [samples, setSamples] = useState(1);
   /** 품질 티어 — 초안은 Flash 로 싸게 돌려보고, 확정본만 Pro 로 */
@@ -416,6 +418,7 @@ export default function CreateStudio(p: Props) {
       ...(baseTab === 'pose' && shapeRefKey ? { shapeRefKey } : {}),
       ...(uploads.length ? { uploadedRefs: uploads, preservation } : {}),
       ...(hasBaseUpload && editTargets.length ? { editTargets } : {}),
+      ...(refProduct ? { refProduct } : {}),
       engine,
       ...(direction.trim() ? { direction: direction.trim() } : {}),
       tier,
@@ -759,11 +762,30 @@ export default function CreateStudio(p: Props) {
                   })}
                 </div>
                 {editTargets.includes('face') || editTargets.includes('person') || editTargets.includes('add-person') ? (
-                  <div className="text-[10.5px] mt-2" style={{ color: 'var(--text-dim)' }}>
-                    {editTargets.includes('add-person')
-                      ? '앉힐 모델을 아래 모델 섹션에서 고르세요. 사진 왼쪽 좌석부터 ①②③④ 순서로 앉습니다. 제품은 비워두세요 — 사진의 빈백을 그대로 씁니다.'
-                      : '교체할 모델을 아래 ④에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.'}
-                  </div>
+                  <>
+                    <div className="text-[10.5px] mt-2" style={{ color: 'var(--text-dim)' }}>
+                      {editTargets.includes('add-person')
+                        ? '앉힐 모델을 아래 모델 섹션에서 고르세요. 사진 왼쪽 좌석부터 ①②③④ 순서로 앉습니다. 제품은 비워두세요 — 사진의 빈백을 그대로 씁니다.'
+                        : '교체할 모델을 아래 ④에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.'}
+                    </div>
+                    {/*
+                      사진 속 빈백이 무엇인지 알려주면, 그 실측 치수로 모델 크기를 잡는다.
+                      빈백 대비 사람이 크게/작게 나오는 걸 막는다 (스케일 앵커).
+                    */}
+                    <div className="mt-2">
+                      <div className="label mb-1">사진 속 빈백 (모델 크기 기준 — 선택)</div>
+                      <select className="input py-1 text-[12px]" value={refProduct}
+                              onChange={(e) => setRefProduct(e.target.value)}>
+                        <option value="">— 모르면 비워두세요 —</option>
+                        {p.products.filter((x) => !x.accessory).map((x) => (
+                          <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>
+                        ))}
+                      </select>
+                      <div className="text-[10.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                        고르면 그 빈백의 실측 크기로 모델 키와 비교해 앉힙니다 — 빈백 대비 사람이 너무 크거나 작게 나오는 걸 줄입니다.
+                      </div>
+                    </div>
+                  </>
                 ) : null}
               </div>
             )}

@@ -56,6 +56,7 @@ const DEFS = [
 const rows = DEFS.map(([group, key, label, w, h, note], i) => {
   const plan = planAspect(w, h);
   return {
+    _id: `${w}x${h}`,          // 생성 라우트가 _id 로 규격을 찾는다 — value 와 같아야 한다
     value: `${w}x${h}`,
     label: `${label} (${w}×${h})`,
     group, width: w, height: h,

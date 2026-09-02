@@ -69,6 +69,8 @@ interface TalentPick {
 interface Body {
   mode?: 'thumbnail' | 'banner';
   baseCutId?: string;
+  /** ref 흐름에서 '이 레퍼런스에 담긴 제품' — 인물 대비 스케일용. products[] 와 별개 */
+  refProduct?: string;
   /** 베이스 컷 사용 방식 — full(그대로 재현) | pose(포즈만 빌림) */
   baseCutUsage?: 'full' | 'pose';
   uploadedRefs?: { url: string; title: string; role?: 'style' | 'base' | 'background' }[];
@@ -339,6 +341,14 @@ export async function POST(req: Request) {
     const color = product?.colors?.find((c: { key: string }) => c.key === picks[0]?.colorKey) ?? null;
 
     // ── 3) 프롬프트 작성 ──────────────────────────────────────────
+    /*
+     * 레퍼런스에 담긴 제품 — 인물 대비 스케일을 못박기 위해서만 쓴다.
+     * 명시 제품(products[])이 이미 있으면 그게 스케일까지 담당하므로 중복으로 안 넣는다.
+     */
+    const scaleProductDoc = !productSpecs.length && body.refProduct
+      ? await db.collection('products').findOne({ _id: body.refProduct as never })
+      : null;
+
     const spec: GenerationSpec = {
       mode: body.mode || 'thumbnail',
       ...(baseCut
@@ -354,6 +364,10 @@ export async function POST(req: Request) {
       ...(usageShot ? { usageShot: { url: usageShot.url, kindEn: usageShot.kindEn, kindKr: usageShot.kindKr } } : {}),
       ...(talents.length ? { talents } : {}),
       ...(productSpecs.length ? { products: productSpecs } : {}),
+      // 레퍼런스에 담긴 제품이 지정되면 인물 대비 스케일 앵커를 넣는다 (제품 블록과 무관하게)
+      ...(scaleProductDoc
+        ? { scaleProduct: { line: scaleProductDoc.line, dims: scaleProductDoc.dims ?? {}, scalePrompt: scaleProductDoc.scalePrompt ?? '' } }
+        : {}),
       size: {
         width: size.width,
         height: size.height,
@@ -402,6 +416,7 @@ export async function POST(req: Request) {
           preservation: body.preservation ?? null,
           talents: body.talents ?? [],
           products: body.products ?? (body.line ? [{ line: body.line, colorKey: body.colorKey }] : []),
+          ...(body.refProduct ? { refProduct: body.refProduct } : {}),
           uploadedRefs: body.uploadedRefs ?? [],
           direction: body.direction ?? '',
           sizeValue: body.sizeValue ?? '',
