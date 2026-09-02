@@ -39,13 +39,19 @@ function setNavCollapsed(next: boolean) {
  */
 const NAV = [
   {
-    group: '생성',
+    group: '이미지 생성',
     items: [
       { href: '/', label: '대시보드', icon: '◆' },
       { href: '/create', label: '이미지 생성', icon: '✦' },
-      // 컷을 만든 다음 곧바로 글자를 얹는 순서라 이미지 생성 바로 밑에 둔다
+      { href: '/cuts', label: '생성이미지 갤러리', icon: '▣' },
+    ],
+  },
+  {
+    // 컷을 만든 다음 글자를 얹는 일 — 만드는 화면과 쌓인 것을 관리하는 화면으로 나눈다
+    group: '디자인',
+    items: [
       { href: '/design', label: '배너 디자인 생성', icon: '✎' },
-      { href: '/cuts', label: '컷 갤러리', icon: '▣' },
+      { href: '/design/manage', label: '배너 디자인 관리', icon: '▤' },
     ],
   },
   {
@@ -67,6 +73,20 @@ const NAV = [
   },
 ];
 
+/**
+ * 지금 보고 있는 항목 하나를 고른다.
+ * 앞부분만 맞으면 켜는 방식이면 /design/manage 에서 /design 까지 같이 켜진다.
+ * 가장 길게 맞는 것 하나만 남긴다.
+ */
+function activeHrefFor(path: string): string {
+  let best = '';
+  for (const it of NAV.flatMap((g) => g.items)) {
+    const hit = path === it.href || (it.href !== '/' && path.startsWith(`${it.href}/`));
+    if (hit && it.href.length > best.length) best = it.href;
+  }
+  return best;
+}
+
 /** 접기 버튼 — 접힌 상태에서는 이게 유일한 단서라 항상 보여야 한다 */
 function ToggleButton({ collapsed, onClick }: { collapsed: boolean; onClick: () => void }) {
   return (
@@ -75,10 +95,10 @@ function ToggleButton({ collapsed, onClick }: { collapsed: boolean; onClick: () 
       aria-label={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
       aria-expanded={!collapsed}
       title={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
-      className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-[12px]"
+      className="shrink-0 w-7 h-7 flex items-center justify-center text-[12px]"
       style={{
         background: 'var(--surface-2)', border: '1px solid var(--line)',
-        color: 'var(--text-mute)', cursor: 'pointer',
+        color: 'var(--text-mute)', cursor: 'pointer', borderRadius: 'var(--radius)',
       }}
     >
       {collapsed ? '»' : '«'}
@@ -95,6 +115,7 @@ function NavBody({
   onToggle?: () => void;
 }) {
   const narrow = !!collapsed;
+  const activeHref = activeHrefFor(path);
   return (
     <>
       <div className={`pt-4 pb-4 ${narrow ? 'px-2' : 'px-4'}`}>
@@ -134,7 +155,7 @@ function NavBody({
               ? <div className="mx-2 mb-1.5" style={{ borderTop: '1px solid var(--line)' }} />
               : <div className="label px-2.5 mb-1.5">{g.group}</div>}
             {g.items.map((it) => {
-              const active = path === it.href || (it.href !== '/' && path.startsWith(it.href));
+              const active = it.href === activeHref;
               return (
                 <Link
                   key={it.href}
@@ -178,9 +199,7 @@ export default function Sidebar() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
-  const current = NAV.flatMap((g) => g.items).find(
-    (it) => path === it.href || (it.href !== '/' && path.startsWith(it.href)),
-  );
+  const current = NAV.flatMap((g) => g.items).find((it) => it.href === activeHrefFor(path));
 
   return (
     <>
@@ -202,8 +221,8 @@ export default function Sidebar() {
         <button
           onClick={() => setOpen(true)}
           aria-label="메뉴 열기"
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-[15px]"
-          style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--text-dim)', cursor: 'pointer' }}
+          className="w-9 h-9 flex items-center justify-center text-[15px]"
+          style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--text-dim)', cursor: 'pointer', borderRadius: 'var(--radius)' }}
         >
           ☰
         </button>

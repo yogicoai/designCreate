@@ -78,7 +78,8 @@ body {
 
   .btn {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    /* 카드와 같은 --radius(10px). 버튼만 8px 이면 나란히 놓였을 때 어긋나 보인다 */
+    padding: 7px 14px; border-radius: var(--radius); font-size: 13px; font-weight: 600;
     border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--text);
     cursor: pointer; transition: background .13s, border-color .13s, opacity .13s;
     white-space: nowrap;
@@ -91,7 +92,7 @@ body {
   .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
 
   .input {
-    width: 100%; padding: 8px 11px; border-radius: 8px; font-size: 13px;
+    width: 100%; padding: 8px 11px; border-radius: var(--radius); font-size: 13px;
     background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
     outline: none; transition: border-color .13s;
   }

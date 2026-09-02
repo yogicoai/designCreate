@@ -24,10 +24,14 @@ interface SavedTemplate { id: string; name: string; design: DesignDoc; updatedAt
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
-/** 새 레이어의 기본값 — 만들자마자 화면 가운데에 보이게 */
+/**
+ * 새 레이어의 기본값 — 만들자마자 화면 가운데에 보이게.
+ * 글자 외곽 그림자는 끈 채로 시작한다. 판판한 글씨가 깔끔하고,
+ * 배경에 묻힐 때만 선택한 레이어에서 켜면 된다.
+ */
 function newLayer(kind: DesignLayer['kind'], color: string): DesignLayer {
   const base = { id: uid(), kind, x: 0.5, y: 0.5, color, opacity: 1 } as DesignLayer;
-  if (kind === 'text') return { ...base, text: '새 문구', size: 0.06, weight: 700, tracking: 0, lineHeight: 1.25, align: 'middle', shadow: true, curve: 0 };
+  if (kind === 'text') return { ...base, text: '새 문구', size: 0.06, weight: 700, tracking: 0, lineHeight: 1.25, align: 'middle', shadow: false, curve: 0 };
   if (kind === 'icon') return { ...base, icon: 'arrow', size: 0.06, stroke: 0.09 };
   if (kind === 'rect') return { ...base, w: 0.4, h: 0.1, radius: 0.05 };
   return { ...base, x: 0.5, y: 0.2, w: 1, h: 0.4, opacity: 0.5, direction: 'top' };
@@ -80,10 +84,15 @@ function Step({
   );
 }
 
-export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
-  const [imageUrl, setImageUrl] = useState(cuts[0]?.url ?? '');
+/** 저장된 배너를 다시 열 때, 그때 쓴 문구를 입력칸에 되돌려 놓는다 */
+function textOf(d: DesignDoc | undefined, id: string, fallback: string) {
+  return d?.layers.find((l) => l.id === id)?.text ?? fallback;
+}
+
+export default function DesignStudio({ cuts, initial }: { cuts: CutOption[]; initial?: DesignDoc }) {
+  const [imageUrl, setImageUrl] = useState(initial?.imageUrl || cuts[0]?.url || '');
   const [themeId, setThemeId] = useState('dark');
-  const [layers, setLayers] = useState<DesignLayer[]>([]);
+  const [layers, setLayers] = useState<DesignLayer[]>(initial?.layers ?? []);
   const [selected, setSelected] = useState<string | null>(null);
   const [templates, setTemplates] = useState<SavedTemplate[]>([]);
   const [busy, setBusy] = useState<'auto' | 'save' | 'tpl' | null>(null);
@@ -93,10 +102,10 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
   const [tweakOpen, setTweakOpen] = useState(false);
   // 원본 컷의 크기와 '걸릴 자리'의 규격은 다른 값이다. 둘을 섞으면 미리보기가 어긋난다
   const [src, setSrc] = useState({ w: 1000, h: 1000 });
-  const [sizeId, setSizeId] = useState('');            // '' = 컷 크기 그대로
-  const [fitMode, setFitMode] = useState<'cover' | 'blur'>('cover');
-  const [fx, setFx] = useState(0.5);                   // 잘라낼 때 남길 가로 위치
-  const [fy, setFy] = useState(0.45);                  // 세로 위치 — 인물이 아래면 올린다
+  const [sizeId, setSizeId] = useState(initial?.size?.id ?? '');   // '' = 컷 크기 그대로
+  const [fitMode, setFitMode] = useState<'cover' | 'blur'>(initial?.fit?.mode ?? 'cover');
+  const [fx, setFx] = useState(initial?.fit?.fx ?? 0.5);           // 잘라낼 때 남길 가로 위치
+  const [fy, setFy] = useState(initial?.fit?.fy ?? 0.45);          // 세로 위치 — 인물이 아래면 올린다
   /*
    * 자동 배치 입력 — 이 화면의 기본 사용법이다.
    *
@@ -104,10 +113,10 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
    *   눈썹(작게 한 줄) → 제목(크게) → 혜택 한 줄 → 버튼.
    * 빈칸에서 시작하면 무엇을 넣어야 하는지가 안 보인다.
    */
-  const [autoEyebrow, setAutoEyebrow] = useState('함께 쓸 때 더 완성되는 요기보 조합');
-  const [autoTitle, setAutoTitle] = useState('요기보 빈백·서포트 세트');
-  const [autoSub, setAutoSub] = useState('상시할인 · 전 구성 무료배송 · 5% 추가 적립까지');
-  const [autoCta, setAutoCta] = useState('세트 구매하기');
+  const [autoEyebrow, setAutoEyebrow] = useState(() => textOf(initial, 'auto-eyebrow', '함께 쓸 때 더 완성되는 요기보 조합'));
+  const [autoTitle, setAutoTitle] = useState(() => textOf(initial, 'auto-title', '요기보 빈백·서포트 세트'));
+  const [autoSub, setAutoSub] = useState(() => textOf(initial, 'auto-sub', '상시할인 · 전 구성 무료배송 · 5% 추가 적립까지'));
+  const [autoCta, setAutoCta] = useState(() => textOf(initial, 'auto-cta', '세트 구매하기'));
   const [picked, setPicked] = useState<{ where: string; light: boolean; sd: number; shape: string } | null>(null);
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -170,7 +179,7 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
     const txts: DesignLayer[] = t.layers.map((x) => ({
       id: uid(), kind: 'text', x: x.x, y: x.y, text: x.placeholder,
       size: x.size, weight: x.weight, tracking: x.tracking, lineHeight: 1.25,
-      align: x.align, shadow: true, curve: 0,
+      align: x.align, shadow: false, curve: 0,
       color: x.tone === 'strong' ? th.strong : x.tone === 'soft' ? th.soft : th.accentText,
       opacity: 1,
     }));
@@ -247,7 +256,10 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
   // 렌더 중에 ref 를 건드리면 안 되므로 커밋 뒤에 최신값으로 맞춘다.
   // 아래 효과보다 먼저 선언돼 있어서 같은 커밋에서 항상 먼저 돈다
   useEffect(() => { layersRef.current = layers; autoRef.current = autoLayout; });
+  // 불러온 배치를 첫 렌더에서 덮어쓰지 않도록 한 번 걸러낸다
+  const firstRun = useRef(true);
   useEffect(() => {
+    if (firstRun.current) { firstRun.current = false; return; }
     const cur = layersRef.current;
     if (!imageUrl || cur.length === 0 || !cur.every(isAuto)) return;
     const t = setTimeout(() => { autoRef.current(true); }, 500);   // 슬라이더를 끄는 동안 매번 부르지 않게

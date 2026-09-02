@@ -1,3 +1,4 @@
+import type { DesignDoc } from '@/lib/design-render';
 /**
  * imgCreate 문서 스키마 — 앱(TS)과 시드 스크립트(mjs)가 공유하는 단일 정의.
  * 검증은 런타임 스키마 대신 이 타입 + 시드의 정규화 함수로 맞춘다.
@@ -200,6 +201,13 @@ export interface CutDoc {
   height?: number;
   /** 컬러 보정 적용 후 실측 ΔE */
   deltaE?: number;
+  /** 규격 이름 (배너는 '배너 디자인') */
+  sizeLabel?: string;
+  /**
+   * 배너 디자인의 설계도 전체 (provider='design' 인 컷에만 있다).
+   * 이게 있어야 저장한 배너를 다시 열어 고칠 수 있다.
+   */
+  design?: DesignDoc;
 
   hidden: boolean;
   note: string;

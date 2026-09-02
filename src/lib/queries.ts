@@ -66,6 +66,10 @@ export interface CutFilter {
   colorKey?: string;
   talentCode?: string;
   source?: 'legacy' | 'imgcreate';
+  /** 'design' 이면 저장된 배너만 (배너 관리 게시판용) */
+  provider?: string;
+  /** 배경 후보에서 배너를 빼기 위한 것 — 배너 위에 배너를 얹을 일은 없다 */
+  notProvider?: string;
   limit?: number;
 }
 
@@ -76,6 +80,8 @@ export async function getCuts(f: CutFilter = {}): Promise<WithId<CutDoc>[]> {
   if (f.colorKey) q.colorKey = f.colorKey;
   if (f.talentCode) q['recipe.talentCodes'] = f.talentCode;
   if (f.source) q.source = f.source;
+  if (f.provider) q.provider = f.provider;
+  if (f.notProvider) q.provider = { $ne: f.notProvider };
   const docs = await col.find(q).sort({ createdAt: -1 }).limit(f.limit ?? 500).toArray();
   // Date 는 직렬화되지 않으므로 문자열로 바꾼다
   return docs.map((d) => {
