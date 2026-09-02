@@ -8,6 +8,10 @@ import { BANNER_SIZES, findSize, shapeOf, cropLoss } from '@/lib/banner-sizes';
 /**
  * 배너 디자인 생성 — 간단한 포토샵.
  *
+ * 화면이 곧 순서다: 컷 고르기 → 어디에 걸 배너인가 → 문구 → (선택) 다듬기.
+ * 쓰는 사람이 디자이너가 아니라서, 세 번 만지면 완성되고 나머지는 접혀 있어야 한다.
+ * 그래서 단계는 오른쪽 한 줄에 번호를 달아 세우고, 왼쪽은 결과만 크게 보여준다.
+ *
  * 미리보기를 CSS 로 흉내내지 않고 **저장할 때와 똑같은 SVG** 를 그대로 띄운다.
  * 그래야 화면에서 본 것과 저장본이 어긋나지 않는다 (곡선 텍스트처럼
  * CSS 로는 재현 못 하는 연출이 있기 때문에도 필요하다).
@@ -29,16 +33,64 @@ function newLayer(kind: DesignLayer['kind'], color: string): DesignLayer {
   return { ...base, x: 0.5, y: 0.2, w: 1, h: 0.4, opacity: 0.5, direction: 'top' };
 }
 
+/** 자동 배치가 만든 레이어인가 — 손대지 않은 배치만 규격이 바뀔 때 다시 잡는다 */
+const isAuto = (l: DesignLayer) => l.id.startsWith('auto-');
+
+/**
+ * 단계 카드.
+ *
+ * 이 화면은 순서대로 밟는 물건이라 번호를 붙이고 끝낸 단계는 표시한다.
+ * 앞 단계를 안 끝냈으면 흐리게 죽여서, 어디부터 손대야 할지 헤매지 않게 한다.
+ */
+function Step({
+  n, title, hint, done, disabled, open, onToggle, accent, children,
+}: {
+  n: number; title: string; hint?: string;
+  done?: boolean; disabled?: boolean;
+  open?: boolean; onToggle?: () => void;
+  accent?: boolean;
+  children: React.ReactNode;
+}) {
+  const collapsible = typeof open === 'boolean' && !!onToggle;
+  const shown = collapsible ? open : true;
+  return (
+    <div className="card p-3 mb-3"
+         style={{
+           borderColor: accent ? 'var(--accent-dim)' : undefined,
+           opacity: disabled ? 0.5 : 1,
+           pointerEvents: disabled ? 'none' : undefined,
+         }}>
+      <div className={`flex items-center gap-2 ${shown ? 'mb-2' : ''}`}
+           onClick={onToggle}
+           style={{ cursor: collapsible ? 'pointer' : undefined }}>
+        <span className="shrink-0 grid place-items-center rounded-full text-[10px] font-bold tabular-nums"
+              style={{
+                width: 18, height: 18,
+                background: done ? 'var(--accent)' : 'var(--surface-3)',
+                color: done ? '#fff' : 'var(--text-mute)',
+              }}>
+          {done ? '✓' : n}
+        </span>
+        <span className="label flex-1" style={{ color: 'var(--text-dim)' }}>{title}</span>
+        {hint && <span className="text-[10.5px] tabular-nums" style={{ color: 'var(--text-mute)' }}>{hint}</span>}
+        {collapsible && <span className="text-[10px]" style={{ color: 'var(--text-mute)' }}>{shown ? '▲' : '▼'}</span>}
+      </div>
+      {shown && children}
+    </div>
+  );
+}
+
 export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
   const [imageUrl, setImageUrl] = useState(cuts[0]?.url ?? '');
   const [themeId, setThemeId] = useState('dark');
   const [layers, setLayers] = useState<DesignLayer[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [templates, setTemplates] = useState<SavedTemplate[]>([]);
-  const [busy, setBusy] = useState<'save' | 'tpl' | null>(null);
+  const [busy, setBusy] = useState<'auto' | 'save' | 'tpl' | null>(null);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const [result, setResult] = useState<string | null>(null);
+  const [tweakOpen, setTweakOpen] = useState(false);
   // 원본 컷의 크기와 '걸릴 자리'의 규격은 다른 값이다. 둘을 섞으면 미리보기가 어긋난다
   const [src, setSrc] = useState({ w: 1000, h: 1000 });
   const [sizeId, setSizeId] = useState('');            // '' = 컷 크기 그대로
@@ -143,13 +195,13 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
   const onUp = () => { dragRef.current = null; };
 
   /**
-   * 자동 배치 — 배경을 분석해 빈 곳에, 읽히는 색으로 얹는다.
+   * 자동 배치 — 규격의 비율을 보고, 배경에서 비어 있는 곳에 읽히는 색으로 얹는다.
    * 디자이너가 아닌 사람이 쓰는 도구라 이게 기본 동선이다.
-   * 결과가 마음에 안 들면 아래에서 손으로 고치면 된다.
+   * 결과가 마음에 안 들면 4단계에서 손으로 고치면 된다.
    */
-  async function autoLayout() {
+  const autoLayout = useCallback(async (again = false) => {
     if (!imageUrl) { setErr('배경 컷을 골라주세요.'); return; }
-    setBusy('save'); setErr(''); setNote('');
+    setBusy('auto'); setErr(''); setNote('');
     try {
       const r = await fetch('/api/design', {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -167,10 +219,33 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
       setSelected(null);
       setResult(null);
       const kind = j.picked.shape === 'wide' ? '가로형' : j.picked.shape === 'tall' ? '세로형' : '정사각';
-      setNote(`${kind} ${dims.w}×${dims.h} — ${j.picked.where} 여백에 배치했습니다 `
+      setNote(`${again ? '규격이 바뀌어 다시 잡았습니다 — ' : ''}${kind} ${dims.w}×${dims.h}, `
+        + `${j.picked.where} 여백에 배치 `
         + `(${j.picked.light ? '밝은 배경이라 짙은 글씨' : '어두운 배경이라 흰 글씨'}).`);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
-  }
+  }, [imageUrl, autoTitle, autoSub, autoCta, sizeId, dims, fit]);
+
+  /*
+   * 규격이나 자르기를 바꾸면 배치를 다시 잡는다.
+   *
+   * 좌표가 0~1 비율이라 규격이 바뀌어도 '깨지진' 않는다. 하지만 가로형과 정사각은
+   * 애초에 배치 규칙이 다르다 — 가로형은 옆에 세우고 정사각은 위아래로 쌓는다.
+   * 규격만 바꿔놓고 배치가 그대로면 쓰는 사람은 왜 어색한지 알 수가 없다.
+   *
+   * 손으로 옮긴 배치는 건드리지 않는다 (자동으로 만든 레이어만 다시 잡는다).
+   * layers 를 의존성에 넣으면 자기가 부른 setLayers 때문에 무한히 돌기 때문에 ref 로 읽는다.
+   */
+  const layersRef = useRef(layers);
+  const autoRef = useRef(autoLayout);
+  // 렌더 중에 ref 를 건드리면 안 되므로 커밋 뒤에 최신값으로 맞춘다.
+  // 아래 효과보다 먼저 선언돼 있어서 같은 커밋에서 항상 먼저 돈다
+  useEffect(() => { layersRef.current = layers; autoRef.current = autoLayout; });
+  useEffect(() => {
+    const cur = layersRef.current;
+    if (!imageUrl || cur.length === 0 || !cur.every(isAuto)) return;
+    const t = setTimeout(() => { autoRef.current(true); }, 500);   // 슬라이더를 끄는 동안 매번 부르지 않게
+    return () => clearTimeout(t);
+  }, [sizeId, fitMode, fx, fy, imageUrl]);
 
   async function render(save: boolean) {
     if (!imageUrl) { setErr('배경 컷을 골라주세요.'); return; }
@@ -212,31 +287,24 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
     </label>
   );
 
+  const sizeName = sizeId ? findSize(sizeId).label : '컷 크기 그대로';
+  const shapeWord = shape === 'wide' ? '가로형' : shape === 'tall' ? '세로형' : '정사각';
+
   return (
     <div className="flex flex-col xl:flex-row gap-4">
-      {/* ── 무대 ── */}
+      {/* ── 왼쪽: 결과만 크게 ── */}
       <div className="flex-1 min-w-0">
-        <div className="card p-3 mb-3">
-          <div className="label mb-1.5">배경 컷</div>
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
-            {cuts.map((c) => (
-              <button key={c.id} onClick={() => { setImageUrl(c.url); setResult(null); }} title={c.label}
-                      className="shrink-0 rounded-lg overflow-hidden border" style={{ padding: 0 }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={c.url} alt={c.label} loading="lazy" className="object-cover"
-                     style={{ width: 62, height: 62, borderColor: 'var(--line)',
-                              outline: c.url === imageUrl ? '2px solid var(--accent)' : 'none', outlineOffset: -2 }} />
-              </button>
-            ))}
-            {cuts.length === 0 && (
-              <span className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
-                생성된 컷이 없습니다. 먼저 이미지를 만들어주세요.
-              </span>
-            )}
-          </div>
-        </div>
-
         <div className="card p-3">
+          {/* 지금 무엇을 만들고 있는지 한 줄로 — 규격을 바꿔가며 쓰는 화면이라 필요하다 */}
+          <div className="flex items-baseline justify-between gap-2 flex-wrap mb-2">
+            <div className="label">미리보기 — 저장본과 같은 그림</div>
+            <div className="text-[10.5px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
+              {sizeName} · {dims.w}×{dims.h} · {shapeWord}
+              {needsFit && fitMode === 'cover' && ` · 컷의 ${Math.round(loss * 100)}% 잘림`}
+              {needsFit && fitMode === 'blur' && ' · 안 잘림'}
+            </div>
+          </div>
+
           <div
             ref={stageRef}
             onPointerMove={onMove}
@@ -281,20 +349,25 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
                       background: selected === l.id ? 'rgba(226,80,60,.25)' : 'rgba(0,0,0,.25)',
                     }} />
             ))}
+            {!imageUrl && (
+              <div className="absolute inset-0 grid place-items-center text-[12px]" style={{ color: 'var(--text-mute)' }}>
+                오른쪽 1번에서 배경 컷을 골라주세요.
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2 mt-3 flex-wrap">
-            <button className="btn" onClick={() => render(false)} disabled={!!busy}>미리보기 렌더</button>
-            <button className="btn btn-primary" onClick={() => render(true)} disabled={!!busy}>
+            <button className="btn btn-primary" onClick={() => render(true)} disabled={!!busy || !layers.length}>
               {busy === 'save' ? '저장 중…' : '완성 · 갤러리에 저장'}
             </button>
+            <button className="btn" onClick={() => render(false)} disabled={!!busy || !layers.length}>실제 크기로 확인</button>
             <button className="btn" onClick={saveTemplate} disabled={!!busy || !layers.length}>템플릿으로 저장</button>
           </div>
           {note && <div className="text-[11px] mt-2" style={{ color: 'var(--ok)' }}>{note}</div>}
           {err && <div className="text-[11px] mt-2" style={{ color: 'var(--danger)' }}>{err}</div>}
           {result && (
             <div className="mt-3">
-              <div className="label mb-1">렌더 결과 (저장 전)</div>
+              <div className="label mb-1">실제 크기 렌더 (저장 전)</div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={result} alt="렌더 결과" className="w-full rounded-lg border" style={{ borderColor: 'var(--line-strong)' }} />
             </div>
@@ -302,11 +375,30 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
         </div>
       </div>
 
-      {/* ── 조작 ── */}
-      <aside className="w-full xl:w-[330px] shrink-0">
-        {/* 배너는 '어디에 걸리나'가 먼저 정해지는 물건이라 규격이 1단계다 */}
-        <div className="card p-3 mb-3">
-          <div className="label mb-1.5">1. 배너 규격</div>
+      {/* ── 오른쪽: 밟는 순서 ── */}
+      <aside className="w-full xl:w-[340px] shrink-0">
+        <Step n={1} title="배경 컷 고르기" done={!!imageUrl}
+              hint={imageUrl ? `${src.w}×${src.h}` : undefined}>
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {cuts.map((c) => (
+              <button key={c.id} onClick={() => { setImageUrl(c.url); setResult(null); }} title={c.label}
+                      className="shrink-0 rounded-lg overflow-hidden border" style={{ padding: 0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={c.url} alt={c.label} loading="lazy" className="object-cover"
+                     style={{ width: 58, height: 58, borderColor: 'var(--line)',
+                              outline: c.url === imageUrl ? '2px solid var(--accent)' : 'none', outlineOffset: -2 }} />
+              </button>
+            ))}
+            {cuts.length === 0 && (
+              <span className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
+                생성된 컷이 없습니다. 먼저 이미지를 만들어주세요.
+              </span>
+            )}
+          </div>
+        </Step>
+
+        {/* 배너는 '어디에 걸리나'가 먼저 정해지는 물건이라 문구보다 규격이 먼저다 */}
+        <Step n={2} title="어디에 걸 배너인가" done={!!sizeId} disabled={!imageUrl}>
           <select className="input py-1 text-[12px]" value={sizeId}
                   onChange={(e) => { setSizeId(e.target.value); setResult(null); }}>
             <option value="">컷 크기 그대로 ({src.w}×{src.h})</option>
@@ -319,14 +411,14 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
             ))}
           </select>
           <div className="text-[10.5px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
-            {shape === 'wide' ? '가로형 — 문구를 한쪽 옆에 세웁니다.'
+            {shape === 'wide' ? '가로형 — 문구를 비어 있는 한쪽 옆에 세웁니다.'
               : shape === 'tall' ? '세로형 — 위나 아래에 크게 쌓습니다.'
               : '정사각 — 비어 있는 위/아래에 쌓습니다.'}
           </div>
 
           {needsFit && (
             <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--line)' }}>
-              <div className="label mb-1.5">컷을 규격에 맞추기</div>
+              <div className="label mb-1.5">컷이 이 규격과 비율이 달라요</div>
               <div className="flex gap-1.5 mb-1.5">
                 <button className={`btn flex-1 ${fitMode === 'cover' ? 'btn-primary' : ''}`}
                         onClick={() => { setFitMode('cover'); setResult(null); }}>
@@ -344,7 +436,7 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
                   {num('남길 위치 ↕', fy, 0, 1, 0.01, (n) => { setFy(n); setResult(null); },
                        (n) => `${Math.round(n * 100)}%`)}
                   <div className="text-[10.5px] leading-relaxed" style={{ color: 'var(--text-mute)' }}>
-                    이 규격에서는 컷의 <b style={{ color: 'var(--warn, var(--text-dim))' }}>약 {Math.round(loss * 100)}%</b> 가 잘립니다.
+                    컷의 <b style={{ color: 'var(--warn)' }}>약 {Math.round(loss * 100)}%</b> 가 잘립니다.
                     인물이 잘리면 위 막대로 남길 곳을 옮기세요.
                   </div>
                 </>
@@ -355,37 +447,48 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
               )}
             </div>
           )}
-        </div>
+        </Step>
 
         {/* 기본 동선 — 문구만 넣고 누르면 끝난다 */}
-        <div className="card p-3 mb-3" style={{ borderColor: 'var(--accent-dim)' }}>
-          <div className="label mb-1.5">2. 문구만 넣고 자동 배치</div>
+        <Step n={3} title="문구 넣고 자동 배치" accent disabled={!imageUrl}
+              done={layers.length > 0 && layers.every(isAuto)}>
           <input className="input py-1 text-[12px] mb-1.5" value={autoTitle}
                  onChange={(e) => setAutoTitle(e.target.value)} placeholder="제목" />
           <input className="input py-1 text-[11.5px] mb-1.5" value={autoSub}
                  onChange={(e) => setAutoSub(e.target.value)} placeholder="부제 (선택)" />
           <input className="input py-1 text-[11.5px] mb-2" value={autoCta}
                  onChange={(e) => setAutoCta(e.target.value)} placeholder="버튼 문구 (선택)" />
-          <button className="btn btn-primary w-full" onClick={autoLayout} disabled={!!busy || !imageUrl}>
-            {busy === 'save' ? '분석 중…' : '✨ 자동 배치'}
+          <button className="btn btn-primary w-full" onClick={() => autoLayout(false)} disabled={!!busy || !imageUrl}>
+            {busy === 'auto' ? '분석 중…' : '✨ 자동 배치'}
           </button>
           <div className="text-[10.5px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
-            배경에서 <b>비어 있는 곳</b>을 찾아 글자를 놓고, 배경 밝기에 맞춰 글자색과 그늘을 정합니다.
-            {picked && <><br />이번엔 <b style={{ color: 'var(--text-dim)' }}>{picked.where}</b> 여백을 골랐습니다.</>}
+            규격의 비율에 맞는 배치를 고르고, 배경에서 <b>비어 있는 곳</b>에 글자를 놓습니다.
+            배경 밝기에 따라 글자색과 그늘도 정합니다.
+            {picked && <><br />이번엔 <b style={{ color: 'var(--text-dim)' }}>{picked.where}</b> 여백을 골랐습니다.
+              규격을 바꾸면 알아서 다시 잡습니다.</>}
           </div>
-        </div>
+        </Step>
 
-        <div className="card p-3 mb-3">
-          <div className="label mb-1.5">3. 다른 배치로 바꾸기 (선택)</div>
-          <div className="flex flex-wrap gap-1.5 mb-2">
+        <Step n={4} title="손으로 다듬기 (선택)" open={tweakOpen} onToggle={() => setTweakOpen((v) => !v)}
+              hint={layers.length ? `레이어 ${layers.length}` : undefined}>
+          <div className="label mb-1.5">다른 배치로 바꾸기</div>
+          <div className="flex flex-wrap gap-1.5 mb-1">
             {TEMPLATES.map((t) => (
               <button key={t.id} className="chip" title={t.hint} onClick={() => applyTemplate(t.id)}>{t.name}</button>
             ))}
           </div>
-          <div className="label mb-1.5">색 테마</div>
+          {shape !== 'square' && (
+            <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+              이 템플릿들은 정사각 기준으로 잡아둔 것이라 {shapeWord} 규격에서는 간격이 어색할 수 있습니다.
+              자동 배치가 이 비율에 맞게 잡아줍니다.
+            </div>
+          )}
+
+          <div className="label mb-1.5 mt-2">색 테마</div>
           <select className="input py-1 text-[11.5px]" value={themeId} onChange={(e) => setThemeId(e.target.value)}>
             {THEMES.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
+
           {templates.length > 0 && (
             <>
               <div className="label mt-3 mb-1.5">내 템플릿</div>
@@ -399,11 +502,9 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
               </div>
             </>
           )}
-        </div>
 
-        <div className="card p-3 mb-3">
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="label">4. 손으로 다듬기 (선택)</div>
+          <div className="flex items-center justify-between mt-3 mb-1.5">
+            <div className="label">레이어</div>
             <div className="flex gap-1">
               {(['text', 'icon', 'rect', 'scrim'] as const).map((k) => (
                 <button key={k} className="chip" title={`${k} 추가`}
@@ -415,7 +516,7 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
           </div>
           {layers.length === 0 && (
             <div className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
-              위에서 시작 배치를 고르거나, ＋ 로 레이어를 추가하세요.
+              3번에서 자동 배치를 누르거나, ＋ 로 레이어를 추가하세요.
             </div>
           )}
           <div className="flex flex-col gap-1">
@@ -434,7 +535,7 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
               </div>
             ))}
           </div>
-        </div>
+        </Step>
 
         {sel && (
           <div className="card p-3">
@@ -485,13 +586,21 @@ export default function DesignStudio({ cuts }: { cuts: CutOption[] }) {
                 {num('가로', sel.w ?? 0.4, 0.05, 1, 0.01, (n) => patch(sel.id, { w: n }), (n) => `${(n * 100).toFixed(0)}%`)}
                 {num('세로', sel.h ?? 0.1, 0.02, 1, 0.01, (n) => patch(sel.id, { h: n }), (n) => `${(n * 100).toFixed(0)}%`)}
                 {sel.kind === 'rect' && num('모서리', sel.radius ?? 0, 0, 0.2, 0.005, (n) => patch(sel.id, { radius: n }), (n) => n.toFixed(3))}
+                {/*
+                  * 그늘 방향에 좌/우가 있어야 한다 — 가로형 배너의 자동 배치가
+                  * 좌우 그라데이션을 만들기 때문에, 여기서 위/아래만 고를 수 있으면
+                  * 손대는 순간 배치가 깨진다.
+                  */}
                 {sel.kind === 'scrim' && (
-                  <div className="flex gap-1.5 mb-2">
-                    {(['top', 'bottom', 'none'] as const).map((d) => (
-                      <button key={d} className="chip flex-1 justify-center"
-                              style={sel.direction === d ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {(['top', 'bottom', 'left', 'right', 'none'] as const).map((d) => (
+                      <button key={d} className="chip justify-center"
+                              style={{
+                                ...(sel.direction === d ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}),
+                                flex: '1 1 28%',
+                              }}
                               onClick={() => patch(sel.id, { direction: d })}>
-                        {d === 'top' ? '위' : d === 'bottom' ? '아래' : '균일'}
+                        {d === 'top' ? '위' : d === 'bottom' ? '아래' : d === 'left' ? '왼쪽' : d === 'right' ? '오른쪽' : '균일'}
                       </button>
                     ))}
                   </div>
