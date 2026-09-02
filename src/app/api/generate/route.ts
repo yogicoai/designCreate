@@ -114,6 +114,12 @@ interface Body {
   engine?: 'gemini' | 'higgs';
   dryRun?: boolean;
   title?: string;
+  /** 힉스필드 대기열: 이 핸드오프로 뽑을 장수 (1~4) */
+  count?: number;
+  /** 힉스필드 해상도 힌트 — 크레딧 추정용 (2k=1, 4k=4) */
+  resolution?: '2k' | '4k';
+  /** 대기열에서 알아보기 위해 사람이 붙인 이름 */
+  handoffTitle?: string;
 }
 
 interface SizeDocLike {
@@ -421,6 +427,11 @@ export async function POST(req: Request) {
           direction: body.direction ?? '',
           sizeValue: body.sizeValue ?? '',
         },
+        // 대기열 관리용 — 장수·해상도로 크레딧을 추정하고, 이름으로 알아본다
+        count: Math.max(1, Math.min(4, Math.round(Number(body.count) || 1))),
+        resolution: body.resolution === '4k' ? '4k' : '2k',
+        title: (body.handoffTitle || '').trim() || size.label,
+        status: 'queued',
         used: false,
       });
       handoffId = String(r.insertedId);

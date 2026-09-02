@@ -14,21 +14,29 @@ import type { ReferenceDoc } from '@/lib/queries';
  *        디자인 빌더(eventTemp)에서 가져온 항목은 파일이 그쪽 자산이라 목록에서만 빠진다.
  */
 
+/*
+ * 레퍼런스 분류 — 내용 기준 3종. (구 체계 web-banner/mobile/sns-story/thumbnail 은 아래로 통합)
+ *   촬영 = 실제 촬영·연출 컷 (구 thumbnail)
+ *   배너 = 배너 규격 (구 web-banner + mobile)
+ *   SNS  = SNS (구 sns + sns-story)
+ * 구 값이 들어와도 화면에서 3종으로 보이도록 매핑을 함께 둔다.
+ */
 const CATEGORY_KR: Record<string, string> = {
-  'web-banner': '웹 배너',
+  shoot: '촬영',
+  banner: '배너',
   sns: 'SNS',
-  'sns-story': '스토리/릴스',
-  mobile: '모바일',
-  thumbnail: '썸네일',
+  // 구 값 폴백
+  'web-banner': '배너',
+  mobile: '배너',
+  'sns-story': 'SNS',
+  thumbnail: '촬영',
 };
 
-/** 등록 시 고르는 분류 — eventTemp 갤러리와 같은 체계 */
+/** 등록·변경 시 고르는 분류 (구 값 정규화는 서버 getReferences·API 에서 처리) */
 const CATEGORY_OPTIONS: { value: string; label: string; desc: string }[] = [
-  { value: 'web-banner', label: '웹 배너', desc: '자사몰·스마트스토어 가로형' },
-  { value: 'mobile', label: '모바일', desc: '모바일 메인 · 히어로' },
-  { value: 'sns', label: 'SNS', desc: '인스타 정사각 등' },
-  { value: 'sns-story', label: '스토리/릴스', desc: '세로형 9:16' },
-  { value: 'thumbnail', label: '썸네일', desc: '상품 썸네일 (작은 사이즈)' },
+  { value: 'shoot', label: '촬영', desc: '실제 촬영·연출 컷' },
+  { value: 'banner', label: '배너', desc: '자사몰·스마트스토어·모바일 배너 규격' },
+  { value: 'sns', label: 'SNS', desc: '인스타 정사각·스토리·릴스' },
 ];
 
 export default function ReferencesManager({ initial }: { initial: ReferenceDoc[] }) {

@@ -35,7 +35,7 @@ export default async function ProductsPage() {
                     {p.sameShapeAs && (
                       <span className="chip">{p.sameShapeAs} 동일 형태</span>
                     )}
-                    {!p.geometry.verified && (
+                    {!p.geometry?.verified && (
                       <span className="chip" style={{ color: 'var(--warn)', borderColor: 'var(--warn)' }}>
                         기하 미검증
                       </span>
@@ -53,18 +53,24 @@ export default async function ProductsPage() {
               </div>
 
               {/* 기하 서술 — 프롬프트에 그대로 들어가는 값 */}
-              <div className="grid sm:grid-cols-3 gap-2.5 mb-4">
-                {([
-                  ['SHAPE (기하 서술)', p.geometry.shape],
-                  ['NEGATIVE (금지)', p.geometry.negative],
-                  ['USE (사용 자세)', p.geometry.modes],
-                ] as const).map(([label, val]) => (
-                  <div key={label} className="rounded-lg p-2.5" style={{ background: 'var(--surface-2)' }}>
-                    <div className="label mb-1">{label}</div>
-                    <div className="text-[11.5px] leading-relaxed font-mono" style={{ color: 'var(--text-dim)' }}>{val}</div>
-                  </div>
-                ))}
-              </div>
+              {p.geometry ? (
+                <div className="grid sm:grid-cols-3 gap-2.5 mb-4">
+                  {([
+                    ['SHAPE (기하 서술)', p.geometry.shape],
+                    ['NEGATIVE (금지)', p.geometry.negative],
+                    ['USE (사용 자세)', p.geometry.modes],
+                  ] as const).map(([label, val]) => (
+                    <div key={label} className="rounded-lg p-2.5" style={{ background: 'var(--surface-2)' }}>
+                      <div className="label mb-1">{label}</div>
+                      <div className="text-[11.5px] leading-relaxed font-mono" style={{ color: 'var(--text-dim)' }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg p-2.5 mb-4 text-[11.5px]" style={{ background: 'var(--surface-2)', color: 'var(--text-mute)' }}>
+                  기하 서술이 아직 없습니다 (youtube 카탈로그에서 가져온 제품). 프롬프트에는 치수·스케일만 들어갑니다.
+                </div>
+              )}
               {p.scalePrompt && (
                 <div className="rounded-lg p-2.5 mb-4" style={{ background: 'var(--surface-2)' }}>
                   <div className="label mb-1">SCALE ANCHOR (인체 대비 — 모델은 cm 를 못 읽는다)</div>
@@ -80,7 +86,7 @@ export default async function ProductsPage() {
                   return (
                     <Link
                       key={c.key}
-                      href={`/cuts?line=${p.line}&color=${c.key}`}
+                      href={`/cuts?line=${encodeURIComponent(p.line)}&color=${encodeURIComponent(c.key)}`}
                       className="flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-lg border transition-colors"
                       style={{
                         borderColor: n ? 'var(--line-strong)' : 'var(--line)',

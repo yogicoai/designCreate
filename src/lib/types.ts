@@ -57,7 +57,8 @@ export interface ProductDoc {
   sizeText: string;
   /** 인체 대비 스케일 앵커 — 모델은 cm 를 못 읽는다 */
   scalePrompt: string;
-  geometry: ProductGeometry;
+  /** youtube 카탈로그에서 가져온 제품은 기하 서술이 없다 (null) */
+  geometry: ProductGeometry | null;
   /** 기본 썸네일 비율 */
   ratio: string;
   /** MD 가 지정해둔 추천 모델 (예: '여성A · 여성B · 남성A') */

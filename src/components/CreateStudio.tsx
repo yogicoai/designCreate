@@ -112,6 +112,27 @@ const WON_BY_TIER = { pro: 270, draft: 90 } as const;
 const ORD = ['①', '②', '③', '④'];
 const MY_SIZE_GROUP = '내 규격';
 
+/*
+ * 레퍼런스 보관함 분류 — 내용 기준으로 묶는다 (표시 전용, DB 의 category 값은 안 바꾼다).
+ *   촬영   = 기존 thumbnail (실제 촬영·연출 컷)
+ *   배너   = 기존 web-banner + mobile (배너 규격)
+ *   SNS    = 기존 sns + sns-story
+ *   미분류 = 그 외/빈 값
+ * 보관함 팝업에서 이 순서로 묶어 보여준다.
+ */
+const REF_CATS: { value: string; label: string }[] = [
+  { value: 'shoot', label: '촬영' },
+  { value: 'banner', label: '배너' },
+  { value: 'sns', label: 'SNS' },
+  { value: '__none', label: '미분류' },
+];
+function refCatOf(cat: string | null | undefined): string {
+  if (cat === 'shoot' || cat === 'thumbnail') return 'shoot';
+  if (cat === 'banner' || cat === 'web-banner' || cat === 'mobile') return 'banner';
+  if (cat === 'sns' || cat === 'sns-story') return 'sns';
+  return '__none';
+}
+
 interface DryRunResult {
   prompt: string;
   promptMode: string;
@@ -189,7 +210,10 @@ export default function CreateStudio(p: Props) {
   const [shapeRefKey, setShapeRefKey] = useState('');
   const [uploads, setUploads] = useState<UploadedRef[]>([]);
   const [library, setLibrary] = useState<ReferenceDoc[]>(p.references);
-  const [showLibrary, setShowLibrary] = useState(false);
+  // 보관함 팝업 — 전체 레퍼런스를 분류별로 보고 고른다
+  const [libOpen, setLibOpen] = useState(false);
+  const [libCat, setLibCat] = useState<string>(''); // '' = 전체
+  const [libSearch, setLibSearch] = useState('');
   const [preservation, setPreservation] = useState('similar');
   const [editTargets, setEditTargets] = useState<EditTarget[]>([]);
   // 레퍼런스에 담긴 제품 — 인물 대비 스케일용 (사진 속 빈백이 무엇인지)
@@ -205,6 +229,21 @@ export default function CreateStudio(p: Props) {
   const [copied, setCopied] = useState<'prompt' | 'urls' | null>(null);
   const [zipping, setZipping] = useState(false);
   const [handoff, setHandoff] = useState<'busy' | 'done' | null>(null);
+  /*
+   * 힉스필드 대기열 — 로컬 전용.
+   * 이 핸드오프로 몇 장(hoCount), 어느 해상도(hoRes)로 뽑을지, 대기열에서 알아볼
+   * 이름(hoTitle)을 함께 남긴다. 장수·해상도로 크레딧을 미리 추정해 보여준다.
+   */
+  const [hoCount, setHoCount] = useState(1);
+  const [hoRes, setHoRes] = useState<'2k' | '4k'>('2k');
+  const [hoTitle, setHoTitle] = useState('');
+  type QueueItem = {
+    id: string; title: string; createdAt?: string; aspect?: string | null;
+    sizeLabel?: string | null; count: number; resolution: '2k' | '4k'; credits: number;
+    refCount: number; talentCount: number; productCount: number; direction: string;
+  };
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [queueCredits, setQueueCredits] = useState(0);
   /*
    * 생성 경과 시간.
    * 생성이 25~40초 걸리는데 화면에 아무 변화가 없으면 멈춘 건지 도는 건지 알 수 없다.
@@ -357,7 +396,11 @@ export default function CreateStudio(p: Props) {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...payload(true), handoff: true }),
+        body: JSON.stringify({
+          ...payload(true), handoff: true,
+          count: hoCount, resolution: hoRes,
+          handoffTitle: hoTitle.trim() || undefined,
+        }),
       });
       const json = await res.json();
       if (!json.ok) { setErr(json.error || '실패'); setHandoff(null); return; }
@@ -368,6 +411,7 @@ export default function CreateStudio(p: Props) {
       });
       setPromptText(json.prompt); setPromptEdited(false);
       setHandoff('done');
+      refreshQueue();
       window.setTimeout(() => setHandoff(null), 6000);
     } catch (e) {
       setErr((e as Error).message); setHandoff(null);
@@ -375,6 +419,25 @@ export default function CreateStudio(p: Props) {
       setBusy(null);
     }
   }
+
+  /* 대기열 읽기·삭제 — 로컬 전용. 실제 생성은 대화(MCP)에서 돈다. */
+  const refreshQueue = useCallback(async () => {
+    if (!p.localMode) return;
+    try {
+      const res = await fetch('/api/handoffs');
+      const json = await res.json();
+      if (json.ok) { setQueue(json.items || []); setQueueCredits(json.totalCredits || 0); }
+    } catch { /* 대기열 조회 실패는 조용히 넘긴다 — 핵심 흐름이 아니다 */ }
+  }, [p.localMode]);
+
+  async function deleteQueued(id: string) {
+    try {
+      await fetch(`/api/handoffs?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      refreshQueue();
+    } catch { /* 무시 */ }
+  }
+
+  useEffect(() => { refreshQueue(); }, [refreshQueue]);
 
   function payload(dryRun: boolean) {
     return {
@@ -679,8 +742,8 @@ export default function CreateStudio(p: Props) {
           <Section n="2" title="레퍼런스 이미지"
                    hint="새로 올리거나 보관함에서 가져옵니다. 올린 이미지는 자동으로 보관함에 등록돼 다른 썸네일·배너 작업에도 재사용됩니다."
                    right={
-                     <button className="btn btn-ghost text-[11px]" onClick={() => setShowLibrary((v) => !v)}>
-                       보관함 {showLibrary ? '접기' : `열기 (${library.length})`}
+                     <button className="btn btn-ghost text-[11px]" onClick={() => { setLibOpen(true); setLibCat(''); setLibSearch(''); }}>
+                       보관함 열기 ({library.length})
                      </button>
                    }>
             <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} />
@@ -691,34 +754,6 @@ export default function CreateStudio(p: Props) {
             </div>
             {uploadNote && <div className="text-[10.5px] mb-2" style={{ color: 'var(--ok)' }}>{uploadNote}</div>}
 
-            {showLibrary && (
-              <div className="mb-3 p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
-                <div className="label mb-1.5">보관함 — 클릭하면 크게 보이고, 팝업에서 추가할 수 있습니다</div>
-                {library.length ? (
-                  <div className="grid grid-cols-6 gap-1.5 max-h-[180px] overflow-y-auto pr-1">
-                    {library.map((r) => {
-                      const used = uploads.some((u) => u.url === r.url);
-                      return (
-                        <div key={r.url} style={{ opacity: used ? 0.45 : 1 }}>
-                          <Zoomable
-                            src={r.url}
-                            alt={r.title}
-                            caption={`${r.title}${used ? ' — 이미 이번 작업에 들어가 있음' : ''}`}
-                            action={{ label: used ? '이미 추가됨' : '＋ 이번 작업에 추가', onClick: () => addFromLibrary(r), disabled: used }}
-                            className="w-full aspect-square object-cover rounded-md border"
-                            style={{ borderColor: used ? 'var(--accent)' : 'var(--line)' }}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-[11px] py-2" style={{ color: 'var(--text-mute)' }}>
-                    아직 비어 있습니다. 자산관리 &gt; 레퍼런스에서 미리 등록해둘 수도 있습니다.
-                  </div>
-                )}
-              </div>
-            )}
 
             {uploads.map((u, i) => (
               <div key={u.url} className="flex gap-2.5 p-2 rounded-lg mb-2" style={{ background: 'var(--surface-2)' }}>
@@ -1394,16 +1429,79 @@ ${hint}` : hint))}>
             프롬프트·참조 순서·선택값을 handoffs 에 남겨서, 말로 다시 설명할 필요를 없앤다.
           */}
           {p.localMode && (
-            <button className="btn" onClick={leaveHandoff} disabled={!!busy || handoff === 'busy'}
-                    title="프롬프트와 지금 고른 값(모델·표정·의상·규격·레퍼런스)을 저장합니다. 대화에서 그대로 읽어 힉스필드로 뽑을 수 있습니다. 프롬프트는 대화에서 쓰므로 Opus 를 타지 않습니다 (무과금)."
-                    style={handoff === 'done' ? { borderColor: 'var(--ok)', color: 'var(--ok)' } : {}}>
-              {handoff === 'busy' ? '남기는 중…' : handoff === 'done' ? '남겼습니다 ✓' : '힉스필드용으로 남기기 (무과금)'}
-            </button>
-          )}
-          {p.localMode && handoff === 'done' && (
-            <div className="text-[10px] px-1" style={{ color: 'var(--ok)' }}>
-              저장했습니다. 대화에서 &quot;방금 남긴 걸로 뽑아줘&quot; 라고 하시면 됩니다.
-            </div>
+            <>
+              {/* 대기열에 남길 조건 — 장수·해상도·이름. 크레딧을 미리 추정해 보여준다. */}
+              <div className="rounded-[10px] p-2 mt-1" style={{ background: 'var(--surface-2)', border: '1px solid var(--line)' }}>
+                <div className="label mb-1.5">힉스필드 대기열에 추가</div>
+                <input value={hoTitle} onChange={(e) => setHoTitle(e.target.value)}
+                       placeholder="대기열 이름 (예: 여성ABC 라운지 · 웹배너)"
+                       className="w-full mb-1.5 px-2 py-1 text-[12px] rounded-[8px]"
+                       style={{ background: 'var(--surface)', border: '1px solid var(--line)', color: 'var(--text)' }} />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>장수</span>
+                    {[1, 2, 3, 4].map((n) => (
+                      <button key={n} className={`btn px-2 py-0.5 ${hoCount === n ? 'btn-primary' : ''}`}
+                              onClick={() => setHoCount(n)}>{n}</button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>해상도</span>
+                    {(['2k', '4k'] as const).map((r) => (
+                      <button key={r} className={`btn px-2 py-0.5 ${hoRes === r ? 'btn-primary' : ''}`}
+                              onClick={() => setHoRes(r)}>{r.toUpperCase()}</button>
+                    ))}
+                  </div>
+                  <span className="text-[10.5px] ml-auto" style={{ color: 'var(--text-mute)' }}>
+                    약 {hoCount * (hoRes === '4k' ? 4 : 1)} 크레딧
+                  </span>
+                </div>
+              </div>
+
+              <button className="btn" onClick={leaveHandoff} disabled={!!busy || handoff === 'busy'}
+                      title="프롬프트와 지금 고른 값(모델·표정·의상·규격·레퍼런스)을 대기열에 저장합니다. 대화에서 '대기열 돌려줘' 한마디로 한꺼번에 뽑습니다. 프롬프트는 대화에서 쓰므로 Opus 를 타지 않습니다 (무과금)."
+                      style={handoff === 'done' ? { borderColor: 'var(--ok)', color: 'var(--ok)' } : {}}>
+                {handoff === 'busy' ? '남기는 중…' : handoff === 'done' ? '대기열에 넣었습니다 ✓' : '대기열에 추가 (무과금)'}
+              </button>
+
+              {handoff === 'done' && (
+                <div className="text-[10px] px-1" style={{ color: 'var(--ok)' }}>
+                  대기열에 넣었습니다. 대화에서 &quot;대기열 돌려줘&quot; 라고 하시면 한꺼번에 뽑습니다.
+                </div>
+              )}
+
+              {/* 대기열 목록 — 지금 무엇이 쌓여 있고 총 몇 크레딧인지 한눈에. */}
+              {queue.length > 0 && (
+                <div className="rounded-[10px] p-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--line)' }}>
+                  <div className="flex items-center mb-1.5">
+                    <span className="label">대기열 {queue.length}건</span>
+                    <span className="text-[10.5px] ml-auto" style={{ color: 'var(--text-mute)' }}>
+                      총 약 {queueCredits} 크레딧
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {queue.map((q) => (
+                      <div key={q.id} className="flex items-center gap-2 px-2 py-1 rounded-[8px]"
+                           style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[12px] truncate" style={{ color: 'var(--text)' }}>{q.title}</div>
+                          <div className="text-[10px]" style={{ color: 'var(--text-mute)' }}>
+                            {q.count}장 · {q.resolution.toUpperCase()} · {q.aspect || q.sizeLabel || ''}
+                            {q.talentCount ? ` · 모델 ${q.talentCount}` : ''}
+                            {q.refCount ? ` · 참조 ${q.refCount}` : ''}
+                          </div>
+                        </div>
+                        <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>{q.credits}cr</span>
+                        <button className="btn px-2 py-0.5" onClick={() => deleteQueued(q.id)} title="대기열에서 제거">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-[10px] mt-1.5 px-1" style={{ color: 'var(--text-mute)' }}>
+                    실제 생성은 대화(MCP)에서 돕니다. &quot;대기열 돌려줘&quot; 하면 장수·크레딧·잔액을 먼저 알려드리고 승인 후 뽑습니다.
+                  </div>
+                </div>
+              )}
+            </>
           )}
           {/*
             엔진 선택은 화면에서 뺐다.
@@ -1519,6 +1617,95 @@ ${hint}` : hint))}>
 
 
       </aside>
+
+      {/* ── 레퍼런스 보관함 팝업 — 분류(촬영/배너/SNS)별로 전체를 보고 고른다 ── */}
+      {libOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style={{ background: 'rgba(0,0,0,.8)' }} onClick={() => setLibOpen(false)}>
+          <div className="card p-4 max-w-[min(1200px,95vw)] max-h-[92vh] w-full flex flex-col"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>
+                레퍼런스 보관함 · {library.length}개
+              </h2>
+              <button className="chip" onClick={() => setLibOpen(false)}>닫기</button>
+            </div>
+
+            {/* 분류 탭 + 이름 검색 */}
+            <div className="flex items-center gap-1.5 flex-wrap mb-3">
+              <button className="chip"
+                      style={libCat === '' ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
+                      onClick={() => setLibCat('')}>전체 ({library.length})</button>
+              {REF_CATS.map((c) => {
+                const n = library.filter((r) => refCatOf(r.category) === c.value).length;
+                if (!n) return null;
+                return (
+                  <button key={c.value} className="chip"
+                          style={libCat === c.value ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
+                          onClick={() => setLibCat(c.value)}>{c.label} ({n})</button>
+                );
+              })}
+              <input value={libSearch} onChange={(e) => setLibSearch(e.target.value)} placeholder="이름 검색"
+                     className="ml-auto px-2 py-1 text-[12px] rounded-[8px]"
+                     style={{ background: 'var(--surface)', border: '1px solid var(--line)', color: 'var(--text)', maxWidth: 200 }} />
+            </div>
+
+            {/* 목록 — 전체면 분류별 섹션, 특정 분류면 단일 그리드 */}
+            <div className="overflow-y-auto pr-1 flex-1" style={{ minHeight: 220 }}>
+              {(() => {
+                const q = libSearch.trim().toLowerCase();
+                const match = (r: ReferenceDoc) =>
+                  (!libCat || refCatOf(r.category) === libCat) &&
+                  (!q || (r.title || '').toLowerCase().includes(q));
+                const list = library.filter(match);
+                if (!list.length) {
+                  return (
+                    <div className="text-[12px] py-10 text-center" style={{ color: 'var(--text-mute)' }}>
+                      {library.length ? '해당 조건의 레퍼런스가 없습니다.' : '보관함이 비어 있습니다. 자산관리 > 레퍼런스에서 등록하거나 위에서 이미지를 추가하세요.'}
+                    </div>
+                  );
+                }
+                const cats = libCat ? [libCat] : REF_CATS.map((c) => c.value);
+                return cats.map((cat) => {
+                  const items = list.filter((r) => refCatOf(r.category) === cat);
+                  if (!items.length) return null;
+                  const label = REF_CATS.find((c) => c.value === cat)?.label ?? cat;
+                  return (
+                    <div key={cat} className="mb-4">
+                      {!libCat && <div className="label mb-2">{label} · {items.length}</div>}
+                      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+                        {items.map((r) => {
+                          const used = uploads.some((u) => u.url === r.url);
+                          return (
+                            <div key={r.url} className="rounded-lg overflow-hidden border"
+                                 style={{ borderColor: used ? 'var(--accent)' : 'var(--line)', background: 'var(--surface-2)' }}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={r.url} alt={r.title} className="w-full aspect-square object-cover"
+                                   style={{ opacity: used ? 0.5 : 1 }} draggable={false} />
+                              <div className="p-1.5">
+                                <div className="text-[10.5px] truncate mb-1" style={{ color: 'var(--text-dim)' }}>{r.title}</div>
+                                <button className={`btn w-full py-0.5 text-[11px] ${used ? '' : 'btn-primary'}`}
+                                        disabled={used} onClick={() => addFromLibrary(r)}>
+                                  {used ? '추가됨 ✓' : '＋ 추가'}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            <div className="flex items-center justify-between mt-3 pt-3" style={{ borderTop: '1px solid var(--line)' }}>
+              <span className="text-[11px]" style={{ color: 'var(--text-mute)' }}>이번 작업에 {uploads.length}개 담김</span>
+              <button className="btn btn-primary" onClick={() => setLibOpen(false)}>완료</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 생성 완료 팝업 ── */}
       {donePopup && (

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { deleteRemote, REF_SUBPATH } from '@/lib/ftp';
+import { normalizeRefCategory } from '@/lib/queries';
 
 /**
  * 레퍼런스 보관함.
@@ -62,8 +63,8 @@ export async function PATCH(req: Request) {
     const set: Record<string, unknown> = {};
     if (body.title !== undefined) set.title = String(body.title ?? '').slice(0, 120);
     if (body.category !== undefined) {
-      const ALLOWED = ['web-banner', 'sns', 'sns-story', 'mobile', 'thumbnail'];
-      set.category = body.category && ALLOWED.includes(body.category) ? body.category : null;
+      // 새 3종(shoot/banner/sns)으로 정규화 — 구 값이 와도 흡수한다
+      set.category = normalizeRefCategory(body.category);
     }
     if (!Object.keys(set).length) return NextResponse.json({ ok: false, error: '변경할 값이 없습니다.' }, { status: 400 });
     await db.collection('references').updateOne({ url: body.url }, { $set: set });

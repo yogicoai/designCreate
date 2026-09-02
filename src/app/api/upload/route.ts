@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { uploadBuffer, deleteRemote, REF_SUBPATH, ftpConfigured } from '@/lib/ftp';
 import { getDb } from '@/lib/db';
+import { normalizeRefCategory } from '@/lib/queries';
 
 /**
  * POST /api/upload — MD 가 올린 레퍼런스 이미지를 cafe24 FTP 로 올리고 공개 URL 을 돌려준다.
@@ -61,10 +62,8 @@ export async function POST(req: Request) {
     const url = await uploadBuffer(REF_SUBPATH, `ref_${stamp}_${rand}.${ext}`, buf);
 
     const title = String(form?.get('title') || file.name || '레퍼런스').slice(0, 120);
-    // 분류 — eventTemp 갤러리와 같은 체계 (web-banner/sns/sns-story/mobile/thumbnail)
-    const ALLOWED_CATEGORY = ['web-banner', 'sns', 'sns-story', 'mobile', 'thumbnail'];
-    const rawCategory = String(form?.get('category') || '');
-    const category = ALLOWED_CATEGORY.includes(rawCategory) ? rawCategory : null;
+    // 분류 — 내용 기준 3종(shoot/banner/sns)으로 정규화. 구 값이 와도 흡수한다.
+    const category = normalizeRefCategory(String(form?.get('category') || ''));
     // replaceUrl 이 오면 "이미지 교체" — 기존 보관함 항목을 유지한 채 파일만 갈아끼운다
     const replaceUrl = String(form?.get('replaceUrl') || '');
 

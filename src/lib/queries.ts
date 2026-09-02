@@ -139,12 +139,24 @@ export interface ReferenceDoc {
   title: string;
   width: number;
   height: number;
-  /** eventTemp(디자인 빌더) 갤러리 분류 — web-banner/sns/sns-story/mobile/thumbnail */
+  /** 레퍼런스 분류 — 내용 기준 3종: shoot(촬영) / banner(배너) / sns(SNS). null=미분류 */
   category: string | null;
   tags: string[];
   /** 'upload' = 이 앱에서 업로드 / 'eventtemp' = 디자인 빌더 갤러리에서 가져옴 */
   source: string;
   createdAt: Date | string | null;
+}
+
+/**
+ * 구 분류(web-banner/mobile/sns-story/thumbnail)를 새 3종으로 정규화한다.
+ * 읽는 시점에 항상 정규화하므로, eventTemp 재동기화로 구 값이 다시 들어와도 화면은 3종을 유지한다.
+ */
+export function normalizeRefCategory(cat: string | null | undefined): string | null {
+  if (!cat) return null;
+  if (cat === 'thumbnail' || cat === 'shoot') return 'shoot';
+  if (cat === 'web-banner' || cat === 'mobile' || cat === 'banner') return 'banner';
+  if (cat === 'sns-story' || cat === 'sns') return 'sns';
+  return null;
 }
 
 export async function getReferences(limit = 300): Promise<ReferenceDoc[]> {
@@ -155,7 +167,7 @@ export async function getReferences(limit = 300): Promise<ReferenceDoc[]> {
     title: d.title ?? '',
     width: d.width ?? 0,
     height: d.height ?? 0,
-    category: d.category ?? null,
+    category: normalizeRefCategory(d.category),
     tags: d.tags ?? [],
     source: d.source ?? 'upload',
     createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : null,

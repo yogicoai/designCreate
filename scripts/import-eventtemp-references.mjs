@@ -9,6 +9,15 @@
 import fs from 'node:fs';
 import { MongoClient } from 'mongodb';
 
+// 구 분류를 새 3종(shoot/banner/sns)으로 정규화 — src/lib/queries.ts 의 normalizeRefCategory 와 동일 규칙
+function normalizeCategory(cat) {
+  if (!cat) return null;
+  if (cat === 'thumbnail' || cat === 'shoot') return 'shoot';
+  if (cat === 'web-banner' || cat === 'mobile' || cat === 'banner') return 'banner';
+  if (cat === 'sns-story' || cat === 'sns') return 'sns';
+  return null;
+}
+
 function readEnv(path) {
   return Object.fromEntries(
     fs.readFileSync(path, 'utf8')
@@ -48,7 +57,7 @@ for (const r of rows) {
         title: r.title || '디자인 빌더 레퍼런스',
         width: 0,
         height: 0,
-        category: r.category ?? null,
+        category: normalizeCategory(r.category),
         tags: r.tags ?? [],
         visualNotes: r.visualNotes ?? '',
         source: 'eventtemp',
@@ -62,7 +71,7 @@ for (const r of rows) {
 }
 
 const byCat = {};
-for (const r of rows) byCat[r.category ?? '(없음)'] = (byCat[r.category ?? '(없음)'] || 0) + 1;
+for (const r of rows) { const k = normalizeCategory(r.category) ?? '(없음)'; byCat[k] = (byCat[k] || 0) + 1; }
 console.log(`가져옴 ${added}건 · 이미 있던 것 ${skipped}건`);
 console.log('분류별:', Object.entries(byCat).map(([k, v]) => `${k} ${v}`).join(' · '));
 
