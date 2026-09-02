@@ -204,7 +204,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
         kind: 'pair';
         items: {
           label: string; w: number; h: number; preview: string; sizeId: string;
-          layers: DesignLayer[]; fit: { mode: 'cover' | 'blur'; fx: number; fy: number };
+          layers: DesignLayer[]; fit: { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string };
         }[];
       }
     | null
@@ -220,7 +220,9 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     initial?.size?.id ? channelOf(initial.size.id) : '자사몰',
   );
   const [sizeId, setSizeId] = useState(initial?.size?.id ?? defaultSizeFor('자사몰'));   // '' = 컷 크기 그대로
-  const [fitMode, setFitMode] = useState<'cover' | 'blur'>(initial?.fit?.mode ?? 'cover');
+  const [fitMode, setFitMode] = useState<'cover' | 'blur' | 'color' | 'gradient'>(initial?.fit?.mode ?? 'cover');
+  // 여백 채우기 색 (color·gradient 모드) — 색값 하나로 서버·미리보기가 똑같이 그린다
+  const [fillColor, setFillColor] = useState(initial?.fit?.fillColor ?? '#f2f0ec');
   const [fx, setFx] = useState(initial?.fit?.fx ?? 0.5);           // 잘라낼 때 남길 가로 위치
   const [fy, setFy] = useState(initial?.fit?.fy ?? 0.45);          // 세로 위치 — 인물이 아래면 올린다
   /*
@@ -240,7 +242,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
    * 무대에는 한 규격만 올라가고, 내려간 버전은 여기 남는다.
    * 위치·크기는 버전마다 따로지만, 색은 patchColor 가 양쪽에 같이 넣는다.
    */
-  const [variants, setVariants] = useState<Record<string, { layers: DesignLayer[]; fit: { mode: 'cover' | 'blur'; fx: number; fy: number } }>>({});
+  const [variants, setVariants] = useState<Record<string, { layers: DesignLayer[]; fit: { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string } }>>({});
   /*
    * 버튼 색은 '사진에서 뽑기' 아니면 브랜드 목록 중 하나만 — 자유 색상은
    * 4단계에서 손으로 다듬는 사람의 몫이다. MD 가 색을 고르는 것 자체가 개입이라서.
@@ -297,7 +299,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   const cropX = src.w * coverK - dims.w > 1;   // 가로가 잘리는 조합인가
   const cropY = src.h * coverK - dims.h > 1;
   const loss = needsFit ? cropLoss(src.w, src.h, dims.w, dims.h) : 0;
-  const fit = useMemo(() => ({ mode: fitMode, fx, fy }), [fitMode, fx, fy]);
+  const fit = useMemo(() => ({ mode: fitMode, fx, fy, ...(fitMode === 'color' || fitMode === 'gradient' ? { fillColor } : {}) }), [fitMode, fx, fy, fillColor]);
 
   const design: DesignDoc = useMemo(
     () => ({ imageUrl, layers, size: { id: sizeId || undefined, w: dims.w, h: dims.h }, fit, font: fontFamily || undefined }),
@@ -336,7 +338,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   /** 무대에 있는 버전을 보관함에 내려둔다 */
   function stashActive() {
     if (!sizeId || !layers.length) return;
-    setVariants((v) => ({ ...v, [sizeId]: { layers, fit: { mode: fitMode, fx, fy } } }));
+    setVariants((v) => ({ ...v, [sizeId]: { layers, fit } }));
   }
 
   /** 특정 규격의 자동 배치를 서버에서 받아온다 — 탭 전환과 짝 최신화가 같이 쓴다 */
@@ -356,7 +358,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     });
     const j = await res.json();
     if (!j.ok) throw new Error(j.error || '자동 배치 실패');
-    return { layers: j.layers as DesignLayer[], fit: j.fit as { mode: 'cover' | 'blur'; fx: number; fy: number } };
+    return { layers: j.layers as DesignLayer[], fit: j.fit as { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string } };
   }
 
   /**
@@ -378,6 +380,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
       setFitMode(stored.fit.mode);
       setFx(stored.fit.fx);
       setFy(stored.fit.fy);
+      if (stored.fit.fillColor) setFillColor(stored.fit.fillColor);
       return;
     }
     setBusy('auto'); setErr('');
@@ -519,7 +522,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     if (!imageUrl || cur.length === 0 || !cur.every(isAuto)) return;
     const t = setTimeout(() => { autoRef.current(true); }, 500);   // 슬라이더를 끄는 동안 매번 부르지 않게
     return () => clearTimeout(t);
-  }, [sizeId, fitMode, fx, fy, imageUrl, btnColor, tuneScale, tuneGap]);
+  }, [sizeId, fitMode, fx, fy, fillColor, imageUrl, btnColor, tuneScale, tuneGap]);
 
   async function render(save: boolean) {
     if (!imageUrl) { setErr('배경 컷을 골라주세요.'); return; }
@@ -575,7 +578,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     for (const sid of AUTO_SET[channel]) {
       const b = findSize(sid);
       const doc = sid === sizeId
-        ? (layers.length ? { layers, fit: { mode: fitMode, fx, fy } } : null)
+        ? (layers.length ? { layers, fit } : null)
         : variants[sid] ?? null;
       if (!doc || !doc.layers.length) return null;
       out.push({
@@ -892,6 +895,38 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     </div>
   );
 
+  /** hex 를 밝게(+)/어둡게(-) — 미리보기 그라데이션이 서버와 같아지게 서버 shift 와 동일 규칙 */
+  function shade(hex: string, d: number): string {
+    const h = /^#?[0-9a-fA-F]{6}$/.test(hex) ? hex.replace('#', '') : 'f2f0ec';
+    const cl = (v: number) => Math.max(0, Math.min(255, v + d));
+    const r = cl(parseInt(h.slice(0, 2), 16)), g = cl(parseInt(h.slice(2, 4), 16)), b = cl(parseInt(h.slice(4, 6), 16));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  /** 배경 사진의 평균색을 뽑아 채울 색으로 — 여백이 사진과 자연스럽게 이어진다 */
+  function sampleFillFromImage() {
+    if (!imageUrl) return;
+    const img = new window.Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const cv = document.createElement('canvas');
+        cv.width = 16; cv.height = 16;
+        const ctx = cv.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, 16, 16);
+        const d = ctx.getImageData(0, 0, 16, 16).data;
+        let r = 0, g = 0, b = 0;
+        for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+        const n = d.length / 4;
+        const hx = (v: number) => Math.round(v / n).toString(16).padStart(2, '0');
+        setFillColor(`#${hx(r)}${hx(g)}${hx(b)}`);
+        setResult(null);
+      } catch { /* 교차출처로 캔버스가 막히면 색 선택은 수동으로 */ }
+    };
+    img.src = imageUrl;
+  }
+
   const sizeName = sizeId ? findSize(sizeId).label : '컷 크기 그대로';
   // 자동완성 묶음의 이름과 크기 — 버튼·설명에 그대로 쓴다
   const autoSet = AUTO_SET[channel].map(findSize);
@@ -925,7 +960,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
             <div className="text-[10.5px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
               {sizeName} · {dims.w}×{dims.h} · {shapeWord}
               {needsFit && fitMode === 'cover' && ` · 컷의 ${Math.round(loss * 100)}% 잘림`}
-              {needsFit && fitMode === 'blur' && ' · 안 잘림'}
+              {needsFit && fitMode !== 'cover' && ' · 안 잘림'}
             </div>
           </div>
 
@@ -998,18 +1033,25 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
               * blur  = 흐린 사본을 깔고 그 위에 통째로 얹기.
               * 두 계산이 어긋나면 화면에서 본 자리와 저장본이 달라진다.
               */}
+            {/* color·gradient·blur 는 여백을 채우는 배경을 깔고 사진을 통째로(contain) 얹는다 */}
             {imageUrl && fitMode === 'blur' && needsFit && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={imageUrl} alt="" aria-hidden
                    className="absolute inset-0 w-full h-full object-cover"
                    style={{ filter: 'blur(18px) brightness(0.82)', transform: 'scale(1.1)' }} draggable={false} />
             )}
+            {imageUrl && needsFit && (fitMode === 'color' || fitMode === 'gradient') && (
+              <div className="absolute inset-0" aria-hidden
+                   style={fitMode === 'gradient'
+                     ? { background: `linear-gradient(${shade(fillColor, 22)}, ${shade(fillColor, -26)})` }
+                     : { background: fillColor }} />
+            )}
             {imageUrl && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={imageUrl} alt="배경" draggable={false}
                    className="absolute inset-0 w-full h-full"
                    style={{
-                     objectFit: fitMode === 'blur' && needsFit ? 'contain' : 'cover',
+                     objectFit: needsFit && fitMode !== 'cover' ? 'contain' : 'cover',
                      objectPosition: `${Math.round(fx * 100)}% ${Math.round(fy * 100)}%`,
                    }} />
             )}
@@ -1225,15 +1267,13 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
           {needsFit && (
             <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--line)' }}>
               <div className="label mb-1.5">컷이 이 규격과 비율이 달라요</div>
-              <div className="flex gap-1.5 mb-1.5">
-                <button className={`btn flex-1 ${fitMode === 'cover' ? 'btn-primary' : ''}`}
-                        onClick={() => { setFitMode('cover'); setResult(null); }}>
-                  잘라서 채우기
-                </button>
-                <button className={`btn flex-1 ${fitMode === 'blur' ? 'btn-primary' : ''}`}
-                        onClick={() => { setFitMode('blur'); setResult(null); }}>
-                  여백 채우기
-                </button>
+              <div className="grid grid-cols-2 gap-1.5 mb-1.5">
+                {([['cover', '잘라서 채우기'], ['blur', '흐리게 채우기'], ['color', '단색으로 채우기'], ['gradient', '그라데이션 채우기']] as const).map(([m, label]) => (
+                  <button key={m} className={`btn ${fitMode === m ? 'btn-primary' : ''}`}
+                          onClick={() => { setFitMode(m); setResult(null); }}>
+                    {label}
+                  </button>
+                ))}
               </div>
               {fitMode === 'cover' ? (
                 <>
@@ -1258,9 +1298,28 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
                     인물이 잘리면 위 막대로 남길 곳을 옮기세요.
                   </div>
                 </>
-              ) : (
+              ) : fitMode === 'blur' ? (
                 <div className="text-[10.5px] leading-relaxed" style={{ color: 'var(--text-mute)' }}>
                   컷을 통째로 넣고 남는 자리는 같은 사진을 흐리게 깔아 채웁니다. 하나도 잘리지 않습니다.
+                </div>
+              ) : (
+                <div>
+                  <div className="text-[10.5px] mb-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                    컷을 줄여 넣고 남는 여백을 {fitMode === 'gradient' ? '그 색의 위아래 그라데이션으로' : '단색으로'} 채웁니다. 하나도 잘리지 않습니다.
+                  </div>
+                  <div className="label mb-1">채울 색</div>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={fillColor} onChange={(e) => { setFillColor(e.target.value); setResult(null); }}
+                           style={{ width: 38, height: 26, padding: 0, border: '1px solid var(--line)', borderRadius: 'var(--radius)', background: 'none' }} />
+                    <div className="flex gap-1 flex-wrap">
+                      {['#f2f0ec', '#1b1d21', '#2f3a5c', '#e2503c', '#e9e2d6'].map((c) => (
+                        <button key={c} onClick={() => { setFillColor(c); setResult(null); }} title={c}
+                                className="w-6 h-6 rounded" style={{ background: c, border: '1px solid var(--line)' }} />
+                      ))}
+                      <button className="chip" title="배경 사진에서 평균색을 뽑아 채웁니다"
+                              onClick={() => sampleFillFromImage()}>사진에서 뽑기</button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

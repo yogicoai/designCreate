@@ -565,6 +565,16 @@ function scaleBlock(spec: GenerationSpec): string[] {
         'grain, same colour temperature as the base.',
     );
   }
+  // 여러 명이면 사람마다 밝기·조명이 달라 따로 노는 문제 (사용자 지적: 명암도 불일치).
+  // 한 방·한 조명으로 전부 똑같이 비추게 못박는다.
+  if (talents.length > 1) {
+    L.push(
+      '  CONSISTENT LIGHTING — every person is lit by the SAME light in the SAME room: identical key-light direction, ' +
+        'intensity, colour temperature and shadow softness on each face and body. No one is brighter, darker, warmer, ' +
+        'cooler or more contrasty than the others; their skin tones and exposure read as a single photograph taken at ' +
+        'one moment, not separate cut-outs lit differently.',
+    );
+  }
   return L;
 }
 

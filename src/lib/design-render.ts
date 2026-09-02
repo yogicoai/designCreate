@@ -80,7 +80,11 @@ export interface DesignDoc {
    *   cover  잘라서 꽉 채운다 (fx/fy 로 어느 부분을 남길지 정한다, 0~1)
    *   blur   자기 자신을 흐리게 깐 위에 통째로 얹는다 — 하나도 잘리지 않는다
    */
-  fit?: { mode: 'cover' | 'blur'; fx: number; fy: number };
+  /**
+   * cover  잘라서 꽉 채운다 / blur  흐린 사본 위에 통째로 / color  줄여 넣고 남는 여백을
+   * 단색으로 / gradient  남는 여백을 그 색의 위아래 그라데이션으로 자연스럽게 채운다.
+   */
+  fit?: { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string };
   /**
    * 이 배너 전체의 글꼴 가족 이름. fonts/ 폴더에 있는 파일의 name 테이블
    * 이름이어야 한다 (banner-fonts 가 목록을 만든다). 없으면 FONT_STACK 순서.

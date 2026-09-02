@@ -1138,7 +1138,8 @@ ${c.spec}`}
                 </div>
               </div>
               <div className="flex gap-1.5 mb-2">
-                {[0, 1, 2, 3].map((n) => {
+                {/* 가상 모델은 전속과 합쳐 총 4명 한도. 전속이 없으면 가상만 4명까지 */}
+                {[0, 1, 2, 3, 4].map((n) => {
                   const cap = Math.max(0, 4 - picks.length);
                   const target = Math.min(n, cap);
                   return (

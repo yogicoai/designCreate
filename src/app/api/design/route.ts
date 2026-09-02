@@ -46,7 +46,7 @@ export const dynamic = 'force-dynamic';
  */
 async function fitToSize(
   buf: Buffer, W: number, H: number,
-  fit: { mode: 'cover' | 'blur'; fx: number; fy: number },
+  fit: { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string },
 ): Promise<Buffer> {
   const meta = await sharp(buf).metadata();
   const sw = meta.width ?? W;
@@ -57,6 +57,36 @@ async function fitToSize(
     const bg = await sharp(buf).resize(W, H, { fit: 'cover' })
       .blur(Math.max(8, Math.round(Math.min(W, H) / 22)))
       .modulate({ brightness: 0.82 }).toBuffer();
+    const fg = await sharp(buf).resize(W, H, { fit: 'inside' }).toBuffer();
+    const fm = await sharp(fg).metadata();
+    return sharp(bg).composite([{
+      input: fg,
+      left: Math.round((W - (fm.width ?? W)) / 2),
+      top: Math.round((H - (fm.height ?? H)) / 2),
+    }]).jpeg({ quality: 95 }).toBuffer();
+  }
+
+  if (fit.mode === 'color' || fit.mode === 'gradient') {
+    /*
+     * 줄여 넣기(contain) + 여백 채우기. 색값 하나로 서버·미리보기가 똑같이 그린다.
+     * gradient 는 그 색을 위는 살짝 밝게 아래는 살짝 어둡게 세로 그라데이션 —
+     * 사진이 배경으로 자연스럽게 녹아든다.
+     */
+    const hex = /^#?[0-9a-fA-F]{6}$/.test(fit.fillColor || '') ? fit.fillColor!.replace('#', '') : 'f2f0ec';
+    const rgb = { r: parseInt(hex.slice(0, 2), 16), g: parseInt(hex.slice(2, 4), 16), b: parseInt(hex.slice(4, 6), 16) };
+    const shift = (c: number, d: number) => Math.max(0, Math.min(255, Math.round(c + d)));
+    let bg: Buffer;
+    if (fit.mode === 'gradient') {
+      const top = `rgb(${shift(rgb.r, 22)},${shift(rgb.g, 22)},${shift(rgb.b, 22)})`;
+      const bot = `rgb(${shift(rgb.r, -26)},${shift(rgb.g, -26)},${shift(rgb.b, -26)})`;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`
+        + `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">`
+        + `<stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bot}"/></linearGradient></defs>`
+        + `<rect width="${W}" height="${H}" fill="url(#g)"/></svg>`;
+      bg = await sharp(Buffer.from(svg)).png().toBuffer();
+    } else {
+      bg = await sharp({ create: { width: W, height: H, channels: 3, background: rgb } }).png().toBuffer();
+    }
     const fg = await sharp(buf).resize(W, H, { fit: 'inside' }).toBuffer();
     const fm = await sharp(fg).metadata();
     return sharp(bg).composite([{
@@ -468,7 +498,7 @@ export async function POST(req: Request) {
       auto?: AutoTexts & {
         imageUrl: string;
         size?: { id?: string; w: number; h: number };
-        fit?: { mode: 'cover' | 'blur'; fx: number; fy: number };
+        fit?: { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string };
         /** true 면 잘라내기 위치를 피사체에 맞춰 서버가 정한다 */
         autoFocus?: boolean;
         /** 브랜드 버튼색 (hex). 없으면 사진에서 뽑는다 */
@@ -494,7 +524,7 @@ export async function POST(req: Request) {
        * 오도록 서버가 정하고, 정한 숫자를 그대로 돌려준다 — 화면 미리보기(CSS)가
        * 같은 숫자로 잘라야 저장본과 어긋나지 않아서 숫자로 주고받는다.
        */
-      let fit = a.fit ?? { mode: 'cover' as const, fx: 0.5, fy: 0.5 };
+      let fit: { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string } = a.fit ?? { mode: 'cover', fx: 0.5, fy: 0.5 };
       if (a.autoFocus && fit.mode === 'cover') {
         const c = await subjectCenter(raw);
         fit = { ...fit, ...focusFor(srcW, srcH, W, H, c.cx, c.cy) };
@@ -531,7 +561,7 @@ export async function POST(req: Request) {
       const c = await subjectCenter(raw);               // 초점은 원본에서 한 번만 재면 된다
       const pairId = Math.random().toString(36).slice(2, 10);
 
-      const items: { id?: string; url?: string; sizeId: string; w: number; h: number; label: string; preview?: string; layers?: DesignLayer[]; fit?: { mode: 'cover' | 'blur'; fx: number; fy: number } }[] = [];
+      const items: { id?: string; url?: string; sizeId: string; w: number; h: number; label: string; preview?: string; layers?: DesignLayer[]; fit?: { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string } }[] = [];
       for (const sid of (b.sizeIds ?? []).slice(0, 4)) {
         const sz = findSize(sid);
         const W = sz.w;
