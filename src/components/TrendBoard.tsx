@@ -24,6 +24,8 @@ interface Saved {
   sourceUrl: string;
   title: string;
   keyword: string;
+  /** 어느 업체를 보고 담은 것인지 — 스냅샷 수집이 채운다 */
+  brand: string;
   month: string;
   width: number;
   height: number;
@@ -62,6 +64,8 @@ export default function TrendBoard() {
   const [loadingImgs, setLoadingImgs] = useState(false);
   /** 크게 보기 팝업 — 새 창으로 튕기지 않고 이 자리에서 확인한다 */
   const [zoom, setZoom] = useState<{ src: string; label: string; href: string } | null>(null);
+  const [brandFilter, setBrandFilter] = useState('');   // 담아둔 이미지의 업체 필터
+  const [snapping, setSnapping] = useState(false);      // 스냅샷 수집 중
   const [copyData, setCopyData] = useState<{
     month: number;
     season: { label: string; angle: string; keywords: string[] };
@@ -240,14 +244,39 @@ export default function TrendBoard() {
       )}
 
       {/* 탭 — 이미지 보드와 이벤트 기록은 성격이 달라 화면을 나눈다 */}
-      <div className="flex gap-1.5 mb-4">
+      <div className="flex gap-1.5 mb-4 items-center flex-wrap">
         {([['promo', '경쟁사 이벤트'], ['copy', '문구 추천']] as const).map(([v, l]) => (
           <button key={v} onClick={() => { setTab(v); setNote(''); setErr(''); }} className="chip"
                   style={tab === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
             {l}
           </button>
         ))}
+        {/*
+          이달의 스냅샷 — 이 보드가 쌓이는 유일한 자동 경로.
+          이미지 검색엔 게시일이 없어 과거 배너를 소급할 수 없으니, 매달 눌러
+          그 시점을 박제한다. 글(게시일 있음)은 작년 것까지 같이 쌓인다.
+        */}
+        <button className="btn ml-auto" disabled={snapping}
+                title="보니타·폴리몰리의 이번 달 이미지·이벤트 글을 한 번에 수집해 보드에 쌓습니다. 매달 한 번이면 시점별 비교가 됩니다."
+                onClick={async () => {
+                  setSnapping(true); setErr(''); setNote('');
+                  try {
+                    const r = await fetch('/api/trends', {
+                      method: 'POST', headers: { 'content-type': 'application/json' },
+                      body: JSON.stringify({ kind: 'snapshot' }),
+                    });
+                    const j = await r.json();
+                    if (!j.ok) { setErr(j.error || '수집 실패'); return; }
+                    setNote(`${j.month} 스냅샷 — 새 이미지 ${j.images.new}장 · 새 이벤트 글 ${j.promos.new}건 담았습니다.`);
+                    load(month);                        // 보드를 새로 읽는다
+                  } catch (e) { setErr((e as Error).message); } finally { setSnapping(false); }
+                }}>
+          {snapping ? '수집 중…' : '📥 이달의 스냅샷 수집'}
+        </button>
       </div>
+      {/* 수집 결과 — setNote 만 하고 안 그리면 눌러도 아무 일 없어 보인다 */}
+      {note && <div className="text-[11.5px] mb-3" style={{ color: 'var(--ok)' }}>{note}</div>}
+      {err && <div className="text-[11.5px] mb-3" style={{ color: 'var(--danger)' }}>{err}</div>}
 
       {/* ── 이벤트·특가: 검색 결과 (업체별) ── */}
       {tab === 'promo' && (foundPromos.length > 0 || Object.keys(brandImgs).length > 0) && (
@@ -526,24 +555,39 @@ export default function TrendBoard() {
 
       {/* ── 월별 보드 ── */}
       {tab === 'promo' && (
-      <div className="flex items-center gap-1.5 mt-5 mb-3 flex-wrap">
-        <span className="label mr-1">담아둔 이미지 · 월별</span>
-        <button className="chip" onClick={() => setMonth('')}
-                style={!month ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>전체</button>
-        {months.map((m) => (
-          <button key={m} className="chip" onClick={() => setMonth(m === month ? '' : m)}
-                  style={month === m ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>{m}</button>
-        ))}
+      <div className="mt-5 mb-3">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="label mr-1">담아둔 이미지 · 월별</span>
+          <button className="chip" onClick={() => setMonth('')}
+                  style={!month ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>전체</button>
+          {months.map((m) => (
+            <button key={m} className="chip" onClick={() => setMonth(m === month ? '' : m)}
+                    style={month === m ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>{m}</button>
+          ))}
+          <span className="mx-1" style={{ color: 'var(--line-strong)' }}>|</span>
+          <button className="chip" onClick={() => setBrandFilter('')}
+                  style={!brandFilter ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>업체 전체</button>
+          {brands.map((b) => (
+            <button key={b} className="chip" onClick={() => setBrandFilter(b === brandFilter ? '' : b)}
+                    style={brandFilter === b ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>{b}</button>
+          ))}
+        </div>
+        {/* 기준을 화면이 말해야 한다 — 이미지 검색엔 게시일이 없다는 한계까지 */}
+        <div className="text-[10.5px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+          이미지의 월 = <b>수집한 달</b> (네이버 이미지 검색엔 게시일이 없어 과거 배너를 소급할 수 없습니다).
+          매달 스냅샷을 누르면 그 시점의 경쟁사 비주얼이 쌓여 시점별 비교가 됩니다.
+          이벤트 <b>글</b>은 게시일이 있어 작년 것까지 실제 날짜로 쌓입니다.
+        </div>
       </div>
       )}
 
-      {tab === 'promo' && (saved.length === 0 ? (
+      {tab === 'promo' && ((brandFilter ? saved.filter((s) => s.brand === brandFilter) : saved).length === 0 ? (
         <div className="card p-8 text-center text-[13px]" style={{ color: 'var(--text-dim)' }}>
           아직 담아둔 참고 이미지가 없습니다. 위에서 검색해 마음에 드는 것만 담아보세요.
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-          {saved.map((s) => (
+          {(brandFilter ? saved.filter((s) => s.brand === brandFilter) : saved).map((s) => (
             <div key={s.id}>
               <button onClick={() => setZoom({ src: s.thumb, label: s.keyword || s.title, href: s.sourceUrl })}
                       title="클릭하면 크게 보기"
@@ -555,7 +599,7 @@ export default function TrendBoard() {
               </button>
               <div className="text-[9.5px] mt-1 truncate" style={{ color: 'var(--text-dim)' }}>{s.keyword || s.title}</div>
               <div className="flex items-center gap-2 text-[9px]" style={{ color: 'var(--text-mute)' }}>
-                <span>{s.month}</span>
+                <span>{s.month}{s.brand ? ` · ${s.brand}` : ''}</span>
                 <button onClick={() => remove(s.id)} className="ml-auto"
                         style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 9 }}>
                   삭제

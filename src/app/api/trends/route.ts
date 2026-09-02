@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb, COLLECTIONS } from '@/lib/db';
-import { searchImages, searchPosts, naverConfigured, NaverError, BEANBAG_BRANDS } from '@/lib/naver';
+import { searchImages, searchPosts, naverConfigured, NaverError, BEANBAG_BRANDS, OUR_BRAND } from '@/lib/naver';
 import { SEASONS, harvestPhrases, buildSuggestions } from '@/lib/copy-ideas';
 
 /**
@@ -53,6 +53,7 @@ export async function GET(req: Request) {
         sourceUrl: d.sourceUrl,
         title: d.title ?? '',
         keyword: d.keyword ?? '',
+        brand: d.brand ?? '',
         month: d.month ?? '',
         width: d.width ?? 0,
         height: d.height ?? 0,
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
       q?: string; display?: number; start?: number; sort?: 'sim' | 'date';
-      kind?: 'image' | 'promo' | 'brandimg' | 'copy';
+      kind?: 'image' | 'promo' | 'brandimg' | 'copy' | 'snapshot';
       brands?: string[];
       month?: number;
     };
@@ -144,6 +145,84 @@ export async function POST(req: Request) {
      * 검색어(q) 검증보다 **앞**에 둔다 — 이 분기는 brands 만 쓰고 q 를 쓰지 않는다.
      * 뒤에 뒀다가 400 "검색어가 필요합니다" 로 막혀 이미지가 아예 안 떴다.
      */
+    /*
+     * 이달의 스냅샷 수집 — 이 화면의 자료가 쌓이는 유일한 자동 경로.
+     *
+     * 네이버 이미지 검색에는 게시일이 없어서 "작년 배너"를 소급해 긁어올 수는
+     * 없다 (지난 이벤트 페이지는 대부분 내려가 있다). 대신 매달 이 버튼이
+     * 그 시점의 경쟁사 비주얼을 박제하면, 몇 달 뒤부터 "그때 걔네가 뭘 걸었나"
+     * 를 우리 보드에서 비교할 수 있다. 글(블로그·카페)은 게시일이 있어서
+     * 작년 것까지 진짜 시점으로 남는다.
+     *
+     * 검색어는 실측으로 골랐다: '{업체} 빈백/빈백 이벤트/빈백 할인' 은 이벤트
+     * 비주얼이 잡히고, '기획전'·'이벤트 배너' 는 남의 업종이 섞여서 뺐다.
+     */
+    if (body.kind === 'snapshot') {
+      const month = new Date().toISOString().slice(0, 7);
+      const db = await getDb();
+      const ic = db.collection(COLLECTIONS.trendImages);
+      const pc = db.collection(COLLECTIONS.trendPromos);
+      const queriesFor = (b: string) => [`${b} 빈백`, `${b} 빈백 이벤트`, `${b} 빈백 할인`];
+
+      let imgNew = 0;
+      let imgSeen = 0;
+      let promoNew = 0;
+      for (const b of BEANBAG_BRANDS) {
+        const links = new Set<string>();
+        for (const q of queriesFor(b)) {
+          let imgs: Awaited<ReturnType<typeof searchImages>> = [];
+          try { imgs = await searchImages(q, { display: 20, sort: 'sim' }); } catch { /* 검색어 하나 실패는 넘어간다 */ }
+          for (const x of imgs) {
+            if (!x.link || links.has(x.link)) continue;
+            links.add(x.link);
+            imgSeen++;
+            const r = await ic.updateOne(
+              { sourceUrl: x.link },
+              {
+                $set: { thumb: x.thumbnail, title: x.title, width: x.sizeWidth, height: x.sizeHeight, brand: b, keyword: q },
+                // month 는 처음 담긴 달을 지킨다 — 다시 수집해도 "처음 본 시점"이 남아야 한다
+                $setOnInsert: { sourceUrl: x.link, month, collectedAt: new Date() },
+              },
+              { upsert: true },
+            );
+            if (r.upsertedCount) imgNew++;
+          }
+        }
+        try {
+          const posts = await searchPosts(`${b} 빈백`, { display: 100 });
+          for (const x of posts) {
+            const m = /^\d{4}-\d{2}/.test(x.date || '') ? x.date.slice(0, 7) : month;
+            const r = await pc.updateOne(
+              { link: x.link },
+              {
+                $set: {
+                  title: x.title, desc: x.desc, date: x.date, source: x.source, kind: x.kind,
+                  brand: x.brand || b, discount: x.discount, price: x.price, copy: x.copy,
+                  isOurs: x.isOurs, keyword: `${b} 빈백`, month: m,
+                },
+                $setOnInsert: { link: x.link, collectedAt: new Date() },
+              },
+              { upsert: true },
+            );
+            if (r.upsertedCount) promoNew++;
+          }
+        } catch { /* 글 수집 실패도 이미지는 살린다 */ }
+      }
+
+      // 옛 데이터 정리 — 추출기가 허술하던 시절의 엉터리 브랜드('위한' 등)를 비운다
+      const cleaned = await pc.updateMany(
+        { brand: { $nin: ['', OUR_BRAND, ...BEANBAG_BRANDS] } },
+        { $set: { brand: '' } },
+      );
+
+      return NextResponse.json({
+        ok: true, month,
+        images: { new: imgNew, seen: imgSeen },
+        promos: { new: promoNew },
+        cleaned: cleaned.modifiedCount,
+      });
+    }
+
     if (body.kind === 'brandimg') {
       const brands = (body.brands ?? []).slice(0, 8);
       const out: Record<string, { link: string; thumbnail: string; title: string; sizeWidth: number; sizeHeight: number }[]> = {};
