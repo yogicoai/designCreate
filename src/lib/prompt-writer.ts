@@ -436,16 +436,31 @@ const FILL_FRAME =
 function compositionFor(spec: GenerationSpec): string {
   const { width, height } = spec.size;
   const r = height ? width / height : 1;
+  /*
+   * 와이드 규격 구도 — 빈백이 주인공, 인물은 인테리어에 녹아드는 조연 (사용자 확정).
+   * 처음엔 "베이스 샷 스케일 유지(인물 크게)"를 넣었다가 정반대 피드백을 받았다:
+   * 모델이 너무 크게 나오는 게 문제였고, 원하는 그림은 룸 전체가 보이는 에디토리얼
+   * 인테리어 컷 — 카메라가 물러나 제품 전체 + 주변 가구·바닥·벽이 함께 잡히고,
+   * 사람은 그 안에 자연스럽게 앉아 있는 연출이다.
+   */
+  const PRODUCT_HERO =
+    ' THE PRODUCT IS THE HERO of this frame, not the people. Shoot it like an editorial interior ' +
+    'photograph: the camera stands back far enough that the bean bag is fully visible with breathing ' +
+    'room around it, surrounded by its interior context — floor, rug, surrounding furniture, walls. ' +
+    'The people are supporting cast, naturally absorbed into the scene, never so large that they ' +
+    'dominate the frame or crop the product.';
   if (spec.mode === 'thumbnail') {
-    if (r >= 1.3) return `WIDE PRODUCT SHOT (${width}x${height}). Centre the product and model; keep generous even margin on both sides.` + FILL_FRAME;
+    if (r >= 1.3) {
+      return `WIDE PRODUCT SHOT (${width}x${height}). Centre the product and model; keep generous even margin on both sides.` + PRODUCT_HERO + FILL_FRAME;
+    }
     if (r >= 0.95) return `SQUARE PRODUCT THUMBNAIL (${width}x${height}). The product and model fill the frame with even margin — this is a catalogue thumbnail, so the product must read clearly at small size.` + FILL_FRAME;
     return `TALL PRODUCT SHOT (${width}x${height}). Vertical framing; the product fills the lower two thirds.` + FILL_FRAME;
   }
   if (r >= 2.5) {
-    return `EXTREME WIDE BANNER (${width}x${height}). Place the product and model in the RIGHT third. The LEFT half must be an empty, uncluttered wall/floor plane. Keep every essential element inside the vertical middle band — the top and bottom will be cropped away.` + FILL_FRAME;
+    return `EXTREME WIDE BANNER (${width}x${height}). Place the product and model in the RIGHT third. The LEFT half must be an empty, uncluttered wall/floor plane. Keep every essential element inside the vertical middle band — the top and bottom will be cropped away.` + PRODUCT_HERO + FILL_FRAME;
   }
   if (r >= 1.6) {
-    return `WIDE WEB BANNER (${width}x${height}). Split composition: the LEFT 45% stays clean and empty for copy, product and model occupy the RIGHT side.` + FILL_FRAME;
+    return `WIDE WEB BANNER (${width}x${height}). Split composition: the LEFT 45% stays clean and empty for copy, product and model occupy the RIGHT side.` + PRODUCT_HERO + FILL_FRAME;
   }
   if (r >= 0.95) {
     return `SQUARE SNS POST (${width}x${height}). Subject and product sit in the LOWER TWO THIRDS, centred slightly off-axis. The TOP THIRD stays a quiet, evenly lit area for copy.` + FILL_FRAME;
@@ -725,6 +740,25 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
       anyRef
         ? 'Each person keeps their own distinct identity — those with a reference sheet must match it exactly; never blend faces between people, never give two people the same face.'
         : 'Each person has a clearly distinct face and age; never give two people the same face.',
+    );
+  }
+  /*
+   * 시선 처리 — 정면 응시가 너무 잦다 (사용자 확인).
+   * 원인: 아이덴티티 시트·표정컷이 전부 정면 스튜디오 포트레이트라, 모델이 표정과 함께
+   * 시선·머리 각도까지 복사한다. 표정만 가져오고 시선은 장면이 정하게 못박는다.
+   */
+  if (talents.length) {
+    L.push(
+      editingPeople && hasBase
+        ? 'GAZE & HEAD DIRECTION — each replaced person keeps the head angle and EYELINE of the person they replace ' +
+          'in the base photograph: if they were looking at each other, at the product, down at a book or off-frame, ' +
+          'the new person looks the SAME way. Never rotate a head toward the camera just because the identity or ' +
+          'expression references are frontal portraits — copy the expression, never the reference\'s eyeline.'
+        : 'GAZE & HEAD DIRECTION — direct eye contact with the camera is the EXCEPTION, not the default. ' +
+          'The people are candid, absorbed in the scene: looking at each other, at the product, out the window, ' +
+          'at a prop, or into the middle distance, with relaxed three-quarter head angles. At most ONE person may ' +
+          'glance toward the camera, and only when it feels natural — never the whole group locking eyes with the ' +
+          'lens like a posed studio photo.',
     );
   }
   if (talents.some((t) => !t.freeform)) {

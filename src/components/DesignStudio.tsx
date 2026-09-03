@@ -174,13 +174,15 @@ function textOf(d: DesignDoc | undefined, id: string, fallback: string) {
   return d?.layers.find((l) => l.id === id)?.text ?? fallback;
 }
 
-export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
+export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs = [] }: {
   cuts: CutOption[];
   initial?: DesignDoc;
   /** 관리 게시판에서 수정으로 연 배너의 id — 저장할 때 계보로 남긴다 */
   sourceId?: string;
   /** fonts/ 폴더에서 찾은 글꼴들 — 파일만 넣으면 서버가 목록을 만든다 */
   fonts?: { family: string; file: string }[];
+  /** 레퍼런스 보관함 — 배경·A안 우측 이미지를 생성 컷 말고 여기서도 고른다 */
+  refs?: { url: string; label: string; cat: string }[];
 }) {
   /*
    * 배경은 고르고 시작한다. 첫 컷을 자동으로 물려두면 고르지도 않은 배경 위에
@@ -211,8 +213,13 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     | null
   >(null);
   const [tweakOpen, setTweakOpen] = useState(false);
-  // 배경 전체보기 게시판 — 생성 컷을 20개씩 페이지로 넘겨 고른다
+  // 배경 전체보기 게시판 — 생성 컷을 20개씩 페이지로 넘겨 고른다.
+  // A안 웹의 우측 이미지도 같은 게시판에서 고른다 (browseFor 로 어느 자리에 넣을지 구분)
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [browseFor, setBrowseFor] = useState<'bg' | 'right'>('bg');
+  // 소스 탭 — 생성 컷 / 레퍼런스 보관함. 레퍼런스는 분류 칩으로 한 번 더 거른다
+  const [browseSrc, setBrowseSrc] = useState<'cuts' | 'refs'>('cuts');
+  const [browseCat, setBrowseCat] = useState('');
   const [browsePage, setBrowsePage] = useState(0);
   const BROWSE_PER = 20;
   // 원본 컷의 크기와 '걸릴 자리'의 규격은 다른 값이다. 둘을 섞으면 미리보기가 어긋난다
@@ -273,6 +280,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
 
   const stageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
+  /** 배경 이미지 자체를 끄는 중 — 기본 템플릿에서도 이미지를 잡아 위치(fx/fy)를 옮긴다 */
+  const bgDragRef = useRef<{ sx: number; sy: number; fx0: number; fy0: number } | null>(null);
 
   const theme = findTheme(themeId);
   const sel = layers.find((l) => l.id === selected) ?? null;
@@ -416,6 +425,138 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
 
+  /**
+   * 자사몰 기본 시안 A안 — 디자인팀 실제 롤링배너(1920x680) 레이아웃을 그대로 박은 것.
+   * 원본(Yogibo Luxe 배너) 실측: 좌 60.6% 씬 이미지(어둡게) + 우 39.4% 클로즈업 이미지,
+   * 문구는 좌하단 좌측정렬 3줄(타이틀·서브·설명/기간). 배경 = 좌측 이미지,
+   * 우측 이미지는 별도 레이어라 이미지 2개가 한 배너에 들어간다.
+   */
+  /** A안 레이어 시드 — 규격에 맞는 배치를 만든다. texts 로 다른 버전의 문구를 이어받는다 */
+  function templateASeeds(w: number, h: number, texts?: Record<string, string>, style: 'scrim' | 'band' = 'scrim'): DesignLayer[] {
+    const tx = (name: string, def: string) => texts?.[name] ?? def;
+    if (h > w && style === 'band') {
+      /*
+       * 밴드형 모바일 A안 (Modju 계열 실물) — 사진은 위쪽만 쓰고,
+       * 아래는 단색 밴드가 깔리며 사진 끝이 그 색으로 스며든다. 문구는 밴드 위에.
+       * 밴드 색은 캠페인마다 달라서 레이어 색으로 바꾼다 (기본: 네이비).
+       */
+      const BAND = '#3d3a68';
+      return [
+        { id: uid(), kind: 'rect', x: 0.5, y: 0.69, w: 1, h: 0.62, color: BAND, opacity: 1, name: '하단 밴드' },
+        { id: uid(), kind: 'scrim', x: 0.5, y: 0.33, w: 1, h: 0.22, color: BAND, opacity: 1, direction: 'bottom', name: '사진→밴드 번짐' },
+        // 문자: 62px/700/-2%/lh75 · 45px/700/-2%/lh80 · 25px/500/lh100% (피그마 실측, 800 기준)
+        // 위치: 타이틀(2줄 블록) top 484 → 중심 484+75 · 서브 +21 → top 655 · 설명 +30 → top 765
+        { id: uid(), kind: 'text', x: 0.094, y: 559 / 907, text: tx('타이틀', '문구가 들어갑니다.\n문구가 들어갑니다.'), size: 62 / 800, weight: 700, tracking: -0.02, lineHeight: 75 / 62, align: 'start', shadow: false, curve: 0, color: '#ffffff', opacity: 1, name: '타이틀' },
+        { id: uid(), kind: 'text', x: 0.094, y: 695 / 907, text: tx('서브 타이틀', '서브 타이틀이 들어갑니다.'), size: 45 / 800, weight: 700, tracking: -0.02, lineHeight: 80 / 45, align: 'start', shadow: false, curve: 0, color: '#ffffff', opacity: 1, name: '서브 타이틀' },
+        { id: uid(), kind: 'text', x: 0.094, y: 777.5 / 907, text: tx('설명·기간', '설명 또는 기간 00.00(월) - 00.00(일)'), size: 25 / 800, weight: 500, tracking: 0, lineHeight: 1, align: 'start', shadow: false, curve: 0, color: '#d9d6ea', opacity: 1, name: '설명·기간' },
+      ];
+    }
+    if (h > w) {
+      // 모바일 A안(실물 800×907 실측) — 이미지 한 장 + 하단 45% 웜톤 그늘 + 문구 3줄 좌측정렬
+      return [
+        { id: uid(), kind: 'scrim', x: 0.5, y: 0.775, w: 1, h: 0.45, color: '#2a1d12', opacity: 0.85, direction: 'bottom', name: '하단 그늘' },
+        // 문자: 62px/700/-2%/lh75 · 45px/700/-2%/lh80 · 25px/500/lh100% (피그마 실측, 800 기준)
+        // 위치: 타이틀(2줄 블록) top 484 → 중심 484+75 · 서브 +21 → top 655 · 설명 +30 → top 765
+        { id: uid(), kind: 'text', x: 0.094, y: 559 / 907, text: tx('타이틀', '문구가 들어갑니다.\n문구가 들어갑니다.'), size: 62 / 800, weight: 700, tracking: -0.02, lineHeight: 75 / 62, align: 'start', shadow: false, curve: 0, color: '#ffffff', opacity: 1, name: '타이틀' },
+        { id: uid(), kind: 'text', x: 0.094, y: 695 / 907, text: tx('서브 타이틀', '서브 타이틀이 들어갑니다.'), size: 45 / 800, weight: 700, tracking: -0.02, lineHeight: 80 / 45, align: 'start', shadow: false, curve: 0, color: '#ffffff', opacity: 1, name: '서브 타이틀' },
+        { id: uid(), kind: 'text', x: 0.094, y: 777.5 / 907, text: tx('설명·기간', '설명 또는 기간 00.00(월) - 00.00(일)'), size: 25 / 800, weight: 500, tracking: 0, lineHeight: 1, align: 'start', shadow: false, curve: 0, color: '#e6e3dd', opacity: 1, name: '설명·기간' },
+      ];
+    }
+    // 웹 A안(실물 1920×680 실측) — 좌 60.6% 씬+어둡게+문구 3줄, 우 39.4% 이미지 슬롯
+    return [
+      rightImg
+        ? { id: uid(), kind: 'image', x: 0.803, y: 0.5, w: 0.394, h: 1.0, src: rightImg, cover: true, color: '#ffffff', opacity: 1, name: '우측 이미지' }
+        : { id: uid(), kind: 'rect', x: 0.803, y: 0.5, w: 0.394, h: 1.0, color: '#d9dde3', opacity: 1, name: '우측 이미지 자리 — 이미지로 교체' },
+      { id: uid(), kind: 'rect', x: 0.303, y: 0.5, w: 0.606, h: 1.0, color: '#000000', opacity: 0.25, name: '좌측 어둡게' },
+      // 문자: 65px/700/-2%/lh75 · 45px/700/-2%/lh80 · 25px/500/lh100% (피그마 실측, 680 기준)
+      // 위치: left 180 · 타이틀(2줄 블록) top 297 → 중심 297+75 · 서브 +21 → top 468 · 설명 +33 → top 581
+      { id: uid(), kind: 'text', x: 180 / 1920, y: 372 / 680, text: tx('타이틀', '문구가 들어갑니다.\n문구가 들어갑니다.'), size: 65 / 680, weight: 700, tracking: -0.02, lineHeight: 75 / 65, align: 'start', shadow: false, curve: 0, color: '#ffffff', opacity: 1, name: '타이틀' },
+      { id: uid(), kind: 'text', x: 180 / 1920, y: 508 / 680, text: tx('서브 타이틀', '서브 타이틀이 들어갑니다.'), size: 45 / 680, weight: 700, tracking: -0.02, lineHeight: 80 / 45, align: 'start', shadow: false, curve: 0, color: '#ffffff', opacity: 1, name: '서브 타이틀' },
+      { id: uid(), kind: 'text', x: 180 / 1920, y: 593.5 / 680, text: tx('설명·기간', '설명 또는 기간 00.00(월) - 00.00(일)'), size: 25 / 680, weight: 500, tracking: 0, lineHeight: 1, align: 'start', shadow: false, curve: 0, color: '#e6e3dd', opacity: 1, name: '설명·기간' },
+    ];
+  }
+
+  /**
+   * B안 레이어 시드 — 이미지 한 장 + **중앙정렬** 문구 3줄(타이틀은 2줄 가능).
+   * 디자인팀 가이드(/test/w_b.jpg 1920×680, /test/m_b.jpg 800×907) 실측.
+   * 가이드에 그늘이 없어서 안 깐다 — 대신 가는 가독 윤곽(shadow)으로 흰 글씨를 세운다.
+   */
+  function templateBSeeds(w: number, h: number, texts?: Record<string, string>): DesignLayer[] {
+    const tx = (name: string, def: string) => texts?.[name] ?? def;
+    const mob = h > w;
+    return [
+      // 문자: 웹 65px / 모바일 62px · 서브 45px · 설명 25px — 자간 -2%(설명 0), 중앙정렬 (피그마 실측)
+      // 위치: 타이틀(2줄) top 웹310/모484 → 중심 +75 · 서브 +21 · 설명 웹+33/모+30
+      { id: uid(), kind: 'text', x: 0.5, y: mob ? 559 / 907 : 385 / 680, text: tx('타이틀', '문구가 들어갑니다.\n문구가 들어갑니다.'), size: mob ? 62 / 800 : 65 / 680, weight: 700, tracking: -0.02, lineHeight: mob ? 75 / 62 : 75 / 65, align: 'middle', shadow: true, curve: 0, color: '#ffffff', opacity: 1, name: '타이틀' },
+      { id: uid(), kind: 'text', x: 0.5, y: mob ? 695 / 907 : 521 / 680, text: tx('서브 타이틀', '서브 타이틀이 들어갑니다.'), size: mob ? 45 / 800 : 45 / 680, weight: 700, tracking: -0.02, lineHeight: 80 / 45, align: 'middle', shadow: true, curve: 0, color: '#ffffff', opacity: 1, name: '서브 타이틀' },
+      { id: uid(), kind: 'text', x: 0.5, y: mob ? 777.5 / 907 : 606.5 / 680, text: tx('설명·기간', '설명 문구가 들어갑니다.'), size: mob ? 25 / 800 : 25 / 680, weight: 500, tracking: 0, lineHeight: 1, align: 'middle', shadow: true, curve: 0, color: '#f0eee9', opacity: 1, name: '설명·기간' },
+    ];
+  }
+
+  /** 배치가 어느 시안인지 — 짝 저장에서 모자란 버전을 같은 시안으로 이어 만들 때 본다 */
+  const looksLikeTemplateA = (ls: DesignLayer[]) =>
+    ls.some((l) => l.name?.startsWith('우측 이미지') || l.name === '하단 그늘' || l.name === '하단 밴드');
+  const looksLikeTemplateB = (ls: DesignLayer[]) =>
+    !looksLikeTemplateA(ls) && ls.some((l) => l.kind === 'text' && l.name === '타이틀');
+  const stageIsTemplateA = () => looksLikeTemplateA(layers);
+  const stageIsTemplateB = () => looksLikeTemplateB(layers);
+
+  /**
+   * 시안 적용 — 무대에 깔고, 짝 버전에도 같은 시안을 심는다.
+   * 짝을 안 심으면 버전 탭에 남아 있던 옛 자동 배치가 짝 저장에 그대로 끼어 들어간다
+   * (사용자 확인: 모바일이 이전 배치로 저장됨). 시안 버튼 = "이 짝은 이 시안이다" 선언.
+   */
+  function applyPlan(plan: 'A' | 'B', style?: 'scrim' | 'band') {
+    const st = style ?? mobStyle;
+    if (style) setMobStyle(style);
+    const make = (w: number, h: number) =>
+      plan === 'B' ? templateBSeeds(w, h) : templateASeeds(w, h, undefined, st);
+    const seeds = make(dims.w, dims.h);
+    setLayers(seeds);
+    for (const sid of AUTO_SET[channel]) {
+      if (sid === sizeId) continue;
+      const b = findSize(sid);
+      const pseeds = make(b.w, b.h);
+      setVariants((v) => ({ ...v, [sid]: { layers: pseeds, fit } }));
+    }
+    setSelected(seeds.find((l) => l.name === '타이틀')?.id ?? seeds[0].id);
+    setResult(null);
+    if (plan === 'B') {
+      setNote('B안 배치를 올렸습니다 — 이미지 한 장 + 중앙정렬 문구. 짝 버전에도 B안이 같이 깔렸습니다.');
+    } else {
+      setNote(dims.h > dims.w
+        ? `모바일 A안(${st === 'band' ? '밴드형' : '그늘형'})을 올렸습니다 — 웹 버전에도 A안이 같이 깔렸습니다.`
+        : rightImg ? 'A안 배치를 올렸습니다 — 모바일 버전에도 A안이 같이 깔렸습니다.' : 'A안 배치를 올렸습니다 — 우측 이미지를 올리면 회색 자리에 들어갑니다.');
+    }
+  }
+  const applyTemplateA = (style?: 'scrim' | 'band') => applyPlan('A', style);
+
+  /** A안 우측 이미지를 정한다 — 무대에 A안이 있으면 자리표시(회색)든 기존 것이든 바꿔 끼운다 */
+  function setRightImage(url: string) {
+    setRightImg(url);
+    setLayers((cur) => cur.map((l) => (l.name?.startsWith('우측 이미지')
+      ? { ...l, kind: 'image' as const, src: url, cover: true, color: '#ffffff', name: '우측 이미지' }
+      : l)));
+  }
+
+  /** A안 우측 이미지 업로드 — 배경 업로드와 같은 경로, 보관함 등록은 안 한다 */
+  async function uploadRight(files: FileList | null) {
+    const f = files?.[0];
+    if (!f) return;
+    setBusy('upload'); setErr('');
+    try {
+      const shrunk = await shrinkForUpload(f);
+      const fd = new FormData();
+      fd.append('file', shrunk.file);
+      fd.append('title', f.name);
+      fd.append('register', '0');
+      const j = await (await fetch('/api/upload', { method: 'POST', body: fd })).json();
+      if (!j.ok) { setErr(j.error || '업로드 실패'); return; }
+      setRightImage(j.url);
+      setNote(`우측 이미지 준비됨 — "${f.name}"`);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
+  }
+
   function applyTemplate(tplId: string) {
     const t = TEMPLATES.find((x) => x.id === tplId);
     if (!t) return;
@@ -450,7 +591,31 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     setSelected(id);
     (e.target as Element).setPointerCapture?.(e.pointerId);
   }
+  /** 무대에서 이미지(빈 곳 포함)를 잡아 끌면 배경 위치가 움직인다 — cover 크롭에서 남는 축만 */
+  function onBgDown(e: React.PointerEvent) {
+    // 레이어 손잡이를 잡았으면(자식에서 dragRef 세팅됨) 배경은 건드리지 않는다
+    if (dragRef.current || !imageUrl || fitMode !== 'cover' || !stageRef.current) return;
+    const k = Math.max(dims.w / src.w, dims.h / src.h);
+    if (src.w * k - dims.w <= 1 && src.h * k - dims.h <= 1) return; // 크롭이 없으면 움직일 것도 없다
+    const r = stageRef.current.getBoundingClientRect();
+    bgDragRef.current = { sx: (e.clientX - r.left) / r.width, sy: (e.clientY - r.top) / r.height, fx0: fx, fy0: fy };
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+  }
+
   function onMove(e: React.PointerEvent) {
+    const b = bgDragRef.current;
+    if (b && !dragRef.current && stageRef.current) {
+      // 포인터가 끈 만큼 이미지가 따라온다 — 숨어 있는 폭/높이 대비 비율로 환산
+      const r = stageRef.current.getBoundingClientRect();
+      const k = Math.max(dims.w / src.w, dims.h / src.h);
+      const hidW = src.w * k - dims.w, hidH = src.h * k - dims.h;
+      const dnx = (e.clientX - r.left) / r.width - b.sx;
+      const dny = (e.clientY - r.top) / r.height - b.sy;
+      if (hidW > 1) { setFx(Math.max(0, Math.min(1, b.fx0 - (dnx * dims.w) / hidW))); setFocusTouched(true); }
+      if (hidH > 1) { setFy(Math.max(0, Math.min(1, b.fy0 - (dny * dims.h) / hidH))); setFocusTouched(true); }
+      setResult(null);
+      return;
+    }
     const d = dragRef.current, st = stageRef.current;
     if (!d || !st) return;
     const r = st.getBoundingClientRect();
@@ -470,7 +635,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
       return cur.map((l) => (groupOf(l) === g ? { ...l, x: l.x + ddx, y: l.y + ddy } : l));
     });
   }
-  const onUp = () => { dragRef.current = null; };
+  const onUp = () => { dragRef.current = null; bgDragRef.current = null; };
 
   /**
    * 자동 배치 — 규격의 비율을 보고, 배경에서 비어 있는 곳에 읽히는 색으로 얹는다.
@@ -596,15 +761,38 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
    * 배너는 항상 짝으로 나가는 물건이라 이게 실전의 기본 동선이다.
    * 손으로 다듬은 배치는 여기 안 들어간다 (규격마다 배치가 다시 잡히므로).
    */
-  /** 짝 규격들 각각의 설계도 — 무대의 것과 보관함의 것을 모은다. 하나라도 없으면 null */
-  function localPairDocs(): { sizeId: string; label: string; w: number; h: number; design: DesignDoc }[] | null {
+  /**
+   * 짝 규격들 각각의 설계도 — 무대의 것 + 보관함(버전 탭)의 것을 모으고,
+   * 아직 안 만든 버전은 그 자리에서 만들어 채운다:
+   * 무대가 A안이면 그 규격의 A안(문구 이어받음)으로, 아니면 서버 자동 배치로.
+   * "저장 한 번 = 웹·모바일 두 장"을 위해 밖의 버튼을 줄인 대신 여기가 빈 곳을 채운다.
+   */
+  async function pairDocs(): Promise<{ sizeId: string; label: string; w: number; h: number; design: DesignDoc }[]> {
     const out: { sizeId: string; label: string; w: number; h: number; design: DesignDoc }[] = [];
     for (const sid of AUTO_SET[channel]) {
       const b = findSize(sid);
-      const doc = sid === sizeId
+      let doc = sid === sizeId
         ? (layers.length ? { layers, fit } : null)
         : variants[sid] ?? null;
-      if (!doc || !doc.layers.length) return null;
+      if (!doc || !doc.layers.length) {
+        const texts = Object.fromEntries(
+          layers.filter((l) => l.kind === 'text' && l.name).map((l) => [l.name as string, l.text ?? '']),
+        );
+        if (stageIsTemplateA()) doc = { layers: templateASeeds(b.w, b.h, texts, mobStyle), fit };
+        else if (stageIsTemplateB()) doc = { layers: templateBSeeds(b.w, b.h, texts), fit };
+        else doc = await fetchAutoFor(sid);
+        const filled = doc;
+        setVariants((v) => ({ ...v, [sid]: filled }));
+      } else if (sid !== sizeId
+                 && layers.some((l) => l.kind === 'text' && l.name === '타이틀')
+                 && doc.layers.some((l) => l.kind === 'text' && l.name === '타이틀')) {
+        // 짝 버전도 같은 시안(이름 붙은 문구 레이어)이면 문구만 무대 것으로 맞춘다 — 배치 손질은 보존
+        const texts = new Map(layers.filter((l) => l.kind === 'text' && l.name).map((l) => [l.name as string, l.text ?? '']));
+        doc = {
+          ...doc,
+          layers: doc.layers.map((l) => (l.kind === 'text' && l.name && texts.has(l.name) ? { ...l, text: texts.get(l.name)! } : l)),
+        };
+      }
       out.push({
         sizeId: sid, label: b.label, w: b.w, h: b.h,
         design: { imageUrl, layers: doc.layers, size: { id: sid, w: b.w, h: b.h }, fit: doc.fit, font: fontFamily || undefined },
@@ -618,69 +806,41 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     setBusy('save'); setErr(''); setNote('');
     try {
       /*
-       * 두 버전을 탭에서 각각 손봤다면 **그 손본 배치 그대로** 저장해야 한다.
-       * 서버 자동(batch)으로 다시 만들면 다듬은 게 날아간다.
-       * 손본 버전이 다 있으면 로컬 설계도로, 아니면 서버 자동으로 간다.
+       * 저장 = 항상 웹·모바일 짝. 손본 버전은 그 배치 그대로,
+       * 아직 안 만든 버전은 pairDocs 가 그 자리에서 채워온다 (A안 연장 또는 자동 배치).
+       * 결과 팝업에서 두 장을 눈으로 확인한 뒤에야 실제 저장된다.
        */
-      const local = localPairDocs();
-      if (local) {
-        if (previewOnly) {
-          const items = [];
-          for (const it of local) {
-            const r = await fetch('/api/design', {
-              method: 'POST', headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ design: it.design, save: false }),
-            });
-            const j = await r.json();
-            if (!j.ok) { setErr(j.error || '실패'); return; }
-            items.push({
-              label: it.label, w: it.w, h: it.h, preview: j.preview,
-              sizeId: it.sizeId, layers: it.design.layers, fit: it.design.fit!,
-            });
-          }
-          setResult({ kind: 'pair', items });
-          return;
-        }
-        const pairId = Math.random().toString(36).slice(2, 10);
+      const local = await pairDocs();
+      if (previewOnly) {
+        const items = [];
         for (const it of local) {
           const r = await fetch('/api/design', {
             method: 'POST', headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              design: it.design, save: true, sourceId, pairId,
-              title: `${autoTitle || '배너'} — ${it.label}`,
-            }),
+            body: JSON.stringify({ design: it.design, save: false }),
           });
           const j = await r.json();
           if (!j.ok) { setErr(j.error || '실패'); return; }
+          items.push({
+            label: it.label, w: it.w, h: it.h, preview: j.preview,
+            sizeId: it.sizeId, layers: it.design.layers, fit: it.design.fit!,
+          });
         }
-        setNote(`짝으로 저장했습니다 — ${local.map((i) => `${i.label} ${i.w}×${i.h}`).join(' · ')}. 배너 디자인 관리에서 볼 수 있습니다.`);
-        setResult(null);
+        setResult({ kind: 'pair', items });
         return;
       }
-
-      const r = await fetch('/api/design', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          batch: {
-            imageUrl, eyebrow: autoEyebrow, title: autoTitle, subtitle: autoSub, cta: autoCta,
-            sizeIds: AUTO_SET[channel],
-            buttonColor: btnColor === 'photo' ? undefined : brandButtonHex(btnColor),
-            tune: { scale: tuneScale, gap: tuneGap },
-            font: fontFamily || undefined,
-            sourceId,
-            preview: previewOnly,
-          },
-        }),
-      });
-      const j = await r.json();
-      if (!j.ok) { setErr(j.error || '실패'); return; }
-      if (previewOnly) {
-        setResult({ kind: 'pair', items: j.items });
-        return;
+      const pairId = uid();
+      for (const it of local) {
+        const r = await fetch('/api/design', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            design: it.design, save: true, sourceId, pairId,
+            title: `${autoTitle || '배너'} — ${it.label}`,
+          }),
+        });
+        const j = await r.json();
+        if (!j.ok) { setErr(j.error || '실패'); return; }
       }
-      const made = (j.items as { label: string; w: number; h: number }[])
-        .map((i) => `${i.label} ${i.w}×${i.h}`).join(' · ');
-      setNote(`짝으로 저장했습니다 — ${made}. 배너 디자인 관리에서 볼 수 있습니다.`);
+      setNote(`짝으로 저장했습니다 — ${local.map((i) => `${i.label} ${i.w}×${i.h}`).join(' · ')}. 배너 디자인 관리에서 볼 수 있습니다.`);
       setResult(null);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
@@ -690,6 +850,10 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
    * 버튼을 누르면 인라인 입력이 열리고, Enter 로 저장한다.
    */
   const [tplNaming, setTplNaming] = useState(false);
+  /** A안(이미지 2분할)의 우측 이미지 URL */
+  const [rightImg, setRightImg] = useState('');
+  /** 모바일 A안 하단 처리 — 그늘형(Luxe, 사진 위 그라데이션) / 밴드형(Modju, 단색 블록) */
+  const [mobStyle, setMobStyle] = useState<'scrim' | 'band'>('scrim');
   const [tplName, setTplName] = useState('');
   async function saveTemplate() {
     const name = tplName.trim();
@@ -991,14 +1155,9 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   }
 
   const sizeName = sizeId ? findSize(sizeId).label : '컷 크기 그대로';
-  // 자동완성 묶음의 이름과 크기 — 버튼·설명에 그대로 쓴다
+  // 짝 저장 묶음의 이름과 크기 — 저장 버튼 설명에 그대로 쓴다
   const autoSet = AUTO_SET[channel].map(findSize);
   const autoSetText = autoSet.map((b) => `${b.label} ${b.w}×${b.h}`).join(' · ');
-  // '저장' 을 붙이지 않는다 — 누르면 두 장을 먼저 보여주고, 확인해야 저장된다
-  const autoBtnLabel =
-    channel === 'SNS' ? '정사각·세로 자동완성'
-    : channel === 'POP' ? '포스터 A2·A1 자동완성'
-    : '웹·모바일 자동완성';
   const shapeWord = shape === 'wide' ? '가로형' : shape === 'tall' ? '세로형' : '정사각';
 
   return (
@@ -1045,41 +1204,68 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
                     title="피그마·포토샵처럼 레이어를 직접 만지는 전체 화면 편집기 — 텍스트·도형·아이콘·이미지 추가, 드래그·회전·그림자, PC 폰트, Ctrl+Z. 만진 레이어는 돌아와도 유지됩니다.">
               🎨 포토샵 방식
             </button>
-            <button className="btn btn-primary" onClick={() => render(false)} disabled={!!busy || !layers.length}
-                    title="지금 보는 규격 그대로 실제 크기로 그려 보여드리고, 확인하면 저장됩니다.">
+            <button className="btn btn-primary" onClick={() => saveBoth(true)} disabled={!!busy || !layers.length || !imageUrl}
+                    title={`${autoSetText} 두 버전을 함께 그려 보여드리고, 확인하면 둘 다 저장됩니다. 아직 안 만든 버전은 같은 배치·문구로 채워집니다.`}>
               {busy === 'save' ? '그리는 중…' : '✔ 완성 · 저장'}
-            </button>
-            <button className="btn" onClick={() => saveBoth(true)} disabled={!!busy || !imageUrl}
-                    title={`문구만으로 ${autoSetText} 를 자동 배치해 보여드리고, 확인하면 함께 저장됩니다. 손으로 다듬은 배치는 들어가지 않습니다.`}>
-              {autoBtnLabel}
-            </button>
-            {tplNaming && (
-              <input
-                autoFocus
-                value={tplName}
-                onChange={(e) => setTplName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') saveTemplate();
-                  if (e.key === 'Escape') { setTplNaming(false); setTplName(''); }
-                }}
-                placeholder="템플릿 이름 (Enter=저장)"
-                className="px-2 py-1 text-[12px] rounded-[8px] w-[170px]"
-                style={{ background: 'var(--surface)', border: '1px solid var(--accent)', color: 'var(--text)' }}
-              />
-            )}
-            <button className="btn" onClick={saveTemplate} disabled={!!busy || !layers.length}
-                    title="배경 없이 지금 배치만 저장해서 다른 컷에도 얹을 수 있게 합니다.">
-              {tplNaming ? '이 이름으로 저장' : '템플릿으로 저장'}
             </button>
             {note && <span className="text-[11px]" style={{ color: 'var(--ok)' }}>{note}</span>}
             {err && <span className="text-[11px]" style={{ color: 'var(--danger)' }}>{err}</span>}
           </div>
-          {/* 버튼 이름만으론 부족하다 — 무엇이 몇 장 저장되는지 한 줄로 미리 말해준다 */}
+          {/* 저장 하나로 끝낸다 — 누르면 두 버전을 나란히 보여주고, 확인해야 둘 다 저장 */}
           <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
-            <b>완성 · 저장</b> = 지금 보는 규격 한 장 ·{' '}
-            <b>{autoBtnLabel.replace(' 저장', '')}</b> = 문구만으로 {channel}용 두 규격({autoSetText})을 자동 배치해 함께 저장
-            — 둘 다 저장 전에 결과를 먼저 보여드리고, 확인을 눌러야 저장됩니다.
+            <b>완성 · 저장</b> = {channel}용 두 규격({autoSetText})을 나란히 보여드리고, 확인하면 함께 저장됩니다.
+            아직 안 다듬은 버전은 지금 배치·문구로 자동으로 채워집니다.
           </div>
+          {channel === '자사몰' && (
+            <div className="flex gap-1.5 mb-2 items-center flex-wrap">
+              <span className="label">기본 시안</span>
+              <button className="chip" onClick={() => applyTemplateA()} disabled={!!busy}
+                      title="디자인팀 실물 실측 — 웹: 좌 60% 문구+우 40% 이미지 / 모바일: 하단 그늘 + 문구 3줄"
+                      style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+                🅰 A안 배치
+              </button>
+              <button className="chip" onClick={() => applyPlan('B')} disabled={!!busy}
+                      title="디자인팀 가이드 실측 — 이미지 한 장 + 중앙정렬 문구 3줄 (타이틀 2줄 가능)"
+                      style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+                🅱 B안 배치
+              </button>
+              {/* 우측 이미지는 웹 A안(이미지 2개)에만 쓴다 — 모바일 A안은 한 장짜리 */}
+              {dims.w > dims.h && (
+                <>
+                  <label className="chip cursor-pointer" title="A안 웹의 오른쪽 40% 자리에 들어갈 이미지를 파일로 올립니다">
+                    {rightImg ? '우측 이미지 바꾸기' : '＋ 우측 이미지 올리기'}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadRight(e.target.files)} />
+                  </label>
+                  {(cuts.length > 0 || refs.length > 0) && (
+                    <button className="chip" title="생성 컷이나 레퍼런스 보관함에서 우측 이미지를 고릅니다 — 업로드 없이"
+                            onClick={() => { setBrowseFor('right'); setBrowsePage(0); setBrowseOpen(true); }}>
+                      🗂 컷·레퍼런스에서 고르기
+                    </button>
+                  )}
+                  {rightImg && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={rightImg} alt="우측 이미지" className="h-[26px] w-[26px] object-cover rounded border" style={{ borderColor: 'var(--line)' }} />
+                  )}
+                </>
+              )}
+              {/* 모바일 탭에서는 하단 처리 방식을 고른다 — 누르면 그 방식으로 A안이 다시 깔린다 */}
+              {dims.h > dims.w && (
+                <>
+                  <button className="chip" onClick={() => applyTemplateA('scrim')} disabled={!!busy}
+                          title="사진 위로 어두운 그라데이션 (Luxe 배너 방식)"
+                          style={mobStyle === 'scrim' ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                    그늘형
+                  </button>
+                  <button className="chip" onClick={() => applyTemplateA('band')} disabled={!!busy}
+                          title="사진은 위쪽, 아래는 단색 밴드로 스며듦 (Modju 배너 방식) — 밴드 색은 레이어 색으로 변경"
+                          style={mobStyle === 'band' ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                    밴드형
+                  </button>
+                </>
+              )}
+              <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>A = 2분할 · B = 중앙 문구</span>
+            </div>
+          )}
 
           {/*
             버전 탭 — 웹/모바일을 오가며 각각 다듬는다.
@@ -1105,6 +1291,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
           <div className="flex justify-center">
           <div
             ref={stageRef}
+            onPointerDown={onBgDown}
             onPointerMove={onMove}
             onPointerUp={onUp}
             onPointerLeave={onUp}
@@ -1179,36 +1366,78 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
              style={{ background: 'rgba(0,0,0,.8)' }} onClick={() => setBrowseOpen(false)}>
           <div className="card p-4 max-w-[min(1100px,94vw)] max-h-[92vh] overflow-y-auto w-full"
                onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-              <h2 className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>
-                생성 컷 전체 — {cuts.length}개 중 {browsePage * BROWSE_PER + 1}–{Math.min(cuts.length, (browsePage + 1) * BROWSE_PER)}
-              </h2>
-              <button className="chip" onClick={() => setBrowseOpen(false)}>닫기</button>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
-              {cuts.slice(browsePage * BROWSE_PER, (browsePage + 1) * BROWSE_PER).map((c) => (
-                <button key={c.id}
-                        onClick={() => { setImageUrl(c.url); setFocusTouched(false); setResult(null); setVariants({}); setBrowseOpen(false); }}
-                        className="block rounded-lg overflow-hidden border text-left" style={{ padding: 0, borderColor: 'var(--line)' }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={c.url} alt={c.label} loading="lazy"
-                       style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', display: 'block',
-                                background: 'var(--surface-2)',
-                                outline: c.url === imageUrl ? '2px solid var(--accent)' : 'none', outlineOffset: -2 }} />
-                  <div className="text-[10px] px-1.5 py-1 truncate" style={{ color: 'var(--text-dim)' }}>{c.label}</div>
-                </button>
-              ))}
-            </div>
-            {cuts.length > BROWSE_PER && (
-              <div className="flex items-center justify-center gap-2 mt-3">
-                <button className="btn" disabled={browsePage === 0} onClick={() => setBrowsePage((n) => Math.max(0, n - 1))}>이전</button>
-                <span className="text-[12px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
-                  {browsePage + 1} / {Math.ceil(cuts.length / BROWSE_PER)}
-                </span>
-                <button className="btn" disabled={(browsePage + 1) * BROWSE_PER >= cuts.length}
-                        onClick={() => setBrowsePage((n) => n + 1)}>다음</button>
-              </div>
-            )}
+            {(() => {
+              const CAT_KR: Record<string, string> = { shoot: '촬영', banner: '배너', sns: 'SNS', interior: '인테리어', instagram: '인스타그램' };
+              const pool = browseSrc === 'refs'
+                ? refs.filter((r) => !browseCat || r.cat === browseCat).map((r) => ({ id: r.url, url: r.url, label: r.label }))
+                : cuts;
+              const page = Math.min(browsePage, Math.max(0, Math.ceil(pool.length / BROWSE_PER) - 1));
+              const items = pool.slice(page * BROWSE_PER, (page + 1) * BROWSE_PER);
+              const cats = [...new Set(refs.map((r) => r.cat))].filter((c) => CAT_KR[c]);
+              return (
+                <>
+                  <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                    <h2 className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>
+                      {browseFor === 'right' ? 'A안 우측 이미지 고르기' : '배경 고르기'} — {pool.length.toLocaleString()}개
+                    </h2>
+                    <button className="chip" onClick={() => setBrowseOpen(false)}>닫기</button>
+                  </div>
+                  {/* 소스 탭 — 생성 컷 / 레퍼런스 보관함 (서버 업로드 없이 가진 자산에서 바로) */}
+                  <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+                    <button className="chip" onClick={() => { setBrowseSrc('cuts'); setBrowsePage(0); }}
+                            style={browseSrc === 'cuts' ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                      생성 컷 ({cuts.length})
+                    </button>
+                    {refs.length > 0 && (
+                      <button className="chip" onClick={() => { setBrowseSrc('refs'); setBrowseCat(''); setBrowsePage(0); }}
+                              style={browseSrc === 'refs' ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                        레퍼런스 보관함 ({refs.length.toLocaleString()})
+                      </button>
+                    )}
+                    {browseSrc === 'refs' && cats.length > 1 && (
+                      <>
+                        <span className="mx-1" style={{ color: 'var(--line-strong)' }}>|</span>
+                        <button className="chip px-2" onClick={() => { setBrowseCat(''); setBrowsePage(0); }}
+                                style={!browseCat ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>전체</button>
+                        {cats.map((c) => (
+                          <button key={c} className="chip px-2" onClick={() => { setBrowseCat(c); setBrowsePage(0); }}
+                                  style={browseCat === c ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                            {CAT_KR[c]} ({refs.filter((r) => r.cat === c).length.toLocaleString()})
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
+                    {items.map((c) => (
+                      <button key={c.id}
+                              onClick={() => {
+                                if (browseFor === 'right') { setRightImage(c.url); setNote('우측 이미지를 골랐습니다.'); setBrowseOpen(false); return; }
+                                setImageUrl(c.url); setFocusTouched(false); setResult(null); setVariants({}); setBrowseOpen(false);
+                              }}
+                              className="block rounded-lg overflow-hidden border text-left" style={{ padding: 0, borderColor: 'var(--line)' }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={c.url} alt={c.label} loading="lazy"
+                             style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', display: 'block',
+                                      background: 'var(--surface-2)',
+                                      outline: c.url === imageUrl ? '2px solid var(--accent)' : 'none', outlineOffset: -2 }} />
+                        <div className="text-[10px] px-1.5 py-1 truncate" style={{ color: 'var(--text-dim)' }}>{c.label || '(제목 없음)'}</div>
+                      </button>
+                    ))}
+                  </div>
+                  {pool.length > BROWSE_PER && (
+                    <div className="flex items-center justify-center gap-2 mt-3">
+                      <button className="btn" disabled={page === 0} onClick={() => setBrowsePage(Math.max(0, page - 1))}>이전</button>
+                      <span className="text-[12px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
+                        {page + 1} / {Math.ceil(pool.length / BROWSE_PER)}
+                      </span>
+                      <button className="btn" disabled={(page + 1) * BROWSE_PER >= pool.length}
+                              onClick={() => setBrowsePage(page + 1)}>다음</button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -1264,7 +1493,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
                                 setFocusTouched(true);
                                 setSelected(null);
                                 setResult(null);
-                                setNote(`${it.label} 버전을 무대에 올렸습니다 — 버전 탭으로 오가며 다듬고, [${autoBtnLabel}]으로 짝 저장하세요.`);
+                                setNote(`${it.label} 버전을 무대에 올렸습니다 — 버전 탭으로 오가며 다듬고, [완성 · 저장]으로 짝 저장하세요.`);
                               }}>
                         이 버전 무대에서 다듬기
                       </button>
@@ -1345,7 +1574,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
           <div className="flex items-center justify-between mb-1.5">
             <div className="label">생성한 컷</div>
             {cuts.length > 0 && (
-              <button className="chip" onClick={() => { setBrowsePage(0); setBrowseOpen(true); }}
+              <button className="chip" onClick={() => { setBrowseFor('bg'); setBrowsePage(0); setBrowseOpen(true); }}
                       title="지금까지 생성된 컷을 게시판처럼 20개씩 봅니다">
                 전체보기 · {cuts.length}
               </button>
@@ -1531,6 +1760,27 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
               자동 배치가 이 비율에 맞게 잡아줍니다.
             </div>
           )}
+
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            {tplNaming && (
+              <input
+                autoFocus
+                value={tplName}
+                onChange={(e) => setTplName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveTemplate();
+                  if (e.key === 'Escape') { setTplNaming(false); setTplName(''); }
+                }}
+                placeholder="템플릿 이름 (Enter=저장)"
+                className="px-2 py-1 text-[12px] rounded-[8px] w-[170px]"
+                style={{ background: 'var(--surface)', border: '1px solid var(--accent)', color: 'var(--text)' }}
+              />
+            )}
+            <button className="chip" onClick={saveTemplate} disabled={!!busy || !layers.length}
+                    title="배경 없이 지금 배치만 저장해서 다른 컷에도 얹을 수 있게 합니다.">
+              {tplNaming ? '이 이름으로 저장' : '지금 배치를 템플릿으로 저장'}
+            </button>
+          </div>
 
           <div className="label mb-1.5 mt-2">색 테마</div>
           <select className="input py-1 text-[11.5px]" value={themeId} onChange={(e) => setThemeId(e.target.value)}>

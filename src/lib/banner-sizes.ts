@@ -38,9 +38,10 @@ export interface BannerSize {
 }
 
 export const BANNER_SIZES: BannerSize[] = [
-  // ── 자사몰 — 실측 확정값 (2026-09 사용자 지정. eventTemp 의 1920x680/800x907 은 구 값) ──
-  { id: 'web-main', channel: '자사몰', label: '자사몰 웹 메인', w: 1900, h: 675, content: 1300, note: 'PC 첫 화면 · 본문 1300 에 맞춰 왼쪽 정렬' },
-  { id: 'mo-main',  channel: '자사몰', label: '자사몰 모바일 메인', w: 480, h: 558, note: '문구를 위에 쌓고 버튼은 아래' },
+  // ── 자사몰 — 2026-09-03 재확정: 디자인팀 기본 템플릿(A안, 롤링배너)이 1920x680 기준 ──
+  { id: 'web-main', channel: '자사몰', label: '자사몰 웹 메인 (롤링)', w: 1920, h: 680, content: 1300, note: 'PC 롤링배너 · A안 = 반반 분할(좌 문구+이미지 / 우 이미지)' },
+  // 모바일도 디자인팀 실물 자산 기준 (yogibo.kr 운영 배너 실측 800×907 — 표시야 절반이지만 제작은 이 크기)
+  { id: 'mo-main',  channel: '자사몰', label: '자사몰 모바일 메인', w: 800, h: 907, note: 'A안 = 이미지 1장 + 하단 그늘 + 문구 3줄 좌측정렬' },
   { id: 'web-detail', channel: '자사몰', label: '상품상세 배너', w: 1300, h: 500, hidden: true },
   { id: 'web-sub',    channel: '자사몰', label: '웹 서브·카테고리', w: 1200, h: 400, hidden: true },
   { id: 'mo-strip',   channel: '자사몰', label: '모바일 띠배너', w: 750, h: 200, hidden: true },

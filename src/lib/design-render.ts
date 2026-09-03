@@ -82,6 +82,12 @@ export interface DesignLayer {
   src?: string;
   /** 원본 가로/세로 비율 (w/h) — 업로드 시 잰다. 렌더는 w 와 이걸로 h 를 계산 */
   srcAspect?: number;
+  /**
+   * true 면 슬롯(w×h)을 꽉 채우고 넘치는 부분을 자른다 (object-fit: cover).
+   * 로고·뱃지는 기본(meet, 안에 맞춤)이 맞고, A안처럼 "이미지 자리"에 사진을
+   * 끼우는 슬롯은 cover 가 맞다 — 비율이 달라도 옆이 비지 않는다.
+   */
+  cover?: boolean;
 
   /** 이 레이어만 다른 글꼴 — 없으면 배너 전체 글꼴(design.font)을 따른다 */
   font?: string;
@@ -295,7 +301,7 @@ export function renderLayersToSvg(
       const y = (l.y ?? 0.5) * H - h / 2;
       const rot = l.rotate ? ` transform="rotate(${l.rotate} ${x + w / 2} ${y + h / 2})"` : '';
       parts.push(
-        `<image x="${x}" y="${y}" width="${w}" height="${h}" opacity="${op}" preserveAspectRatio="xMidYMid meet"` +
+        `<image x="${x}" y="${y}" width="${w}" height="${h}" opacity="${op}" preserveAspectRatio="xMidYMid ${l.cover ? 'slice' : 'meet'}"` +
         ` href="${esc(href)}" xlink:href="${esc(href)}"${rot}/>`,
       );
       return;

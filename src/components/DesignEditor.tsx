@@ -871,6 +871,25 @@ export default function DesignEditor(p: Props) {
               레이어가 없습니다. 위 도구로 추가하세요.
             </div>
           )}
+          {/*
+            * 배경(원본) 이미지 — 진짜 레이어는 아니지만 목록에서 함께 관리한다.
+            * 맨 아래 행 = 제일 뒤에 깔린 것. 누르면 선택이 풀리며 배경 모드가 되어
+            * 우측 패널에 배경 변형(Ctrl+T)·보정이 뜬다. 선택이 없을 때 = 배경 선택 상태.
+            */}
+          <div onClick={clearSel}
+               title="배경 이미지 — 누르면 우측에 배경 변형(크기·위치)·보정(밝기·대비·채도)이 뜹니다"
+               className="flex items-center gap-1.5 px-1.5 py-1 rounded-[8px] mt-1 cursor-pointer"
+               style={{
+                 background: selIds.size === 0 ? 'var(--accent-soft)' : 'transparent',
+                 border: '1px solid ' + (selIds.size === 0 ? 'var(--accent)' : 'var(--line)'),
+               }}>
+            <span className="text-[10px] w-[14px] text-center" style={{ color: 'var(--text-mute)' }}>🖼</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={bgUrl} alt="" className="w-[18px] h-[18px] object-cover rounded shrink-0"
+                 style={{ border: '1px solid var(--line)' }} draggable={false} />
+            <span className="text-[11px] truncate flex-1" style={{ color: 'var(--text-dim)' }}>배경 이미지</span>
+            <span className="text-[9px]" style={{ color: 'var(--text-mute)' }}>원본</span>
+          </div>
         </div>
 
         {/* ── 캔버스 ── */}

@@ -227,8 +227,9 @@ export default function CreateStudio(p: Props) {
   // 하위 분류(sub) — '22 맥스' 같은 촬영 2022 폴더 단위. 분류 탭을 고르면 한 줄 더 나뉜다
   const [libSub, setLibSub] = useState('');
   // 분류별 표시 개수 — 인스타 백필로 2천 장이 넘어서, 한 번에 다 그리면 팝업이 무거워진다
-  const [libShow, setLibShow] = useState<Record<string, number>>({});
-  const LIB_STEP = 60;
+  // 게시판식 페이지 — 한 번에 다 그리면 이미지 수천 장이 동시에 로딩돼 빈 카드만 보인다
+  const [libPage, setLibPage] = useState(1);
+  const LIB_PAGE = 20;
   const [preservation, setPreservation] = useState('similar');
   const [editTargets, setEditTargets] = useState<EditTarget[]>([]);
   // 레퍼런스에 담긴 제품 — 인물 대비 스케일용 (사진 속 빈백이 무엇인지)
@@ -794,7 +795,7 @@ export default function CreateStudio(p: Props) {
           <Section n="2" title="레퍼런스 이미지"
                    hint="새로 올리거나 보관함에서 가져옵니다. 올린 이미지는 자동으로 보관함에 등록돼 다른 썸네일·배너 작업에도 재사용됩니다."
                    right={
-                     <button className="btn btn-ghost text-[11px]" onClick={() => { setLibOpen(true); setLibCat(''); setLibSub(''); setLibSearch(''); }}>
+                     <button className="btn btn-ghost text-[11px]" onClick={() => { setLibOpen(true); setLibCat(''); setLibSub(''); setLibSearch(''); setLibPage(1); }}>
                        보관함 열기 ({library.length})
                      </button>
                    }>
@@ -1722,17 +1723,17 @@ ${hint}` : hint))}>
             <div className="flex items-center gap-1.5 flex-wrap mb-3">
               <button className="chip"
                       style={libCat === '' ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
-                      onClick={() => setLibCat('')}>전체 ({library.length})</button>
+                      onClick={() => { setLibCat(''); setLibSub(''); setLibPage(1); }}>전체 ({library.length})</button>
               {REF_CATS.map((c) => {
                 const n = library.filter((r) => refCatOf(r.category) === c.value).length;
                 if (!n) return null;
                 return (
                   <button key={c.value} className="chip"
                           style={libCat === c.value ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
-                          onClick={() => { setLibCat(c.value); setLibSub(''); }}>{c.label} ({n})</button>
+                          onClick={() => { setLibCat(c.value); setLibSub(''); setLibPage(1); }}>{c.label} ({n})</button>
                 );
               })}
-              <input value={libSearch} onChange={(e) => setLibSearch(e.target.value)} placeholder="이름 검색"
+              <input value={libSearch} onChange={(e) => { setLibSearch(e.target.value); setLibPage(1); }} placeholder="이름 검색"
                      className="ml-auto px-2 py-1 text-[12px] rounded-[8px]"
                      style={{ background: 'var(--surface)', border: '1px solid var(--line)', color: 'var(--text)', maxWidth: 200 }} />
             </div>
@@ -1747,11 +1748,11 @@ ${hint}` : hint))}>
                 <div className="flex items-center gap-1.5 flex-wrap mb-3">
                   <button className="chip"
                           style={!libSub ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
-                          onClick={() => setLibSub('')}>전체</button>
+                          onClick={() => { setLibSub(''); setLibPage(1); }}>전체</button>
                   {subs.map((s) => (
                     <button key={s} className="chip"
                             style={libSub === s ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
-                            onClick={() => setLibSub(s === libSub ? '' : s)}>
+                            onClick={() => { setLibSub(s === libSub ? '' : s); setLibPage(1); }}>
                       {s} ({library.filter((r) => refCatOf(r.category) === libCat && r.sub === s).length})
                     </button>
                   ))}
@@ -1775,45 +1776,61 @@ ${hint}` : hint))}>
                     </div>
                   );
                 }
-                const cats = libCat ? [libCat] : REF_CATS.map((c) => c.value);
-                return cats.map((cat) => {
-                  const all = list.filter((r) => refCatOf(r.category) === cat);
-                  if (!all.length) return null;
-                  const shown = libShow[cat] ?? LIB_STEP;
-                  const items = all.slice(0, shown);
-                  const label = REF_CATS.find((c) => c.value === cat)?.label ?? cat;
-                  return (
-                    <div key={cat} className="mb-4">
-                      {!libCat && <div className="label mb-2">{label} · {all.length}</div>}
-                      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
-                        {items.map((r) => {
-                          const used = uploads.some((u) => u.url === r.url);
-                          return (
-                            <div key={r.url} className="rounded-lg overflow-hidden border"
-                                 style={{ borderColor: used ? 'var(--accent)' : 'var(--line)', background: 'var(--surface-2)' }}>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={r.url} alt={r.title} className="w-full aspect-square object-cover"
-                                   style={{ opacity: used ? 0.5 : 1 }} draggable={false} />
-                              <div className="p-1.5">
-                                <div className="text-[10.5px] truncate mb-1" style={{ color: 'var(--text-dim)' }}>{r.title}</div>
-                                <button className={`btn w-full py-0.5 text-[11px] ${used ? '' : 'btn-primary'}`}
-                                        disabled={used} onClick={() => addFromLibrary(r)}>
-                                  {used ? '추가됨 ✓' : '＋ 추가'}
-                                </button>
-                              </div>
+                // 게시판식 페이지 — 한 페이지 20장만 그려서 이미지 로딩이 밀리지 않게 한다
+                const totalPages = Math.max(1, Math.ceil(list.length / LIB_PAGE));
+                const page = Math.min(libPage, totalPages);
+                const items = list.slice((page - 1) * LIB_PAGE, page * LIB_PAGE);
+                // 페이지 번호는 10개 블록 단위 (1~10 / 11~20 …) — 좌우 « ‹ › » 로 이동
+                const blockStart = Math.floor((page - 1) / 10) * 10 + 1;
+                const blockPages = Array.from({ length: Math.min(10, totalPages - blockStart + 1) }, (_, k) => blockStart + k);
+                const goto = (p: number) => setLibPage(Math.max(1, Math.min(totalPages, p)));
+                return (
+                  <div>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+                      {items.map((r) => {
+                        const used = uploads.some((u) => u.url === r.url);
+                        const catLabel = REF_CATS.find((c) => c.value === refCatOf(r.category))?.label;
+                        return (
+                          <div key={r.url} className="rounded-lg overflow-hidden border relative"
+                               style={{ borderColor: used ? 'var(--accent)' : 'var(--line)', background: 'var(--surface-2)' }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={r.url} alt={r.title} className="w-full aspect-square object-cover"
+                                 style={{ opacity: used ? 0.5 : 1 }} draggable={false} loading="lazy" />
+                            {!libCat && catLabel && (
+                              <span className="absolute top-1 left-1 text-[8.5px] px-1 py-0.5 rounded"
+                                    style={{ background: 'rgba(0,0,0,.55)', color: '#9fd1ff' }}>{catLabel}</span>
+                            )}
+                            <div className="p-1.5">
+                              <div className="text-[10.5px] truncate mb-1" style={{ color: 'var(--text-dim)' }}>{r.title}</div>
+                              <button className={`btn w-full py-0.5 text-[11px] ${used ? '' : 'btn-primary'}`}
+                                      disabled={used} onClick={() => addFromLibrary(r)}>
+                                {used ? '추가됨 ✓' : '＋ 추가'}
+                              </button>
                             </div>
-                          );
-                        })}
-                      </div>
-                      {all.length > shown && (
-                        <button className="btn w-full mt-2 text-[12px]"
-                                onClick={() => setLibShow((cur) => ({ ...cur, [cat]: shown + LIB_STEP }))}>
-                          더 보기 ({shown} / {all.length})
-                        </button>
-                      )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                });
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-center gap-1 mt-3 flex-wrap">
+                        <button className="chip px-2" disabled={page === 1} onClick={() => goto(1)} title="첫 페이지">«</button>
+                        <button className="chip px-2" disabled={blockStart === 1} onClick={() => goto(blockStart - 1)} title="이전 10페이지">‹</button>
+                        {blockPages.map((p) => (
+                          <button key={p} className="chip px-2"
+                                  onClick={() => goto(p)}
+                                  style={p === page ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)', fontWeight: 700 } : {}}>
+                            {p}
+                          </button>
+                        ))}
+                        <button className="chip px-2" disabled={blockStart + 10 > totalPages} onClick={() => goto(blockStart + 10)} title="다음 10페이지">›</button>
+                        <button className="chip px-2" disabled={page === totalPages} onClick={() => goto(totalPages)} title="마지막 페이지">»</button>
+                        <span className="text-[10.5px] ml-2" style={{ color: 'var(--text-mute)' }}>
+                          {page}/{totalPages} · 총 {list.length.toLocaleString()}장
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
               })()}
             </div>
 

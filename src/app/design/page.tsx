@@ -1,6 +1,6 @@
 import PageHeader from '@/components/PageHeader';
 import DesignStudio from '@/components/DesignStudio';
-import { getCuts } from '@/lib/queries';
+import { getCuts, getReferences, normalizeRefCategory } from '@/lib/queries';
 import type { DesignDoc } from '@/lib/design-render';
 import { listBannerFonts } from '@/lib/banner-fonts';
 
@@ -18,6 +18,8 @@ export default async function DesignPage({
    * 이관 컷도 배너 소재가 아니라 제외한다.
    */
   const cuts = await getCuts({ source: 'imgcreate', notProvider: 'design', limit: 200 });
+  // 레퍼런스 보관함 — 배경·A안 우측 이미지를 서버 업로드 없이 가진 자산에서 바로 고르게
+  const references = await getReferences(4000);
   // fonts/ 폴더를 훑어 글꼴 목록을 만든다 — 파일을 넣으면 여기 바로 뜬다
   const fonts = listBannerFonts();
 
@@ -49,6 +51,11 @@ export default async function DesignPage({
           id: c.id,
           url: c.url,
           label: c.title || `${c.line} ${c.colorName}`.trim() || c.spec || '컷',
+        }))}
+        refs={references.map((r) => ({
+          url: r.url,
+          label: (r.title || '').slice(0, 40),
+          cat: normalizeRefCategory(r.category) ?? 'shoot',
         }))}
       />
     </div>
