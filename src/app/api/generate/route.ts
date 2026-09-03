@@ -11,6 +11,7 @@ import {
 } from '@/lib/prompt-writer';
 import { generateImage, loadReference, colorSwatch, GeminiError, type GenAspect, type InlineImage } from '@/lib/gemini';
 import { generateImage as hfGenerate, higgsfieldConfigured, HiggsfieldError } from '@/lib/higgsfield';
+import { generateImageGpt, openaiConfigured, OpenAIImageError } from '@/lib/openai-image';
 import { uploadBuffer, dailySubpath, ftpConfigured } from '@/lib/ftp';
 import { cropToSize, measureProductColor } from '@/lib/image-post';
 import { planAspect } from '@/lib/aspect';
@@ -111,7 +112,7 @@ interface Body {
   samples?: number;
   tier?: 'pro' | 'draft';
   /** 생성 엔진 — gemini(나노바나나) | higgs(힉스필드 Element) */
-  engine?: 'gemini' | 'higgs';
+  engine?: 'gemini' | 'higgs' | 'gpt';
   /** 출력 화질 — 기본 2K(2048px). 4K(4096px)는 POP·인쇄용 (A3 248dpi급, 단가 높음) */
   imageSize?: '1K' | '2K' | '4K';
   dryRun?: boolean;
@@ -459,9 +460,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'FTP 설정이 없습니다 (.env.local).' }, { status: 500 });
     }
 
-    const engine = body.engine === 'higgs' ? 'higgs' : 'gemini';
+    const engine = body.engine === 'higgs' ? 'higgs' : body.engine === 'gpt' ? 'gpt' : 'gemini';
     if (engine === 'higgs' && !higgsfieldConfigured()) {
       return NextResponse.json({ ok: false, error: 'Higgsfield 설정이 없습니다 (.env.local).' }, { status: 500 });
+    }
+    if (engine === 'gpt' && !openaiConfigured()) {
+      return NextResponse.json({ ok: false, error: 'OPENAI_API_KEY 가 없습니다 — .env.local 에 넣고 dev 를 재시작하세요.' }, { status: 500 });
+    }
+    /*
+     * GPT 허들 — 전속 모델(얼굴 시트 보유) 컷에는 GPT 를 쓸 수 없다.
+     * gpt-image-1 은 참조 얼굴을 유지하지 못해(실측) 브랜드 모델 일관성이 깨진다.
+     * 인물 없는 컷과 AI 가상 인물(freeform)만 통과한다. 화면에도 같은 가드가 있다.
+     */
+    if (engine === 'gpt' && !body.dryRun && talents.some((t) => !t.freeform)) {
+      return NextResponse.json(
+        { ok: false, error: 'GPT는 전속 모델 컷에 쓸 수 없습니다 — 인물 없는 컷 또는 AI 가상 인물만 가능합니다 (얼굴 유지가 안 됩니다).' },
+        { status: 400 },
+      );
     }
 
     // ── 4) 사용량 한도 ────────────────────────────────────────────
@@ -526,6 +541,14 @@ export async function POST(req: Request) {
             ...(color?.elementId ? { elementId: String(color.elementId) } : {}),
           });
           gen = { buffer: r.buffer, model: `higgsfield/${r.model}${r.usedElement ? '+element' : ''}`, elapsedMs: r.elapsedMs, requestBytes: 0 };
+        } else if (engine === 'gpt') {
+          // GPT(gpt-image-1) — 최대 1536px 라 imageSize(4K)는 받지 않는다. 참조는 edits 로 들어간다.
+          const r = await generateImageGpt({
+            prompt: written.prompt,
+            references: inline,
+            aspect: size.genAspect,
+          });
+          gen = { buffer: r.buffer, model: r.model, elapsedMs: r.elapsedMs, requestBytes: r.requestBytes };
         } else {
           gen = await generateImage({
             prompt: written.prompt,
@@ -537,7 +560,7 @@ export async function POST(req: Request) {
           });
         }
       } catch (e) {
-        const err = e as GeminiError & HiggsfieldError;
+        const err = e as GeminiError & HiggsfieldError & OpenAIImageError;
         results.push({ ok: false, error: err.message, blockReason: err.blockReason ?? null, status: err.status ?? null });
         /*
          * 힉스필드가 크레딧 부족을 내면 표시 잔액을 0 으로 못박는다.

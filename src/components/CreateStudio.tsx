@@ -26,6 +26,8 @@ interface Props {
   promptMode: 'local' | 'opus';
   /** 로컬 개발 여부. 대화로 넘기는 버튼은 여기서만 보인다 */
   localMode: boolean;
+  /** OPENAI_API_KEY 가 설정돼 있으면 GPT 엔진 선택지가 열린다 */
+  gptEnabled?: boolean;
 }
 
 type RefRole = 'style' | 'base' | 'background';
@@ -188,7 +190,12 @@ export default function CreateStudio(p: Props) {
   // 레퍼런스를 깔고 시작하는 편이 결과도 안정적이다.
   const [flow, setFlow] = useState<'ref' | 'direct'>('ref');
   // 앱의 생성 엔진은 나노바나나 하나다. 힉스필드는 화면에서 뺐다 (백엔드 경로는 살아 있다).
-  const engine = 'gemini' as const;
+  /*
+   * 생성 엔진 — 제미나이(나노바나나, 기본) / GPT(gpt-image-1).
+   * GPT 는 최대 1536px 라 POP·인쇄용(4K) 화질이 없다 — 고르면 4K 선택지를 숨기고 2K 로 되돌린다.
+   * (힉스필드는 앱 키에 크레딧이 없어 여전히 화면에서 뺀다)
+   */
+  const [engine, setEngine] = useState<'gemini' | 'gpt'>('gemini');
   const [balance, setBalance] = useState<{ gemini?: { count: number; limit: number; remaining: number } } | null>(null);
   const [mode, setMode] = useState<'thumbnail' | 'banner'>('thumbnail');
   /** 프리셋 목록 — 커스텀 규격을 저장하면 여기 즉시 추가된다 */
@@ -515,6 +522,15 @@ export default function CreateStudio(p: Props) {
   }
 
   async function run(dryRun: boolean) {
+    /*
+     * GPT 허들 — 전속 모델(얼굴 시트 보유)이 선택돼 있으면 생성을 막는다.
+     * GPT 는 얼굴 유지가 안 돼서(실측) 브랜드 모델 일관성이 깨진다.
+     * 인물 없는 컷 또는 AI 가상 인물(자유 서술)만 통과. 서버에도 같은 가드가 있다.
+     */
+    if (!dryRun && engine === 'gpt' && picks.length > 0) {
+      setErr('GPT는 전속 모델 컷에 쓸 수 없습니다 — 인물 없는 컷 또는 AI 가상 인물만 가능합니다. 엔진을 제미나이로 바꾸거나 전속 모델 선택을 비워주세요.');
+      return;
+    }
     setErr(''); setBusy(dryRun ? 'dry' : 'gen');
     if (!dryRun) setResults([]);
     try {
@@ -1556,10 +1572,39 @@ ${hint}` : hint))}>
             ) : '사용량을 불러오는 중…'}
           </div>
 
-          {/* 화질 — 웹·SNS 는 2K 로 충분, POP·인쇄물만 4K. 실측 4096px = A3 248dpi */}
+          {/* 생성 엔진 — 제미나이(기본) / GPT. GPT 는 키가 있을 때만 열린다 */}
+          <div className="flex gap-1.5">
+            <button onClick={() => setEngine('gemini')} className="chip flex-1 justify-center"
+                    title="나노바나나(gemini-3-pro-image) — 기본 엔진. 2K/4K 지원."
+                    style={engine === 'gemini' ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+              제미나이로 생성하기
+            </button>
+            {p.gptEnabled && (
+              <button onClick={() => { setEngine('gpt'); setImageSize('2K'); }} className="chip flex-1 justify-center"
+                      title="GPT(gpt-image-1) — 최대 1536px, POP·인쇄용 4K 없음. 비용은 OpenAI 계정에서 나갑니다 (장당 약 $0.2 안팎, 참고치)."
+                      style={engine === 'gpt' ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                GPT로 생성하기
+              </button>
+            )}
+          </div>
+          {engine === 'gpt' && (
+            <div className="text-[10px] px-1" style={{ color: 'var(--text-mute)' }}>
+              gpt-image-1 · 최대 1536px (POP/인쇄용 없음) · OpenAI 계정 과금 — 장당 약 $0.2 안팎(참고치)
+            </div>
+          )}
+          {/* GPT 는 참조 조건화가 느슨해 전속 모델 얼굴이 유지되지 않는다 (실측) — 고르면 미리 경고 */}
+          {engine === 'gpt' && picks.length > 0 && (
+            <div className="text-[10px] px-1" style={{ color: 'var(--warn)' }}>
+              ⚠ GPT는 전속 모델 얼굴 유지력이 낮습니다 (실측: 얼굴이 바뀜) — 모델 얼굴이 중요한 컷은 제미나이를 쓰세요.
+            </div>
+          )}
+
+          {/* 화질 — 웹·SNS 는 2K 로 충분, POP·인쇄물만 4K. 실측 4096px = A3 248dpi (GPT 는 4K 없음) */}
           <div>
             <div className="flex gap-1.5">
-              {([['2K', '2K · 웹/SNS 기본'], ['4K', '4K · POP/인쇄용']] as const).map(([v, l]) => (
+              {([['2K', '2K · 웹/SNS 기본'], ['4K', '4K · POP/인쇄용']] as const)
+                .filter(([v]) => engine !== 'gpt' || v !== '4K')
+                .map(([v, l]) => (
                 <button key={v} onClick={() => setImageSize(v)} className="chip flex-1 justify-center"
                         title={v === '4K'
                           ? '4096px — A3 포스터 248dpi급 인쇄 화질. 단가가 2K보다 높습니다.'

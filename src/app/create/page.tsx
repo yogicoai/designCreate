@@ -31,7 +31,17 @@ export default async function CreatePage() {
     }));
 
   return (
-    <CreateStudio
+    <>
+      {/* GPT 사용 기준 — 화면 최상단 상시 경고 (얼굴 유지 실측 실패로 허들 운영) */}
+      {process.env.OPENAI_API_KEY && (
+        <div className="mx-4 sm:mx-6 mt-4 px-3 py-2 rounded-[10px] text-[11.5px] leading-relaxed"
+             style={{ background: 'rgba(240,180,41,.08)', border: '1px solid var(--warn)', color: 'var(--warn)' }}>
+          ⚠ <b>GPT 엔진 사용 기준</b> — GPT(gpt-image-1)는 전속 모델 얼굴이 유지되지 않습니다.
+          <b> 인물 노출이 없거나 최소인 컷, 또는 AI 가상 인물 컷에만</b> 사용하세요.
+          전속 모델을 선택한 상태에서는 GPT 생성이 차단됩니다. (얼굴 컷은 제미나이 사용)
+        </div>
+      )}
+      <CreateStudio
       products={products}
       talents={talents}
       poses={poses}
@@ -42,7 +52,9 @@ export default async function CreatePage() {
       references={references}
       promptMode={(process.env.PROMPT_MODE || 'opus') === 'opus' && process.env.ANTHROPIC_API_KEY ? 'opus' : 'local'}
       /* 넘기기 버튼은 로컬 전용 — MD 화면에 나올 기능이 아니다 */
+      gptEnabled={Boolean(process.env.OPENAI_API_KEY)}
       localMode={process.env.NODE_ENV !== 'production'}
     />
+    </>
   );
 }

@@ -23,6 +23,37 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
+/**
+ * 원본 픽셀 보존 합성 (paste-back).
+ *
+ * 생성 모델은 "나머지는 그대로 둬"라고 해도 전체를 다시 그려서, 아웃페인트 한 번에
+ * 모델 얼굴까지 미묘하게 바뀐다 (사용자 실측). 그래서 AI 결과를 통째로 쓰지 않고 —
+ * AI 손이 필요한 영역만 부드러운 경계(feather)로 떼어 원본 위에 얹는다.
+ * 영역 밖(얼굴 포함)은 원본 픽셀이 그대로라 구조적으로 변할 수 없다.
+ *
+ * base 위에 top 을 rect 영역만(가장자리 feather px 만큼 서서히) 올린다.
+ */
+async function pasteRegion(
+  base: Buffer, top: Buffer, W: number, H: number,
+  rect: { left: number; top: number; width: number; height: number },
+  feather: number,
+): Promise<Buffer> {
+  const l = Math.max(0, Math.round(rect.left));
+  const t = Math.max(0, Math.round(rect.top));
+  const w = Math.min(W - l, Math.round(rect.width));
+  const h = Math.min(H - t, Math.round(rect.height));
+  if (w <= 2 || h <= 2) return base;
+  const f = Math.max(1, Math.round(feather));
+  // 흰 사각형(안쪽으로 feather 만큼 물러난)을 블러 → 알파 마스크
+  const inner = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`
+    + `<rect x="${l + f}" y="${t + f}" width="${Math.max(1, w - 2 * f)}" height="${Math.max(1, h - 2 * f)}" fill="#fff"/></svg>`;
+  const mask = await sharp(Buffer.from(inner)).blur(f / 2).ensureAlpha().toColourspace('b-w').png().toBuffer();
+  const cut = await sharp(top).ensureAlpha()
+    .composite([{ input: mask, blend: 'dest-in' }])
+    .png().toBuffer();
+  return sharp(base).composite([{ input: cut, left: 0, top: 0 }]).jpeg({ quality: 95 }).toBuffer();
+}
+
 interface Body {
   op: 'merge' | 'erase' | 'outpaint';
   imageUrl: string;
@@ -56,6 +87,10 @@ export async function POST(req: Request) {
     const aspect = planAspect(W, H).genAspect as GenAspect;
     const refs = [] as NonNullable<Awaited<ReturnType<typeof loadReference>>>[];
     let prompt = '';
+    /** 원본 보존 합성 계획 — mode 'region': AI 결과에서 rect 만 취함 / 'keep': rect 의 원본을 AI 결과 위에 되붙임 */
+    let paste: { mode: 'region' | 'keep'; rect: { left: number; top: number; width: number; height: number } } | null = null;
+    const featherPx = Math.max(8, Math.round(Math.min(W, H) * 0.025));
+    const padPx = Math.max(12, Math.round(Math.min(W, H) * 0.06));
 
     if (body.op === 'merge') {
       const o = body.overlay;
@@ -71,6 +106,8 @@ export async function POST(req: Request) {
 
       const r1 = await loadReference(`data:image/jpeg;base64,${pasted.toString('base64')}`, 1600);
       if (r1) refs.push(r1);
+      // 기준점 고정: 오버레이 주변(여유 padPx)만 AI 결과를 쓰고, 나머지는 원본 픽셀 그대로
+      paste = { mode: 'region', rect: { left: left - padPx, top: top - padPx, width: ow + padPx * 2, height: oh + padPx * 2 } };
       prompt =
         'The image is a photograph with an object roughly PASTED on top (hard edges, mismatched lighting). ' +
         'Re-render it as ONE naturally taken photograph: keep the pasted object exactly where it is and what it is, ' +
@@ -92,6 +129,7 @@ export async function POST(req: Request) {
       const r2 = await loadReference(`data:image/jpeg;base64,${marked.toString('base64')}`, 1600);
       if (r1) refs.push(r1);
       if (r2) refs.push(r2);
+      paste = { mode: 'region', rect: { left: left - padPx, top: top - padPx, width: ow + padPx * 2, height: oh + padPx * 2 } };
       prompt =
         'The FIRST image is a photograph. The SECOND image is the same photograph with a translucent RED RECTANGLE ' +
         'marking an area. REMOVE the object(s) inside that marked area completely and reconstruct what is behind them — ' +
@@ -99,14 +137,41 @@ export async function POST(req: Request) {
         'Output the FIRST image, unchanged everywhere else, with the marked object gone and NO red rectangle. ' +
         'Same framing, photorealistic, no added text.' + (body.note ? ` Additional direction: ${body.note}` : '');
     } else {
-      // outpaint — 원본을 참조로, 캔버스 비율로 장면을 연장
-      const r1 = await loadReference(`data:image/jpeg;base64,${raw.toString('base64')}`, 1600);
+      /*
+       * outpaint — 결정론적 가이드 방식.
+       * 원본을 현재 fit 위치 그대로 두고 가장자리를 흐린 사본으로 채운 가이드를 보낸다.
+       * 모델은 "흐린 띠만 다시 그려라"를 눈으로 보고, 우리는 원본이 앉은 자리를 정확히
+       * 알기 때문에 결과 위에 그 자리(기준점)를 원본 픽셀로 되붙일 수 있다.
+       */
+      const meta = await sharp(raw).metadata();
+      const sw = meta.width ?? W, sh = meta.height ?? H;
+      const zoomRaw = body.fit?.zoom ?? 1;
+      const mode = body.fit?.mode ?? 'cover';
+      const zoom = mode === 'cover' ? Math.max(1, zoomRaw) : Math.max(0.15, Math.min(4, zoomRaw));
+      const baseK = mode === 'cover' ? Math.max(W / sw, H / sh) : Math.min(W / sw, H / sh);
+      const zx = Math.max(0.15, Math.min(4, body.fit?.zoomX ?? 1));
+      const zy = Math.max(0.15, Math.min(4, body.fit?.zoomY ?? 1));
+      const fgW = Math.round(sw * baseK * zoom * zx);
+      const fgH = Math.round(sh * baseK * zoom * zy);
+      const ofx = Math.max(0, Math.min(1, body.fit?.fx ?? 0.5));
+      const ofy = Math.max(0, Math.min(1, body.fit?.fy ?? 0.5));
+      const oLeft = Math.round(ofx * (W - fgW));
+      const oTop = Math.round(ofy * (H - fgH));
+
+      const guide = await applyPatches(
+        await fitToSize(raw, W, H, { ...(body.fit ?? { fx: 0.5, fy: 0.5 }), mode: 'blur' }),
+        W, H, body.layers ?? [],
+      );
+      const r1 = await loadReference(`data:image/jpeg;base64,${guide.toString('base64')}`, 1600);
       if (r1) refs.push(r1);
+      // 원본이 앉은 자리는 되붙인다 — 얼굴·제품이 있는 기준점은 픽셀 그대로 보존
+      paste = { mode: 'keep', rect: { left: oLeft, top: oTop, width: fgW, height: fgH } };
       prompt =
-        `Extend this photograph naturally to a ${aspect} frame (outpainting). Keep everything in the original exactly ` +
-        'as it is — same subject, same perspective, same lighting — and continue the scene seamlessly beyond its ' +
-        'original edges: walls, floor, ceiling, furniture and background flow outward without repetition artifacts. ' +
-        'FILL THE ENTIRE FRAME edge to edge; no blank bars, no borders. Photorealistic, no added text or watermark.' +
+        'The image is a photograph whose BLURRED BORDER BANDS are placeholders. The sharp central photograph is the ' +
+        'ANCHOR — keep it EXACTLY as it is, pixel for pixel: same people, faces, products, lighting and framing. ' +
+        'Repaint ONLY the blurred bands, continuing the scene naturally beyond the sharp photo\'s edges — walls, ' +
+        'floor, ceiling, furniture and light flowing outward with correct perspective, no repetition artifacts. ' +
+        'FILL THE ENTIRE FRAME edge to edge; no blur left, no borders. Photorealistic, no added text or watermark.' +
         (body.note ? ` Additional direction: ${body.note}` : '');
     }
 
@@ -114,7 +179,22 @@ export async function POST(req: Request) {
 
     const gen = await generateImage({ prompt, references: refs, aspect, tier: 'pro' });
     const cropped = await cropToSize(gen.buffer, W, H);
-    const out = cropped.buffer;
+    let out = cropped.buffer;
+
+    /*
+     * 기준점 고정 합성 — AI 재추첨으로부터 원본을 지킨다.
+     *   region: AI 결과에서 작업 영역만 떼어 원본(canvas) 위에 얹는다 (지우개·합성)
+     *   keep  : AI 결과 위에 원본이 앉은 자리를 되붙인다 (아웃페인트)
+     * 어느 쪽이든 영역 밖 얼굴·제품은 원본 픽셀 그대로다.
+     */
+    if (paste) {
+      out = paste.mode === 'region'
+        ? await pasteRegion(canvas, out, W, H, paste.rect, featherPx)
+        : await pasteRegion(out, canvas, W, H, {
+            left: paste.rect.left + 2, top: paste.rect.top + 2,
+            width: paste.rect.width - 4, height: paste.rect.height - 4,
+          }, featherPx);
+    }
 
     const iso = new Date().toISOString();
     const fn = `aibg_${iso.replace(/[-:T]/g, '').slice(0, 14)}_${Math.random().toString(36).slice(2, 7)}.jpg`;
