@@ -238,7 +238,16 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
   }
 
   const categories = [...new Set(items.map((x) => x.category).filter(Boolean))] as string[];
-  const matched = filter ? items.filter((x) => x.category === filter) : items;
+  /*
+   * 하위 분류 — '22 맥스' 같은 sub 필드가 있는 분류(촬영 2022 등)는
+   * 그 분류를 골랐을 때 한 층 더 칩으로 나뉜다.
+   */
+  const [subFilter, setSubFilter] = useState('');
+  const subs = filter
+    ? ([...new Set(items.filter((x) => x.category === filter && x.sub).map((x) => x.sub))] as string[]).sort()
+    : [];
+  const matched = (filter ? items.filter((x) => x.category === filter) : items)
+    .filter((x) => !subFilter || x.sub === subFilter);
 
   /*
    * 게시판식 페이지네이션 — 한 번에 20개.
@@ -325,9 +334,26 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
             전체 ({items.length})
           </button>
           {categories.map((c) => (
-            <button key={c} className="chip" onClick={() => { setFilter(c === filter ? '' : c); setPage(1); }}
+            <button key={c} className="chip" onClick={() => { setFilter(c === filter ? '' : c); setSubFilter(''); setPage(1); }}
                     style={filter === c ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
               {CATEGORY_KR[c] ?? c} ({items.filter((x) => x.category === c).length})
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 하위 분류 — 촬영 2022 처럼 sub 가 있는 분류에서만 한 줄 더 */}
+      {subs.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+          <span className="label mr-1">하위</span>
+          <button className="chip" onClick={() => { setSubFilter(''); setPage(1); }}
+                  style={!subFilter ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+            전체
+          </button>
+          {subs.map((s) => (
+            <button key={s} className="chip" onClick={() => { setSubFilter(s === subFilter ? '' : s); setPage(1); }}
+                    style={subFilter === s ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+              {s} ({items.filter((x) => x.category === filter && x.sub === s).length})
             </button>
           ))}
         </div>

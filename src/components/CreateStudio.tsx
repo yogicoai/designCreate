@@ -224,6 +224,8 @@ export default function CreateStudio(p: Props) {
   const [libOpen, setLibOpen] = useState(false);
   const [libCat, setLibCat] = useState<string>(''); // '' = 전체
   const [libSearch, setLibSearch] = useState('');
+  // 하위 분류(sub) — '22 맥스' 같은 촬영 2022 폴더 단위. 분류 탭을 고르면 한 줄 더 나뉜다
+  const [libSub, setLibSub] = useState('');
   // 분류별 표시 개수 — 인스타 백필로 2천 장이 넘어서, 한 번에 다 그리면 팝업이 무거워진다
   const [libShow, setLibShow] = useState<Record<string, number>>({});
   const LIB_STEP = 60;
@@ -792,7 +794,7 @@ export default function CreateStudio(p: Props) {
           <Section n="2" title="레퍼런스 이미지"
                    hint="새로 올리거나 보관함에서 가져옵니다. 올린 이미지는 자동으로 보관함에 등록돼 다른 썸네일·배너 작업에도 재사용됩니다."
                    right={
-                     <button className="btn btn-ghost text-[11px]" onClick={() => { setLibOpen(true); setLibCat(''); setLibSearch(''); }}>
+                     <button className="btn btn-ghost text-[11px]" onClick={() => { setLibOpen(true); setLibCat(''); setLibSub(''); setLibSearch(''); }}>
                        보관함 열기 ({library.length})
                      </button>
                    }>
@@ -1727,7 +1729,7 @@ ${hint}` : hint))}>
                 return (
                   <button key={c.value} className="chip"
                           style={libCat === c.value ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
-                          onClick={() => setLibCat(c.value)}>{c.label} ({n})</button>
+                          onClick={() => { setLibCat(c.value); setLibSub(''); }}>{c.label} ({n})</button>
                 );
               })}
               <input value={libSearch} onChange={(e) => setLibSearch(e.target.value)} placeholder="이름 검색"
@@ -1735,12 +1737,35 @@ ${hint}` : hint))}>
                      style={{ background: 'var(--surface)', border: '1px solid var(--line)', color: 'var(--text)', maxWidth: 200 }} />
             </div>
 
+            {/* 하위 분류 — 촬영 2022(22 맥스…) 처럼 sub 가 있는 탭에서만 한 줄 더 */}
+            {libCat && (() => {
+              const subs = ([...new Set(library
+                .filter((r) => refCatOf(r.category) === libCat && r.sub)
+                .map((r) => r.sub))] as string[]).sort();
+              if (!subs.length) return null;
+              return (
+                <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                  <button className="chip"
+                          style={!libSub ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
+                          onClick={() => setLibSub('')}>전체</button>
+                  {subs.map((s) => (
+                    <button key={s} className="chip"
+                            style={libSub === s ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
+                            onClick={() => setLibSub(s === libSub ? '' : s)}>
+                      {s} ({library.filter((r) => refCatOf(r.category) === libCat && r.sub === s).length})
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+
             {/* 목록 — 전체면 분류별 섹션, 특정 분류면 단일 그리드 */}
             <div className="overflow-y-auto pr-1 flex-1" style={{ minHeight: 220 }}>
               {(() => {
                 const q = libSearch.trim().toLowerCase();
                 const match = (r: ReferenceDoc) =>
                   (!libCat || refCatOf(r.category) === libCat) &&
+                  (!libSub || r.sub === libSub) &&
                   (!q || (r.title || '').toLowerCase().includes(q));
                 const list = library.filter(match);
                 if (!list.length) {

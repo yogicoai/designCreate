@@ -139,8 +139,13 @@ export interface ReferenceDoc {
   title: string;
   width: number;
   height: number;
-  /** 레퍼런스 분류 — 내용 기준 3종: shoot(촬영) / banner(배너) / sns(SNS). null=미분류 */
+  /** 레퍼런스 분류 — shoot(촬영) / banner(배너) / sns(SNS) / interior / instagram. null=미분류 */
   category: string | null;
+  /**
+   * 분류 안의 하위 분류 — '22 맥스'처럼 연도+제품 단위.
+   * 2022 촬영본(1천여 장)이 폴더별로 정리돼 있어, 촬영 탭 안에서 한 번 더 나눠 보여준다.
+   */
+  sub?: string | null;
   tags: string[];
   /** 'upload' = 이 앱에서 업로드 / 'eventtemp' = 디자인 빌더 갤러리에서 가져옴 */
   source: string;
@@ -170,6 +175,7 @@ export async function getReferences(limit = 300): Promise<ReferenceDoc[]> {
     width: d.width ?? 0,
     height: d.height ?? 0,
     category: normalizeRefCategory(d.category),
+    sub: d.sub ?? null,
     tags: d.tags ?? [],
     source: d.source ?? 'upload',
     createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : null,
