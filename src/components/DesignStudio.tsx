@@ -282,6 +282,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
   /** 배경 이미지 자체를 끄는 중 — 기본 템플릿에서도 이미지를 잡아 위치(fx/fy)를 옮긴다 */
   const bgDragRef = useRef<{ sx: number; sy: number; fx0: number; fy0: number } | null>(null);
+  /** 이미지 더블클릭으로 여는 배경 크기 패널 (무대 상단에 뜬다) */
+  const [bgTune, setBgTune] = useState(false);
 
   const theme = findTheme(themeId);
   const sel = layers.find((l) => l.id === selected) ?? null;
@@ -595,7 +597,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   function onBgDown(e: React.PointerEvent) {
     // 레이어 손잡이를 잡았으면(자식에서 dragRef 세팅됨) 배경은 건드리지 않는다
     if (dragRef.current || !imageUrl || fitMode !== 'cover' || !stageRef.current) return;
-    const k = Math.max(dims.w / src.w, dims.h / src.h);
+    const k = Math.max(dims.w / src.w, dims.h / src.h) * Math.max(1, fitZoom);
     if (src.w * k - dims.w <= 1 && src.h * k - dims.h <= 1) return; // 크롭이 없으면 움직일 것도 없다
     const r = stageRef.current.getBoundingClientRect();
     bgDragRef.current = { sx: (e.clientX - r.left) / r.width, sy: (e.clientY - r.top) / r.height, fx0: fx, fy0: fy };
@@ -607,7 +609,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
     if (b && !dragRef.current && stageRef.current) {
       // 포인터가 끈 만큼 이미지가 따라온다 — 숨어 있는 폭/높이 대비 비율로 환산
       const r = stageRef.current.getBoundingClientRect();
-      const k = Math.max(dims.w / src.w, dims.h / src.h);
+      const k = Math.max(dims.w / src.w, dims.h / src.h) * Math.max(1, fitZoom);
       const hidW = src.w * k - dims.w, hidH = src.h * k - dims.h;
       const dnx = (e.clientX - r.left) / r.width - b.sx;
       const dny = (e.clientY - r.top) / r.height - b.sy;
@@ -1219,37 +1221,34 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
           {channel === '자사몰' && (
             <div className="flex gap-1.5 mb-2 items-center flex-wrap">
               <span className="label">기본 시안</span>
+              {/* 선택된 시안만 칠한다 — 둘 다 칠해두면 뭐가 골라졌는지 안 보인다 (사용자 피드백) */}
               <button className="chip" onClick={() => applyTemplateA()} disabled={!!busy}
                       title="디자인팀 실물 실측 — 웹: 좌 60% 문구+우 40% 이미지 / 모바일: 하단 그늘 + 문구 3줄"
-                      style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+                      style={stageIsTemplateA() ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
                 🅰 A안 배치
               </button>
               <button className="chip" onClick={() => applyPlan('B')} disabled={!!busy}
                       title="디자인팀 가이드 실측 — 이미지 한 장 + 중앙정렬 문구 3줄 (타이틀 2줄 가능)"
-                      style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+                      style={stageIsTemplateB() ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
                 🅱 B안 배치
               </button>
-              {/* 우측 이미지는 웹 A안(이미지 2개)에만 쓴다 — 모바일 A안은 한 장짜리 */}
-              {dims.w > dims.h && (
+              {/* 우측 이미지는 A안 웹 전용 — A안을 고른 다음에야 나타나고, 누르면 팝업에서 직접 올리기/레퍼런스/생성 컷을 고른다 */}
+              {stageIsTemplateA() && dims.w > dims.h && (
                 <>
-                  <label className="chip cursor-pointer" title="A안 웹의 오른쪽 40% 자리에 들어갈 이미지를 파일로 올립니다">
-                    {rightImg ? '우측 이미지 바꾸기' : '＋ 우측 이미지 올리기'}
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadRight(e.target.files)} />
-                  </label>
-                  {(cuts.length > 0 || refs.length > 0) && (
-                    <button className="chip" title="생성 컷이나 레퍼런스 보관함에서 우측 이미지를 고릅니다 — 업로드 없이"
-                            onClick={() => { setBrowseFor('right'); setBrowsePage(0); setBrowseOpen(true); }}>
-                      🗂 컷·레퍼런스에서 고르기
-                    </button>
-                  )}
+                  <button className="chip"
+                          title="직접 올리기 / 레퍼런스 보관함 / 생성 컷에서 고릅니다"
+                          onClick={() => { setBrowseFor('right'); setBrowsePage(0); setBrowseOpen(true); }}
+                          style={rightImg ? {} : { borderColor: 'var(--warn)', color: 'var(--warn)' }}>
+                    {rightImg ? '우측 이미지 바꾸기' : '＋ 우측 이미지 추가하기'}
+                  </button>
                   {rightImg && (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img src={rightImg} alt="우측 이미지" className="h-[26px] w-[26px] object-cover rounded border" style={{ borderColor: 'var(--line)' }} />
                   )}
                 </>
               )}
-              {/* 모바일 탭에서는 하단 처리 방식을 고른다 — 누르면 그 방식으로 A안이 다시 깔린다 */}
-              {dims.h > dims.w && (
+              {/* 모바일 탭 + A안일 때만 하단 처리 방식을 고른다 — 누르면 그 방식으로 A안이 다시 깔린다 */}
+              {stageIsTemplateA() && dims.h > dims.w && (
                 <>
                   <button className="chip" onClick={() => applyTemplateA('scrim')} disabled={!!busy}
                           title="사진 위로 어두운 그라데이션 (Luxe 배너 방식)"
@@ -1292,6 +1291,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
           <div
             ref={stageRef}
             onPointerDown={onBgDown}
+            onDoubleClick={() => { if (imageUrl) setBgTune(true); }}
             onPointerMove={onMove}
             onPointerUp={onUp}
             onPointerLeave={onUp}
@@ -1331,6 +1331,22 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
             {/* 저장본과 같은 SVG 를 그대로 얹는다 */}
             <div className="absolute inset-0 pointer-events-none"
                  dangerouslySetInnerHTML={{ __html: svg.replace('<svg ', '<svg style="width:100%;height:100%;display:block" ') }} />
+            {/* 이미지 더블클릭 → 배경 크기 패널. 슬라이더 조작이 배경 드래그로 새지 않게 전파를 끊는다 */}
+            {bgTune && imageUrl && (
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-3 py-2 rounded-[10px]"
+                   style={{ background: 'var(--surface)', border: '1px solid var(--accent)', width: 'min(440px, 94%)', boxShadow: '0 4px 18px rgba(0,0,0,.35)' }}
+                   onPointerDown={(e) => e.stopPropagation()}
+                   onDoubleClick={(e) => e.stopPropagation()}>
+                <span className="text-[10.5px] shrink-0" style={{ color: 'var(--text-dim)' }}>이미지 크기</span>
+                <input type="range" min={1} max={2.5} step={0.02} value={Math.max(1, fitZoom)} className="flex-1"
+                       onChange={(e) => { setFitZoom(Number(e.target.value)); setFocusTouched(true); setResult(null); }} />
+                <span className="text-[10.5px] tabular-nums w-[38px] text-right" style={{ color: 'var(--text-dim)' }}>
+                  {Math.round(Math.max(1, fitZoom) * 100)}%
+                </span>
+                <button className="chip px-2" title="원래 크기로" onClick={() => { setFitZoom(1); setResult(null); }}>100%</button>
+                <button className="chip px-2" onClick={() => setBgTune(false)}>닫기</button>
+              </div>
+            )}
             {/*
               * 잡는 손잡이 — 레이어 중심에 점을 두고 그걸 끈다.
               * 무리마다 하나만 둔다. 버튼에 점 세 개가 뜨면 한 몸으로 안 보인다.
@@ -1339,7 +1355,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
             {leaders(layers).map((l) => (
               <span key={l.id}
                     onPointerDown={(e) => onDown(e, l.id)}
-                    onDoubleClick={() => openInspector(l.id)}
+                    onDoubleClick={(e) => { e.stopPropagation(); openInspector(l.id); }}
                     title={`${labelOf(l, layers)} — 끌어서 옮기기 · 두 번 눌러 수정`}
                     className="absolute rounded-full"
                     style={{
@@ -1393,6 +1409,13 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
                               style={browseSrc === 'refs' ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
                         레퍼런스 보관함 ({refs.length.toLocaleString()})
                       </button>
+                    )}
+                    {browseFor === 'right' && (
+                      <label className="chip cursor-pointer" title="가진 파일을 직접 올립니다">
+                        ＋ 직접 올리기
+                        <input type="file" accept="image/*" className="hidden"
+                               onChange={(e) => { uploadRight(e.target.files); setBrowseOpen(false); }} />
+                      </label>
                     )}
                     {browseSrc === 'refs' && cats.length > 1 && (
                       <>
