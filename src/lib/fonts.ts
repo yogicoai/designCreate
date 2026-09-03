@@ -35,6 +35,10 @@ if (!existsSync(join(fontDir, 'PretendardVariable.ttf'))) {
     '<!DOCTYPE fontconfig SYSTEM "fonts.dtd">',
     '<fontconfig>',
     `  <dir>${slash(fontDir)}</dir>`,
+    // 로컬(Windows)에선 PC 에 깔린 폰트도 저장본에 그대로 쓴다 — 포토샵 방식 편집기의
+    // 폰트 선택이 미리보기·저장본 모두에서 맞아떨어진다. 리눅스(Vercel)엔 이 경로가
+    // 없어서 fontconfig 가 조용히 무시한다 (배포본은 fonts/ 의 Pretendard 로 폴백).
+    ...(process.platform === 'win32' ? ['  <dir>C:/Windows/Fonts</dir>'] : []),
     `  <cachedir>${slash(cacheDir)}</cachedir>`,
     '</fontconfig>',
     '',

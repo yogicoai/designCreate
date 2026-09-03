@@ -94,7 +94,7 @@ const EDIT_TARGETS: { value: EditTarget; label: string; desc: string }[] = [
 ];
 
 const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
-  { value: 'style', label: '분위기 참고', desc: '조명·색감·무드만 따라가고 장면은 새로' },
+  { value: 'style', label: '분위기 참고', desc: '조명·색감·무드만 따라가고 장면은 새로 — 그 공간 자체를 쓰려면 「배경으로 사용」을 고르세요' },
   { value: 'base', label: '이 사진을 편집', desc: '사진은 그대로 두고 지정한 것만 바꿈 (합성·교체)' },
   { value: 'background', label: '배경으로 사용', desc: '공간만 가져오고 인물·제품은 우리 자산으로' },
 ];
@@ -123,12 +123,16 @@ const REF_CATS: { value: string; label: string }[] = [
   { value: 'shoot', label: '촬영' },
   { value: 'banner', label: '배너' },
   { value: 'sns', label: 'SNS' },
+  { value: 'interior', label: '인테리어' },
+  { value: 'instagram', label: '인스타그램' },
   { value: '__none', label: '미분류' },
 ];
 function refCatOf(cat: string | null | undefined): string {
   if (cat === 'shoot' || cat === 'thumbnail') return 'shoot';
   if (cat === 'banner' || cat === 'web-banner' || cat === 'mobile') return 'banner';
   if (cat === 'sns' || cat === 'sns-story') return 'sns';
+  if (cat === 'interior') return 'interior';
+  if (cat === 'instagram') return 'instagram';
   return '__none';
 }
 
@@ -213,12 +217,20 @@ export default function CreateStudio(p: Props) {
   const [libOpen, setLibOpen] = useState(false);
   const [libCat, setLibCat] = useState<string>(''); // '' = 전체
   const [libSearch, setLibSearch] = useState('');
+  // 분류별 표시 개수 — 인스타 백필로 2천 장이 넘어서, 한 번에 다 그리면 팝업이 무거워진다
+  const [libShow, setLibShow] = useState<Record<string, number>>({});
+  const LIB_STEP = 60;
   const [preservation, setPreservation] = useState('similar');
   const [editTargets, setEditTargets] = useState<EditTarget[]>([]);
   // 레퍼런스에 담긴 제품 — 인물 대비 스케일용 (사진 속 빈백이 무엇인지)
   const [refProduct, setRefProduct] = useState('');
   const [direction, setDirection] = useState('');
   const [samples, setSamples] = useState(1);
+  /*
+   * 출력 화질 — 기본 2K(2048px). 4K(4096px)는 POP·인쇄용.
+   * 실측: 4096px = A3 인쇄 248dpi / A2 실사출력 175dpi. 웹·SNS 용도는 2K 로 충분하다.
+   */
+  const [imageSize, setImageSize] = useState<'2K' | '4K'>('2K');
   // 프롬프트 작성 방식 — 서버(PROMPT_MODE)가 정한다. 화면에서 바꿀 수 없다.
   const writer: 'local' | 'opus' = p.promptMode === 'opus' ? 'opus' : 'local';
 
@@ -493,6 +505,7 @@ export default function CreateStudio(p: Props) {
       ...(hasBaseUpload && editTargets.length ? { editTargets } : {}),
       ...(refProduct ? { refProduct } : {}),
       engine,
+      ...(imageSize !== '2K' ? { imageSize } : {}),
       ...(direction.trim() ? { direction: direction.trim() } : {}),
       // promptMode 는 보내지 않는다 — 서버 env 가 유일한 결정권자여야
       // 클라이언트가 과금 모드를 강제로 켤 수 없다.
@@ -573,7 +586,21 @@ export default function CreateStudio(p: Props) {
       setCopied(kind);
       setTimeout(() => setCopied(null), 1600);
     } catch {
-      window.prompt('복사가 막혀 있습니다. 아래 내용을 직접 복사하세요.', text);
+      /*
+       * 클립보드가 막힌 환경 폴백 — window.prompt 는 Next dev 가 막아서 못 쓴다.
+       * 임시 textarea 로 execCommand 복사를 시도하고, 그마저 안 되면 안내만 한다.
+       */
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) { setCopied(kind); setTimeout(() => setCopied(null), 1600); return; }
+      } catch { /* 아래 안내로 */ }
+      setErr('복사가 막혀 있습니다 — 프롬프트 확인 영역에서 직접 드래그해 복사하세요.');
     }
   }
 
@@ -1529,6 +1556,26 @@ ${hint}` : hint))}>
             ) : '사용량을 불러오는 중…'}
           </div>
 
+          {/* 화질 — 웹·SNS 는 2K 로 충분, POP·인쇄물만 4K. 실측 4096px = A3 248dpi */}
+          <div>
+            <div className="flex gap-1.5">
+              {([['2K', '2K · 웹/SNS 기본'], ['4K', '4K · POP/인쇄용']] as const).map(([v, l]) => (
+                <button key={v} onClick={() => setImageSize(v)} className="chip flex-1 justify-center"
+                        title={v === '4K'
+                          ? '4096px — A3 포스터 248dpi급 인쇄 화질. 단가가 2K보다 높습니다.'
+                          : '2048px — 자사몰·스마트스토어·SNS 게시엔 이 화질로 충분합니다.'}
+                        style={imageSize === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            {imageSize === '4K' && (
+              <div className="text-[10px] px-1 mt-1" style={{ color: 'var(--warn)' }}>
+                4K는 단가가 2K보다 높습니다 — 실측 원가는 생성 후 표시됩니다. 포스터·인쇄물에만 권장.
+              </div>
+            )}
+          </div>
+
           {/*
             프롬프트 작성 방식은 고르는 게 아니라 환경이 정한다.
             로컬(PROMPT_MODE=local) = 템플릿 조립, 무과금.
@@ -1660,12 +1707,14 @@ ${hint}` : hint))}>
                 }
                 const cats = libCat ? [libCat] : REF_CATS.map((c) => c.value);
                 return cats.map((cat) => {
-                  const items = list.filter((r) => refCatOf(r.category) === cat);
-                  if (!items.length) return null;
+                  const all = list.filter((r) => refCatOf(r.category) === cat);
+                  if (!all.length) return null;
+                  const shown = libShow[cat] ?? LIB_STEP;
+                  const items = all.slice(0, shown);
                   const label = REF_CATS.find((c) => c.value === cat)?.label ?? cat;
                   return (
                     <div key={cat} className="mb-4">
-                      {!libCat && <div className="label mb-2">{label} · {items.length}</div>}
+                      {!libCat && <div className="label mb-2">{label} · {all.length}</div>}
                       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
                         {items.map((r) => {
                           const used = uploads.some((u) => u.url === r.url);
@@ -1686,6 +1735,12 @@ ${hint}` : hint))}>
                           );
                         })}
                       </div>
+                      {all.length > shown && (
+                        <button className="btn w-full mt-2 text-[12px]"
+                                onClick={() => setLibShow((cur) => ({ ...cur, [cat]: shown + LIB_STEP }))}>
+                          더 보기 ({shown} / {all.length})
+                        </button>
+                      )}
                     </div>
                   );
                 });

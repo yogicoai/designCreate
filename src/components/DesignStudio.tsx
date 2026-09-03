@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ICONS, renderLayersToSvg, textEm, type DesignDoc, type DesignLayer } from '@/lib/design-render';
+import DesignEditor from '@/components/DesignEditor';
 import { TEMPLATES, THEMES, findTheme } from '@/lib/banner-templates';
 import {
   CHANNELS, AUTO_SET, visibleSizesFor, defaultSizeFor, channelOf,
@@ -204,7 +205,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
         kind: 'pair';
         items: {
           label: string; w: number; h: number; preview: string; sizeId: string;
-          layers: DesignLayer[]; fit: { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string };
+          layers: DesignLayer[]; fit: NonNullable<DesignDoc['fit']>;
         }[];
       }
     | null
@@ -229,6 +230,11 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   const [fillColor, setFillColor] = useState(initial?.fit?.fillColor ?? '#f2f0ec');
   const [fx, setFx] = useState(initial?.fit?.fx ?? 0.5);           // 잘라낼 때 남길 가로 위치
   const [fy, setFy] = useState(initial?.fit?.fy ?? 0.45);          // 세로 위치 — 인물이 아래면 올린다
+  // 포토샵 방식에서 만지는 배경 변형(확대)·보정 — 템플릿 방식에선 기본값 그대로다
+  const [fitZoom, setFitZoom] = useState(initial?.fit?.zoom ?? 1);
+  const [fitZoomX, setFitZoomX] = useState(initial?.fit?.zoomX ?? 1);
+  const [fitZoomY, setFitZoomY] = useState(initial?.fit?.zoomY ?? 1);
+  const [fitAdjust, setFitAdjust] = useState<NonNullable<DesignDoc['fit']>['adjust']>(initial?.fit?.adjust);
   /*
    * 자동 배치 입력 — 이 화면의 기본 사용법이다.
    *
@@ -246,7 +252,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
    * 무대에는 한 규격만 올라가고, 내려간 버전은 여기 남는다.
    * 위치·크기는 버전마다 따로지만, 색은 patchColor 가 양쪽에 같이 넣는다.
    */
-  const [variants, setVariants] = useState<Record<string, { layers: DesignLayer[]; fit: { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string } }>>({});
+  const [variants, setVariants] = useState<Record<string, { layers: DesignLayer[]; fit: NonNullable<DesignDoc['fit']> }>>({});
   /*
    * 버튼 색은 '사진에서 뽑기' 아니면 브랜드 목록 중 하나만 — 자유 색상은
    * 4단계에서 손으로 다듬는 사람의 몫이다. MD 가 색을 고르는 것 자체가 개입이라서.
@@ -303,12 +309,26 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   const cropX = src.w * coverK - dims.w > 1;   // 가로가 잘리는 조합인가
   const cropY = src.h * coverK - dims.h > 1;
   const loss = needsFit ? cropLoss(src.w, src.h, dims.w, dims.h) : 0;
-  const fit = useMemo(() => ({ mode: fitMode, fx, fy, ...(fitMode === 'color' || fitMode === 'gradient' ? { fillColor } : {}) }), [fitMode, fx, fy, fillColor]);
+  const fit = useMemo(() => ({
+    mode: fitMode, fx, fy,
+    ...(fitMode === 'color' || fitMode === 'gradient' ? { fillColor } : {}),
+    ...(fitZoom !== 1 ? { zoom: fitZoom } : {}),
+    ...(fitZoomX !== 1 ? { zoomX: fitZoomX } : {}),
+    ...(fitZoomY !== 1 ? { zoomY: fitZoomY } : {}),
+    ...(fitAdjust ? { adjust: fitAdjust } : {}),
+  }), [fitMode, fx, fy, fillColor, fitZoom, fitZoomX, fitZoomY, fitAdjust]);
 
   const design: DesignDoc = useMemo(
     () => ({ imageUrl, layers, size: { id: sizeId || undefined, w: dims.w, h: dims.h }, fit, font: fontFamily || undefined }),
     [imageUrl, layers, sizeId, dims, fit, fontFamily],
   );
+
+  /*
+   * 편집 방식 — 템플릿(자동배치, 기본) / 포토샵(레이어 정밀 편집).
+   * 포토샵 방식은 같은 레이어 데이터를 피그마식 캔버스에서 만지는 전체 화면 편집기다.
+   * 나갈 때 레이어를 그대로 돌려받아 두 방식이 이어진다.
+   */
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const loadTemplates = useCallback(async () => {
     const r = await fetch('/api/design');
@@ -362,7 +382,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     });
     const j = await res.json();
     if (!j.ok) throw new Error(j.error || '자동 배치 실패');
-    return { layers: j.layers as DesignLayer[], fit: j.fit as { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string } };
+    return { layers: j.layers as DesignLayer[], fit: j.fit as NonNullable<DesignDoc['fit']> };
   }
 
   /**
@@ -665,9 +685,16 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
 
+  /*
+   * 템플릿 이름 — window.prompt 는 Next dev 가 막는다.
+   * 버튼을 누르면 인라인 입력이 열리고, Enter 로 저장한다.
+   */
+  const [tplNaming, setTplNaming] = useState(false);
+  const [tplName, setTplName] = useState('');
   async function saveTemplate() {
-    const name = window.prompt('템플릿 이름을 지어주세요 (배경 없이 배치만 저장됩니다)');
-    if (!name) return;
+    const name = tplName.trim();
+    if (!name) { setTplNaming(true); return; }
+    setTplNaming(false); setTplName('');
     setBusy('tpl');
     try {
       const r = await fetch('/api/design', {
@@ -899,6 +926,38 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
     </div>
   );
 
+  /*
+   * 배경 미리보기 스타일 — 서버 fitToSize 와 같은 식.
+   * zoom=1 이면 기존 object-fit 경로(완전 동일 결과), zoom≠1 이면 명시 크기·위치로 그린다.
+   * 보정(adjust)은 CSS filter 로 — 서버 sharp 값과 같은 의미라 화면=저장본.
+   */
+  const adjFilter = fitAdjust
+    ? `brightness(${fitAdjust.brightness ?? 1}) contrast(${fitAdjust.contrast ?? 1}) saturate(${fitAdjust.saturate ?? 1})`
+    : '';
+  const bgImgStyle: React.CSSProperties = (() => {
+    if (fitZoom === 1 && fitZoomX === 1 && fitZoomY === 1) {
+      return {
+        inset: 0, width: '100%', height: '100%',
+        objectFit: needsFit && fitMode !== 'cover' ? 'contain' : 'cover',
+        objectPosition: `${Math.round(fx * 100)}% ${Math.round(fy * 100)}%`,
+        ...(adjFilter ? { filter: adjFilter } : {}),
+      };
+    }
+    const zoom = fitMode === 'cover' ? Math.max(1, fitZoom) : Math.max(0.15, Math.min(4, fitZoom));
+    const baseK = fitMode === 'cover'
+      ? Math.max(dims.w / src.w, dims.h / src.h)
+      : Math.min(dims.w / src.w, dims.h / src.h);
+    const k = baseK * zoom;
+    const fgW = src.w * k * Math.max(0.15, Math.min(4, fitZoomX));
+    const fgH = src.h * k * Math.max(0.15, Math.min(4, fitZoomY));
+    return {
+      width: `${(fgW / dims.w) * 100}%`, height: `${(fgH / dims.h) * 100}%`,
+      left: `${(fx * (dims.w - fgW)) / dims.w * 100}%`, top: `${(fy * (dims.h - fgH)) / dims.h * 100}%`,
+      maxWidth: 'none',
+      ...(adjFilter ? { filter: adjFilter } : {}),
+    };
+  })();
+
   /** hex 를 밝게(+)/어둡게(-) — 미리보기 그라데이션이 서버와 같아지게 서버 shift 와 동일 규칙 */
   function shade(hex: string, d: number): string {
     const h = /^#?[0-9a-fA-F]{6}$/.test(hex) ? hex.replace('#', '') : 'f2f0ec';
@@ -936,7 +995,10 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
   const autoSet = AUTO_SET[channel].map(findSize);
   const autoSetText = autoSet.map((b) => `${b.label} ${b.w}×${b.h}`).join(' · ');
   // '저장' 을 붙이지 않는다 — 누르면 두 장을 먼저 보여주고, 확인해야 저장된다
-  const autoBtnLabel = channel === 'SNS' ? '정사각·세로 자동완성' : '웹·모바일 자동완성';
+  const autoBtnLabel =
+    channel === 'SNS' ? '정사각·세로 자동완성'
+    : channel === 'POP' ? '포스터 A2·A1 자동완성'
+    : '웹·모바일 자동완성';
   const shapeWord = shape === 'wide' ? '가로형' : shape === 'tall' ? '세로형' : '정사각';
 
   return (
@@ -974,6 +1036,15 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
             실제 크기 렌더를 확인창으로 보여준 뒤 [이대로 저장] 을 눌러야 한다.
           */}
           <div className="flex gap-2 mb-1 flex-wrap items-center">
+            {/* 포토샵 방식 — 템플릿으로 잡은 배치를 정밀하게 다듬는 다음 단계 */}
+            <button className="btn" onClick={() => {
+                      if (!imageUrl) { setErr('배경 컷을 먼저 골라주세요.'); return; }
+                      setErr(''); setEditorOpen(true);
+                    }}
+                    disabled={!imageUrl}
+                    title="피그마·포토샵처럼 레이어를 직접 만지는 전체 화면 편집기 — 텍스트·도형·아이콘·이미지 추가, 드래그·회전·그림자, PC 폰트, Ctrl+Z. 만진 레이어는 돌아와도 유지됩니다.">
+              🎨 포토샵 방식
+            </button>
             <button className="btn btn-primary" onClick={() => render(false)} disabled={!!busy || !layers.length}
                     title="지금 보는 규격 그대로 실제 크기로 그려 보여드리고, 확인하면 저장됩니다.">
               {busy === 'save' ? '그리는 중…' : '✔ 완성 · 저장'}
@@ -982,9 +1053,23 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
                     title={`문구만으로 ${autoSetText} 를 자동 배치해 보여드리고, 확인하면 함께 저장됩니다. 손으로 다듬은 배치는 들어가지 않습니다.`}>
               {autoBtnLabel}
             </button>
+            {tplNaming && (
+              <input
+                autoFocus
+                value={tplName}
+                onChange={(e) => setTplName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveTemplate();
+                  if (e.key === 'Escape') { setTplNaming(false); setTplName(''); }
+                }}
+                placeholder="템플릿 이름 (Enter=저장)"
+                className="px-2 py-1 text-[12px] rounded-[8px] w-[170px]"
+                style={{ background: 'var(--surface)', border: '1px solid var(--accent)', color: 'var(--text)' }}
+              />
+            )}
             <button className="btn" onClick={saveTemplate} disabled={!!busy || !layers.length}
                     title="배경 없이 지금 배치만 저장해서 다른 컷에도 얹을 수 있게 합니다.">
-              템플릿으로 저장
+              {tplNaming ? '이 이름으로 저장' : '템플릿으로 저장'}
             </button>
             {note && <span className="text-[11px]" style={{ color: 'var(--ok)' }}>{note}</span>}
             {err && <span className="text-[11px]" style={{ color: 'var(--danger)' }}>{err}</span>}
@@ -1053,11 +1138,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
             {imageUrl && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={imageUrl} alt="배경" draggable={false}
-                   className="absolute inset-0 w-full h-full"
-                   style={{
-                     objectFit: needsFit && fitMode !== 'cover' ? 'contain' : 'cover',
-                     objectPosition: `${Math.round(fx * 100)}% ${Math.round(fy * 100)}%`,
-                   }} />
+                   className="absolute"
+                   style={bgImgStyle} />
             )}
             {/* 저장본과 같은 SVG 를 그대로 얹는다 */}
             <div className="absolute inset-0 pointer-events-none"
@@ -1182,7 +1264,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
                                 setFocusTouched(true);
                                 setSelected(null);
                                 setResult(null);
-                                setNote(`${it.label} 버전을 무대에 올렸습니다 — 버전 탭으로 오가며 다듬고, [${'웹·모바일 자동완성'}]으로 짝 저장하세요.`);
+                                setNote(`${it.label} 버전을 무대에 올렸습니다 — 버전 탭으로 오가며 다듬고, [${autoBtnLabel}]으로 짝 저장하세요.`);
                               }}>
                         이 버전 무대에서 다듬기
                       </button>
@@ -1519,6 +1601,31 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [] }: {
         </Step>
 
       </aside>
+
+      {/* ── 포토샵 방식 편집기 (전체 화면) ── */}
+      {editorOpen && imageUrl && (
+        <DesignEditor
+          base={design}
+          srcDims={src}
+          serverFonts={fonts.map((f) => f.family)}
+          sizeLabel={sizeId ? findSize(sizeId).label : undefined}
+          sourceId={sourceId}
+          onExit={(ls, f, img) => {
+            setLayers(ls);
+            if (img && img !== imageUrl) setImageUrl(img);   // AI 도구가 배경을 바꿨으면 이어받는다
+            if (f) {
+              setFitMode(f.mode); setFx(f.fx); setFy(f.fy);
+              if (f.fillColor) setFillColor(f.fillColor);
+              setFitZoom(f.zoom ?? 1);
+              setFitZoomX(f.zoomX ?? 1);
+              setFitZoomY(f.zoomY ?? 1);
+              setFitAdjust(f.adjust);
+            }
+            setEditorOpen(false); setResult(null);
+          }}
+          onSaved={() => setNote('포토샵 방식에서 저장했습니다 — 배너 디자인 관리에서 볼 수 있습니다.')}
+        />
+      )}
     </div>
   );
 }

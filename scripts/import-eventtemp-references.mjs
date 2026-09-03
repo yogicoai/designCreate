@@ -15,6 +15,8 @@ function normalizeCategory(cat) {
   if (cat === 'thumbnail' || cat === 'shoot') return 'shoot';
   if (cat === 'web-banner' || cat === 'mobile' || cat === 'banner') return 'banner';
   if (cat === 'sns-story' || cat === 'sns') return 'sns';
+  if (cat === 'interior') return 'interior';
+  if (cat === 'instagram') return 'instagram';
   return null;
 }
 

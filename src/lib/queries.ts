@@ -156,6 +156,8 @@ export function normalizeRefCategory(cat: string | null | undefined): string | n
   if (cat === 'thumbnail' || cat === 'shoot') return 'shoot';
   if (cat === 'web-banner' || cat === 'mobile' || cat === 'banner') return 'banner';
   if (cat === 'sns-story' || cat === 'sns') return 'sns';
+  if (cat === 'interior') return 'interior'; // 빈 공간·인테리어 컷 — '배경으로 사용' 소스
+  if (cat === 'instagram') return 'instagram'; // 인스타그램 게시물 백필 (scripts/import-instagram-feed.mjs)
   return null;
 }
 

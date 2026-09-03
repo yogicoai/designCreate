@@ -112,6 +112,8 @@ interface Body {
   tier?: 'pro' | 'draft';
   /** 생성 엔진 — gemini(나노바나나) | higgs(힉스필드 Element) */
   engine?: 'gemini' | 'higgs';
+  /** 출력 화질 — 기본 2K(2048px). 4K(4096px)는 POP·인쇄용 (A3 248dpi급, 단가 높음) */
+  imageSize?: '1K' | '2K' | '4K';
   dryRun?: boolean;
   title?: string;
   /** 힉스필드 대기열: 이 핸드오프로 뽑을 장수 (1~4) */
@@ -530,6 +532,8 @@ export async function POST(req: Request) {
             references: inline,
             aspect: size.genAspect as GenAspect,
             tier: body.tier ?? 'pro',
+            // 화질 — 기본 2K, POP·인쇄용은 4K(4096px). gemini.ts 가 검증한다.
+            ...(body.imageSize ? { size: body.imageSize } : {}),
           });
         }
       } catch (e) {

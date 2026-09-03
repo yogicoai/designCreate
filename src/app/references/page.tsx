@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function ReferencesPage() {
   // 페이지 나누기는 화면에서 한다(20개씩) — 여기서는 넉넉히 불러온다
-  const references = await getReferences(500);
+  const references = await getReferences(5000);
 
   return (
     <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">

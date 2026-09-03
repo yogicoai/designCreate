@@ -8,7 +8,7 @@
  * 이 파일은 'server-only' 를 붙이지 않는다 — 화면 쪽에서도 같은 타입을 쓴다.
  */
 
-export type LayerKind = 'text' | 'rect' | 'scrim' | 'icon';
+export type LayerKind = 'text' | 'rect' | 'scrim' | 'icon' | 'image' | 'brush' | 'blurpatch';
 
 export interface DesignLayer {
   id: string;
@@ -64,6 +64,49 @@ export interface DesignLayer {
   icon?: string;
   /** 선 굵기 — 아이콘 크기 대비 비율 */
   stroke?: number;
+
+  // ── 포토샵 방식 편집기 확장 ──
+  /**
+   * 진짜 드롭섀도 (기존 shadow 는 가독성용 얇은 윤곽선이다).
+   * dx/dy/blur 는 글자 크기(em) 대비 — 캔버스가 커져도 비율이 유지된다.
+   * 도형·이미지에도 적용된다 (그때는 짧은 변 대비 크기의 0.1 을 1em 으로 본다).
+   */
+  dropShadow?: { dx: number; dy: number; blur: number; color: string; opacity?: number };
+  /** rect 의 모양 — ellipse 면 타원(원)으로 그린다 */
+  shape?: 'rect' | 'ellipse';
+  /** rect 테두리 (짧은 변 대비 굵기) */
+  border?: { width: number; color: string };
+
+  // ── 이미지 레이어 (로고·뱃지 PNG 등) ──
+  /** 이미지 원본 URL. 서버 렌더는 assets 맵(url→dataURI)으로 받아 embed 한다 */
+  src?: string;
+  /** 원본 가로/세로 비율 (w/h) — 업로드 시 잰다. 렌더는 w 와 이걸로 h 를 계산 */
+  srcAspect?: number;
+
+  /** 이 레이어만 다른 글꼴 — 없으면 배너 전체 글꼴(design.font)을 따른다 */
+  font?: string;
+  /** 텍스트 장평 (가로 스케일, 1=100%) — 포토샵 Ctrl+T 의 좌우 줄이기 */
+  scaleX?: number;
+  /** 텍스트 커스텀 외곽선 (width 는 em) — 기존 shadow(가독 윤곽)보다 우선한다 */
+  textStroke?: { width: number; color: string };
+
+  // ── 브러시 (자유 곡선 스트로크) ──
+  /** 지나간 점들 (0~1 비율 좌표). strokeWidth 는 짧은 변 대비 비율 */
+  points?: { x: number; y: number }[];
+  strokeWidth?: number;
+
+  // ── 영역 블러/모자이크 (배경 사진에 적용 — 얼굴·번호판 가리기) ──
+  /** blurpatch 의 효과. 서버가 배경 래스터에 직접 적용한다 (SVG 로는 못 그린다) */
+  effect?: 'blur' | 'mosaic';
+  /** 효과 강도 0~1 */
+  strength?: number;
+
+  /** 편집기 전용 — 화면 숨김 (렌더에서도 건너뜀) */
+  hidden?: boolean;
+  /** 편집기 전용 — 잠금 (렌더와 무관, 캔버스 조작만 막음) */
+  locked?: boolean;
+  /** 편집기에서 보여줄 레이어 이름 */
+  name?: string;
 }
 
 export interface DesignDoc {
@@ -84,7 +127,20 @@ export interface DesignDoc {
    * cover  잘라서 꽉 채운다 / blur  흐린 사본 위에 통째로 / color  줄여 넣고 남는 여백을
    * 단색으로 / gradient  남는 여백을 그 색의 위아래 그라데이션으로 자연스럽게 채운다.
    */
-  fit?: { mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string };
+  /**
+   * zoom — 배경 이미지 자체의 확대/이동(포토샵의 배경 변형).
+   * 1 = 기존 동작. cover 는 1 미만이면 빈틈이 생겨 1로 클램프한다.
+   * 위치는 fx/fy 가 계속 맡는다: left = fx*(W-fgW), top = fy*(H-fgH)
+   * (zoom=1 cover 에서 기존 object-position 과 정확히 같은 식이다).
+   */
+  fit?: {
+    mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string; zoom?: number;
+    /** 배경 가로/세로 개별 배율 (Ctrl+T 자유 변형) — zoom 위에 곱해진다. 1=변형 없음 */
+    zoomX?: number;
+    zoomY?: number;
+    /** 배경 사진 보정 — 1 이 원본. CSS filter 와 같은 의미라 미리보기·저장본이 일치한다 */
+    adjust?: { brightness?: number; contrast?: number; saturate?: number };
+  };
   /**
    * 이 배너 전체의 글꼴 가족 이름. fonts/ 폴더에 있는 파일의 name 테이블
    * 이름이어야 한다 (banner-fonts 가 목록을 만든다). 없으면 FONT_STACK 순서.
@@ -179,7 +235,11 @@ function stackFor(font?: string): string {
   return `'${clean}', ${FONT_STACK}`;
 }
 
-export function renderLayersToSvg(design: DesignDoc, W: number, H: number): string {
+export function renderLayersToSvg(
+  design: DesignDoc, W: number, H: number,
+  /** 이미지 레이어의 url→dataURI 맵. 서버(sharp/librsvg)는 외부 URL 을 못 불러서 embed 가 필요하다. 브라우저 미리보기는 없어도 된다(원본 URL 로 그림). */
+  assets?: Record<string, string>,
+): string {
   // 글자·아이콘·모서리는 짧은 변을 기준으로 잰다.
   // 가로폭 기준이면 1920x600 배너에서 0.082 짜리 제목이 157px 가 되어 캔버스를 뚫는다.
   const S = Math.min(W, H);
@@ -187,8 +247,59 @@ export function renderLayersToSvg(design: DesignDoc, W: number, H: number): stri
   const parts: string[] = [];
   const defs: string[] = [];
 
+  /**
+   * 드롭섀도 — feDropShadow 는 librsvg 호환이 들쭉날쭉해서, 어디서나 똑같이 나오는
+   * "흐린 사본을 뒤에 깐다" 방식을 쓴다. inner 는 그림자색으로 칠한 같은 도형이어야 한다.
+   */
+  const dropShadowOf = (i: number, blurPx: number): string => {
+    const fid = `ds${i}`;
+    defs.push(`<filter id="${fid}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${Math.max(0, blurPx).toFixed(2)}"/></filter>`);
+    return fid;
+  };
+
   design.layers.forEach((l, i) => {
+    if (l.hidden) return; // 편집기에서 눈을 꺼둔 레이어
+    // 블러/모자이크는 배경 래스터에 서버가 직접 적용한다 (route) — SVG 에는 안 그린다
+    if (l.kind === 'blurpatch') return;
     const op = Math.max(0, Math.min(1, l.opacity ?? 1));
+
+    if (l.kind === 'brush') {
+      const pts = l.points ?? [];
+      if (pts.length < 2) return;
+      // 중점 이차곡선 스무딩 — 손떨림이 자연스러운 곡선이 된다
+      const P = pts.map((q) => ({ x: q.x * W, y: q.y * H }));
+      let d = `M ${P[0].x.toFixed(1)} ${P[0].y.toFixed(1)}`;
+      for (let k = 1; k < P.length - 1; k++) {
+        const mx = (P[k].x + P[k + 1].x) / 2, my = (P[k].y + P[k + 1].y) / 2;
+        d += ` Q ${P[k].x.toFixed(1)} ${P[k].y.toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)}`;
+      }
+      d += ` L ${P[P.length - 1].x.toFixed(1)} ${P[P.length - 1].y.toFixed(1)}`;
+      const sw = Math.max(0.5, (l.strokeWidth ?? 0.01) * S);
+      const cx = (l.x ?? 0.5) * W, cy = (l.y ?? 0.5) * H;
+      parts.push(rotWrap(
+        `<path d="${d}" fill="none" stroke="${l.color}" stroke-opacity="${op}" stroke-width="${sw.toFixed(1)}"` +
+        ' stroke-linecap="round" stroke-linejoin="round"/>',
+        l.rotate, cx, cy,
+      ));
+      return;
+    }
+
+    if (l.kind === 'image') {
+      const src = l.src ?? '';
+      if (!src) return;
+      const href = assets?.[src] ?? src;
+      const w = (l.w ?? 0.2) * W;
+      // h 가 명시되면 비율을 깨고 그 높이로 늘린다 (Ctrl+T 스트레치). 없으면 원본 비율
+      const h = l.h != null ? l.h * H : (l.srcAspect ? w / l.srcAspect : 0.2 * H);
+      const x = (l.x ?? 0.5) * W - w / 2;
+      const y = (l.y ?? 0.5) * H - h / 2;
+      const rot = l.rotate ? ` transform="rotate(${l.rotate} ${x + w / 2} ${y + h / 2})"` : '';
+      parts.push(
+        `<image x="${x}" y="${y}" width="${w}" height="${h}" opacity="${op}" preserveAspectRatio="xMidYMid meet"` +
+        ` href="${esc(href)}" xlink:href="${esc(href)}"${rot}/>`,
+      );
+      return;
+    }
 
     if (l.kind === 'scrim') {
       // 위/아래에서 흐려지는 그라데이션 — 글자가 배경에 묻히는 걸 막는 용도
@@ -214,9 +325,23 @@ export function renderLayersToSvg(design: DesignDoc, W: number, H: number): stri
     if (l.kind === 'rect') {
       const w = (l.w ?? 0.3) * W, h = (l.h ?? 0.1) * H;
       const x = (l.x ?? 0.5) * W - w / 2, y = (l.y ?? 0.5) * H - h / 2;
+      const cx0 = x + w / 2, cy0 = y + h / 2;
       const r = (l.radius ?? 0) * S;
-      const rot = l.rotate ? ` transform="rotate(${l.rotate} ${x + w / 2} ${y + h / 2})"` : '';
-      parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" ry="${r}" fill="${l.color}" fill-opacity="${op}"${rot}/>`);
+      const rot = l.rotate ? ` transform="rotate(${l.rotate} ${cx0} ${cy0})"` : '';
+      const bd = l.border && l.border.width > 0
+        ? ` stroke="${l.border.color}" stroke-width="${(l.border.width * S).toFixed(2)}"`
+        : '';
+      const shapeAt = (dx: number, dy: number, fill: string, fillOp: number, extra = '') =>
+        l.shape === 'ellipse'
+          ? `<ellipse cx="${cx0 + dx}" cy="${cy0 + dy}" rx="${w / 2}" ry="${h / 2}" fill="${fill}" fill-opacity="${fillOp}"${extra}${rot}/>`
+          : `<rect x="${x + dx}" y="${y + dy}" width="${w}" height="${h}" rx="${r}" ry="${r}" fill="${fill}" fill-opacity="${fillOp}"${extra}${rot}/>`;
+      if (l.dropShadow) {
+        const d = l.dropShadow;
+        const em = S * 0.1; // 도형의 1em = 짧은 변의 10%
+        const fid = dropShadowOf(i, d.blur * em);
+        parts.push(`<g filter="url(#${fid})" transform="translate(${(d.dx * em).toFixed(1)} ${(d.dy * em).toFixed(1)})">${shapeAt(0, 0, d.color, Math.max(0, Math.min(1, d.opacity ?? 0.5)))}</g>`);
+      }
+      parts.push(shapeAt(0, 0, l.color, op, bd));
       return;
     }
 
@@ -252,13 +377,17 @@ export function renderLayersToSvg(design: DesignDoc, W: number, H: number): stri
     const ls = (l.tracking ?? 0) * fs;
     const rot = l.rotate ? ` transform="rotate(${l.rotate} ${cx} ${cy})"` : '';
 
-    // 밝은 배경 위 흰 글씨가 날아가지 않게 — 아주 옅은 그림자
-    const shadow = l.shadow
-      ? ` style="paint-order:stroke fill;stroke:rgba(0,0,0,.28);stroke-width:${Math.max(1, fs * 0.045)}px;stroke-linejoin:round"`
-      : '';
+    // 외곽선: 커스텀(textStroke)이 있으면 그것을, 없고 shadow 면 가독용 옅은 윤곽을
+    const shadow = l.textStroke && l.textStroke.width > 0
+      ? ` style="paint-order:stroke fill;stroke:${l.textStroke.color};stroke-width:${(l.textStroke.width * fs).toFixed(1)}px;stroke-linejoin:round"`
+      : l.shadow
+        ? ` style="paint-order:stroke fill;stroke:rgba(0,0,0,.28);stroke-width:${Math.max(1, fs * 0.045)}px;stroke-linejoin:round"`
+        : '';
 
+    // 레이어별 글꼴 — 있으면 그 글꼴을 맨 앞에 세운다 (PC 폰트 선택용)
+    const layerStack = l.font ? stackFor(l.font) : fontStack;
     const common =
-      `font-family="${fontStack}" font-size="${fs}" font-weight="${l.weight ?? 700}"` +
+      `font-family="${layerStack}" font-size="${fs}" font-weight="${l.weight ?? 700}"` +
       ` letter-spacing="${ls}" fill="${l.color}" fill-opacity="${op}"`;
 
     /*
@@ -273,6 +402,12 @@ export function renderLayersToSvg(design: DesignDoc, W: number, H: number): stri
      * 글자 폭이 제각각이라 균등 분배하면 한글과 영문이 섞일 때 간격이 어긋난다 —
      * 대략적인 폭 가중치로 누적 위치를 잡는다.
      */
+    // 장평(가로 스케일) — 글자 중심을 축으로 가로만 늘리거나 줄인다 (Ctrl+T 좌우 변형)
+    const sx = l.scaleX ?? 1;
+    const scaleWrap = (inner: string) => sx !== 1
+      ? `<g transform="translate(${cx} 0) scale(${sx} 1) translate(${-cx} 0)">${inner}</g>`
+      : inner;
+
     const curve = l.curve ?? 0;
     if (curve !== 0) {
       const chars = [...lines.join(' ')];
@@ -305,16 +440,29 @@ export function renderLayersToSvg(design: DesignDoc, W: number, H: number): stri
                ` transform="translate(${px.toFixed(2)} ${py.toFixed(2)}) rotate(${deg.toFixed(2)})"` +
                `${shadow}>${esc(ch)}</text>`;
       });
-      parts.push(rotWrap(glyphs.join(''), l.rotate, cx, cy));
+      parts.push(scaleWrap(rotWrap(glyphs.join(''), l.rotate, cx, cy)));
       return;
     }
 
     const tspans = lines.map((ln, k) =>
       `<tspan x="${cx}" y="${startY + k * lh}">${esc(ln)}</tspan>`).join('');
 
-    parts.push(
+    // 진짜 드롭섀도 — 그림자색으로 칠한 같은 글자를 흐려서 뒤에 깐다
+    if (l.dropShadow) {
+      const d = l.dropShadow;
+      const fid = dropShadowOf(i, d.blur * fs);
+      const shCommon =
+        `font-family="${layerStack}" font-size="${fs}" font-weight="${l.weight ?? 700}"` +
+        ` letter-spacing="${ls}" fill="${d.color}" fill-opacity="${Math.max(0, Math.min(1, d.opacity ?? 0.5))}"`;
+      parts.push(scaleWrap(
+        `<g filter="url(#${fid})" transform="translate(${(d.dx * fs).toFixed(1)} ${(d.dy * fs).toFixed(1)})">` +
+        `<text ${shCommon} text-anchor="${anchor}" dominant-baseline="middle"${rot}>${tspans}</text></g>`,
+      ));
+    }
+
+    parts.push(scaleWrap(
       `<text ${common} text-anchor="${anchor}" dominant-baseline="middle"${shadow}${rot}>${tspans}</text>`,
-    );
+    ));
   });
 
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">`

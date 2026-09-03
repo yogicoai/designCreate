@@ -60,7 +60,15 @@ export interface UploadedRefSpec {
 export type EditTarget = 'face' | 'person' | 'add-person' | 'outfit' | 'product-color' | 'background' | 'text-removal';
 
 const EDIT_TARGET_EN: Record<EditTarget, string> = {
-  face: 'replace the face and hair of each specified person with the supplied model identity, keeping their body, pose and outfit',
+  /*
+   * "얼굴만 바꿔라"라고 하면 모델이 말 그대로 얼굴을 오려 붙인다 — 목 경계 단차,
+   * 조명 불일치, 머리카락이 옷깃을 안 덮는 합성티가 그대로 남는다 (실사용 피드백).
+   * 그래서 지시를 "사람을 통째로 다시 그리되, 입고 있던 옷을 그대로 입힌다"로 잡는다.
+   */
+  face: 'REPLACE each specified person\'s identity by REBUILDING the whole person as one continuous render: ' +
+    'the new face and hair come from the supplied model identity, the body pose stays the same, and they wear ' +
+    'the SAME outfit the base person wears — re-rendered naturally on the new person. Never paste a face onto ' +
+    'the existing photo: head, neck, shoulders and hands are redrawn together, with one skin tone and the scene\'s own lighting',
   person: 'replace each specified person entirely with the supplied model (face, hair, body proportions and outfit), keeping their pose',
   // 사진에 사람이 없을 때 — 인물을 새로 합성해 앉힌다 (기존 가구·공간은 그대로)
   'add-person': 'ADD the specified people into the scene, seated naturally on the bean bags already in the photo — one person per seat, counting seats from the LEFT. The bean bags in the photo ARE the product being advertised: keep their shape, fabric texture, colour and position exactly as photographed — do not replace, recolour, move or add any furniture. The fabric must visibly compress and dent under each body; shadows, perspective and colour temperature must match the photo so the people look photographed in place, not pasted',
@@ -72,7 +80,8 @@ const EDIT_TARGET_EN: Record<EditTarget, string> = {
 
 /** 편집 대상이 명시적으로 건드리는 영역 — "나머지는 그대로" 문장에서 제외해야 모순이 없다 */
 const EDIT_TOUCHES: Record<EditTarget, string[]> = {
-  face: ['the face and hair'],
+  // face 는 사람을 통째로 다시 그리므로("얼굴만"이라고 하면 붙여넣기가 된다) 보존 문장에서 사람 전체를 제외한다
+  face: ['the replaced people'],
   person: ['the people'],
   'add-person': ['the added people'],
   outfit: ['the clothing'],
@@ -474,6 +483,17 @@ function productBlock(spec: GenerationSpec): string[] {
     if (p.color?.hex) L.push(`  COLOUR: ${colorEn} (${p.color.hex}) — exact, must not drift toward a neighbouring hue.`);
     L.push(`  USE: ${p.staging || p.modes}.`);
   });
+  /*
+   * 공식 뷰는 제품을 눕혀/세워 놓고 찍은 "기본 자세"다.
+   * 실사고(Max 초코브라운): 누운 로그형 뷰 + 착석 포즈 베이스를 모델이 멋대로 합쳐
+   * 거대한 크레센트로 구부렸다. 뷰에서 가져올 것은 형태·치수뿐이고,
+   * 장면 속 놓임새는 포즈가 정하되 껍데기 자체는 못 바꾼다고 못박는다.
+   */
+  L.push(
+    'PRODUCT VIEWS show each product in its factory resting orientation. In the scene, position the product however ' +
+      'the pose and staging require, BUT its shell keeps the exact shape and true dimensions from the views — ' +
+      'never bend, curl, stretch, inflate or merge a product to fit a pose, a person or the composition.',
+  );
   return L;
 }
 
@@ -502,7 +522,9 @@ function wherePhrase(placement: string): string {
  */
 function scaleBlock(spec: GenerationSpec): string[] {
   const talents = spec.talents ?? [];
-  if (!talents.length) return [];
+  const hasBackground = (spec.uploadedRefs ?? []).some((r) => r.role === 'background');
+  // 사람이 없어도 배경 사진이 있으면 축척 블록은 필요하다 — 방의 가구가 자(yardstick)다
+  if (!talents.length && !hasBackground) return [];
   const heights = talents
     .map((t, i) => {
       const h = (t.sizeEn.match(/(\d{2,3})\s?cm/) || [])[1];
@@ -519,22 +541,45 @@ function scaleBlock(spec: GenerationSpec): string[] {
   const baseAnchored = editingPeople && hasBase;
 
   const L: string[] = [''];
-  if (baseAnchored) {
+
+  /*
+   * 배경 사진이 캔버스일 때 — 그 공간의 가구·건축이 축척의 자다.
+   * (사용자 요청: 배경 속 가구 크기를 읽어, 들어가는 모델·빈백이 거기 맞게 리사이징되도록)
+   * 소파 좌면 40~45 / 카운터 85~95 / 스툴 65~75 / 문 200~210 / 천장 230~250cm 는
+   * 어디서나 통하는 표준치라, 모델이 사진만 보고 공간의 실측 축척을 역산할 수 있는
+   * 가장 확실한 단서다. 축척을 먼저 세우고, 사람·제품을 그 축척 위에 놓게 한다.
+   */
+  if (hasBackground) {
     L.push(
-      'SCALE — the base photograph already shows real people at the correct real-world size against the furniture. ' +
-        'Use the person(s) in the base as the SIZE YARDSTICK. Where you replace a base person, keep their EXACT ' +
-        'size and footprint — same height in the frame, same seat contact, same way their weight sinks into and ' +
-        'compresses the bean bag, same limb placement — and change only the face, hair and outfit. Any newly added ' +
-        'person must be rendered at that SAME human scale as the base person relative to the furniture. Do not resize ' +
-        'people to some other height; heads and faces must not be enlarged.',
+      'SCALE FROM THE ROOM — the supplied background is a real photographed space. FIRST establish its metric scale ' +
+        'from its own furniture and architecture: sofa seats sit about 40-45cm off the floor, coffee tables are ' +
+        '~40-45cm tall, kitchen counters ~85-95cm, bar stools ~65-75cm, dining chair seats ~45cm, interior door ' +
+        'openings ~200-210cm, ceilings ~230-250cm. THEN place every person and every product at TRUE size inside ' +
+        'that metric space — sized correctly against the actual sofa, counters, chairs and doors visible in the ' +
+        'photo, standing on the same floor plane with the room\'s own perspective and camera height. Feet and ' +
+        'product bases sit ON that floor with correct diminution into depth; nothing floats, and nothing reads ' +
+        'giant or miniature next to the room\'s furniture.',
     );
-    if (heights.length) L.push(`  For consistency between people, their real heights are ${heights.join(', ')} — keep these proportions, but the base person's on-screen scale wins over any absolute number.`);
-  } else {
-    L.push(
-      'SCALE — render every person at ONE consistent, true-to-life human scale, correct relative to each other AND to ' +
-        'every piece of furniture in the frame. Heads and faces must not be enlarged.',
-    );
-    if (heights.length) L.push(`  Real heights: ${heights.join(', ')}. Keep these height proportions between the people.`);
+  }
+
+  if (talents.length) {
+    if (baseAnchored) {
+      L.push(
+        'SCALE — the base photograph already shows real people at the correct real-world size against the furniture. ' +
+          'Use the person(s) in the base as the SIZE YARDSTICK. Where you replace a base person, keep their EXACT ' +
+          'size and footprint — same height in the frame, same seat contact, same way their weight sinks into and ' +
+          'compresses the bean bag, same limb placement — and change only the face, hair and outfit. Any newly added ' +
+          'person must be rendered at that SAME human scale as the base person relative to the furniture. Do not resize ' +
+          'people to some other height; heads and faces must not be enlarged.',
+      );
+      if (heights.length) L.push(`  For consistency between people, their real heights are ${heights.join(', ')} — keep these proportions, but the base person's on-screen scale wins over any absolute number.`);
+    } else {
+      L.push(
+        'SCALE — render every person at ONE consistent, true-to-life human scale, correct relative to each other AND to ' +
+          'every piece of furniture in the frame. Heads and faces must not be enlarged.',
+      );
+      if (heights.length) L.push(`  Real heights: ${heights.join(', ')}. Keep these height proportions between the people.`);
+    }
   }
 
   const sp = spec.scaleProduct;
@@ -542,12 +587,14 @@ function scaleBlock(spec: GenerationSpec): string[] {
     const d = sp.dims || {};
     const dims = [d.w && `${d.w}cm wide`, d.d && `${d.d}cm deep`, d.h && `${d.h}cm long/tall`].filter(Boolean).join(' x ');
     L.push(
-      `  The Yogibo ${sp.line} in this scene measures ${dims || 'its real size'} — ${sp.scalePrompt}. ` +
-        'Size every person against it: a seated adult sinks into it and their body takes up a large part of it, ' +
-        'and an adult lying along it spans nearly its whole length. Do not shrink the people so it looks oversized, ' +
-        'nor enlarge them so it looks like a small cushion.',
+      `  The Yogibo ${sp.line} in this scene measures ${dims || 'its real size'} — ${sp.scalePrompt}.` +
+        (talents.length
+          ? ' Size every person against it: a seated adult sinks into it and their body takes up a large part of it, ' +
+            'and an adult lying along it spans nearly its whole length. Do not shrink the people so it looks oversized, ' +
+            'nor enlarge them so it looks like a small cushion.'
+          : ' Its bulk must read correctly next to the sofas, tables and counters in the space.'),
     );
-  } else {
+  } else if (talents.length) {
     L.push(
       '  Keep the Yogibo furniture at its true real-world size against these people — a Yogibo floor lounger is ' +
         'roughly as long as an adult is tall (about 170cm). Do NOT shrink the people so the furniture looks oversized, ' +
@@ -555,14 +602,15 @@ function scaleBlock(spec: GenerationSpec): string[] {
     );
   }
 
-  // 합성 티 방지 — 사람을 씬 안으로 '촬영해 넣는다'. 접촉 그림자·눌림·조명·질감을 원본에 맞춘다.
-  if (hasBase) {
+  // 합성 티 방지 — 사람·제품을 씬 안으로 '촬영해 넣는다'. 접촉 그림자·눌림·조명·질감을 원본에 맞춘다.
+  // 배경 사진에 얹는 경우도 같은 문제가 나서(붙임 티) 베이스와 동일하게 적용한다.
+  if (hasBase || hasBackground) {
     L.push(
-      '  Integrate every person seamlessly INTO the photograph, not pasted on top: match the base image lighting ' +
-        'direction and softness, its depth of field and photographic grain. Where a person touches a bean bag or the ' +
-        'floor, the surface must visibly dent and compress under their weight, with a soft contact shadow in the ' +
-        'crease and correct ambient occlusion. No hard cut-out edges, no floating, no sticker look — same lens, same ' +
-        'grain, same colour temperature as the base.',
+      '  Integrate every person and product seamlessly INTO the photograph, not pasted on top: match the photo\'s ' +
+        'lighting direction and softness, its depth of field and photographic grain. Where a person touches a bean bag ' +
+        'or the floor, the surface must visibly dent and compress under their weight, with a soft contact shadow in the ' +
+        'crease and correct ambient occlusion. The product casts a soft grounded shadow on the room\'s floor. No hard ' +
+        'cut-out edges, no floating, no sticker look — same lens, same grain, same colour temperature as the photo.',
     );
   }
   // 여러 명이면 사람마다 밝기·조명이 달라 따로 노는 문제 (사용자 지적: 명암도 불일치).
@@ -658,6 +706,17 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
       : '';
     if (t.outfit) L.push(`  OUTFIT: ${t.outfit.descEn || t.outfit.desc} (${t.outfit.code}), barefoot unless stated otherwise.${overrideNote}`);
     else if (t.outfitFree) L.push(`  OUTFIT: ${t.outfitFree}, barefoot unless stated otherwise.${overrideNote}`);
+    else if (hasBase && (spec.editTargets ?? []).some((x) => x === 'face' || x === 'person')) {
+      /*
+       * 의상 미지정(자동) + 인물 교체 — 여기가 합성티의 진원지였다.
+       * "옷은 그대로"라고만 두면 모델이 옷 위에 얼굴만 붙인다. 같은 옷을 새 인물에게
+       * 다시 입혀 그리라고 못박아야 목선·옷깃이 새 머리·머리카락에 맞게 다시 그려진다.
+       */
+      L.push(
+        '  OUTFIT: the SAME garment this person wears in the base image — but RE-RENDER it naturally on the new person ' +
+          '(same colour, fabric and fit), with the collar and neckline redrawn to meet the new head, neck and hair.',
+      );
+    }
   });
 
   if (multi) {
@@ -692,6 +751,19 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
         'let the pose adapt around them.',
       'Do not beautify, slim, smooth, de-age or drift toward a generic attractive face. Keep the real skin texture, ' +
         'pores and asymmetry.',
+      /*
+       * 참조 조명 복사 금지 — 합성티의 실제 주범.
+       * 아이덴티티 시트는 스튜디오 정면 포트레이트라, 그대로 두면 모델이 그 평면광·화이트밸런스·
+       * 정면 각도까지 장면 속 몸 위에 복사한다. 얼굴만 딴 데서 온 것처럼 보이는 이유가 이것이다.
+       */
+      'THE IDENTITY REFERENCES ARE STUDIO PORTRAITS — take ONLY the person from them: face geometry, features, ' +
+        'skin character and hairstyle. Do NOT copy their flat studio lighting, white balance or head-on frontal angle. ' +
+        'Light every face with THIS scene\'s light — same direction, warmth and softness as the room, with matching ' +
+        'shadows on the face and neck — and turn the head to whatever angle the pose calls for.',
+      'NO COMPOSITE LOOK — each person must read as ONE continuous photograph: face, ears, neck, chest and hands ' +
+        'share one skin tone; no brightness, colour or sharpness step at the jawline or collar; hair falls naturally ' +
+        'over the shoulders and casts a soft shadow on the clothing; the head\'s size, angle and perspective sit ' +
+        'correctly on the body. A result that looks like a face pasted onto a photo is a failure.',
       /*
        * 착석 자세 — 자사몰 컷의 최소 기준.
        * 빈백·좌식 소파는 몸이 낮게 가라앉아서, 그냥 두면 다리가 크게 벌어진 자세로 나온다.
@@ -841,9 +913,22 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
    * 비운다. 절대 하면 안 되는 건 '뭉개진 글자'다 ("yogibo" -> "qo ㅕo").
    * 없는 것보다 나쁜 건 틀린 것이다.
    */
+  /*
+   * 베이스로 쓰는 SNS·외부 이미지에 찍힌 워터마크/저작권 문구가 결과물까지 살아남는 사고
+   * (실측: 인스타 베이스의 "© 2026 ..." 가 생성 컷 구석에 그대로 남았다).
+   * "베이스에 충실하라"보다 우선하는 예외로 못박는다 — 오버레이 텍스트는 장면이 아니다.
+   */
+  L.push(
+    'WATERMARK CLEANUP: any overlaid watermark, copyright line, credit, username handle, timestamp, UI element or ' +
+      'caption text PRINTED ON a base or reference photo is NOT part of the scene — remove it completely and ' +
+      'reconstruct the image beneath it, matching the surrounding texture, colour and lighting. This overrides ' +
+      '"stay faithful to the base": the output must carry no inherited overlay text of any kind.',
+  );
   L.push(
     'BRAND TAGS: if the base image shows a sewn-in fabric tag or brand patch on the product, keep the tag itself — ' +
-      'same shape, size, position, fabric and fold. Reproduce its wordmark ONLY if it can be rendered cleanly and ' +
+      'same shape, size, position, fabric and fold. EXACTLY ONE tag per product — if different references show the ' +
+      'tag in different spots, pick the single most natural position and render only that one; never two tags on one ' +
+      'product. Reproduce its wordmark ONLY if it can be rendered cleanly and ' +
       'legibly at the size it occupies in this frame. If the tag is too small for the letterforms to hold their shape, ' +
       'render the tag BLANK instead, with no lettering at all. Never output distorted, misspelled, mirrored or ' +
       'invented lettering: a garbled logo is worse than a clean blank tag.',
@@ -964,7 +1049,39 @@ export async function writePrompt(spec: GenerationSpec, opts: WriteOptions = {})
 
   // 사람이 쓴 프롬프트가 최우선. 로컬에서 무과금으로 최고 품질을 쓰는 길이다.
   const manual = opts.manualPrompt?.trim();
-  if (manual) return { prompt: manual, refs, mode: 'manual' };
+  if (manual) {
+    /*
+     * 사람이 쓴 프롬프트도 참조 매핑과 최소 가드는 받아야 한다.
+     * 실사고(2026-09-02 · Max 초코브라운): 매뉴얼 프롬프트가 규칙 전부를 우회해
+     * 제품이 크레센트로 휘고(누운 360 뷰 + 착석 포즈를 멋대로 합침), 태그가 2개 찍히고,
+     * 스케일이 뻥튀기됐다. 창작 지시는 사람 것을 그대로 두되,
+     * ① 몇 번째 이미지가 무엇인지(매핑이 이미 있으면 생략) ② 제품 형태·태그·스케일·얼굴
+     * 같은 사실 규칙만 앞뒤로 붙인다.
+     */
+    const hasMapping = /\bFIRST image\b/i.test(manual);
+    const guard: string[] = [
+      'HOUSE GUARDRAILS — these apply on top of everything above:',
+      '- Every product keeps its factory shape and true dimensions. The official product views show its resting ' +
+        'orientation — in the scene, position it as the pose requires WITHOUT reshaping it: never bend, curl, ' +
+        'stretch, inflate or merge the shell to fit a pose or composition.',
+      '- EXACTLY ONE small sewn Yogibo fabric tag per product — never two. Render it clean and legible, or blank; ' +
+        'never garbled lettering.',
+      '- Any watermark, copyright line, credit or username printed ON a reference photo is NOT part of the scene — ' +
+        'remove it and reconstruct the surface beneath. The output carries no inherited overlay text.',
+    ];
+    const anchors = (spec.products ?? []).map((p) => p.scalePrompt).filter(Boolean);
+    if (anchors.length) guard.push(`- TRUE SCALE: ${anchors.join(' / ')}`);
+    const negatives = (spec.products ?? []).map((p) => p.negative).filter(Boolean);
+    if (negatives.length) guard.push(`- NEVER: ${negatives.join(' / ')}`);
+    if ((spec.talents ?? []).some((t) => !t.freeform)) {
+      guard.push(
+        '- Faces with identity references must match those references exactly, lit by the scene\'s own light — ' +
+          'never the reference\'s flat studio lighting.',
+      );
+    }
+    const parts = [...(hasMapping ? [] : [describeRefs(refs)]), manual, guard.join('\n')];
+    return { prompt: parts.join('\n\n'), refs, mode: 'manual' };
+  }
 
   // 키가 있으면 기본이 Opus 다. 장당 ~₩60 은 품질 대비 감수할 값이고,
   // 손으로 쓴 프롬프트 수준이 나오는 지점이 바로 여기다.

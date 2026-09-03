@@ -11,9 +11,9 @@
  */
 
 export type BannerShape = 'wide' | 'square' | 'tall';
-export type Channel = '자사몰' | '스마트스토어' | 'SNS';
+export type Channel = '자사몰' | '스마트스토어' | 'SNS' | 'POP';
 
-export const CHANNELS: Channel[] = ['자사몰', '스마트스토어', 'SNS'];
+export const CHANNELS: Channel[] = ['자사몰', '스마트스토어', 'SNS', 'POP'];
 
 export interface BannerSize {
   id: string;
@@ -59,6 +59,17 @@ export const BANNER_SIZES: BannerSize[] = [
   { id: 'ig-story',  channel: 'SNS', label: '스토리·릴스', w: 1080, h: 1920, hidden: true },
   { id: 'kakao',     channel: 'SNS', label: '카카오 채널 메시지', w: 800, h: 800, hidden: true },
   { id: 'yt-thumb',  channel: 'SNS', label: '유튜브 썸네일', w: 1280, h: 720, hidden: true },
+
+  // ── POP (매장 인쇄물) — 포스터 3종. px 는 인쇄 납품 기준 역산 작업 해상도 ──
+  //  A 계열은 전부 1:√2 라 세 규격이 같은 배치를 공유한다 (shapeOf 는 'tall').
+  //  소형(A3)은 300dpi 원본을 그대로 만들고, 대형(A2·A1)은 포스터 시인거리 관행인
+  //  150dpi 로 만든다 — 고급 인쇄가 필요하면 업스케일 한 번으로 커버된다.
+  { id: 'pop-a2', channel: 'POP', label: '포스터 A2 (420×594mm)', w: 2480, h: 3508,
+    note: '매장 벽·윈도우 표준 · 150dpi 실사출력 기준 · 인쇄소 납품 시 도련 3mm 별도' },
+  { id: 'pop-a1', channel: 'POP', label: '포스터 A1 (594×841mm)', w: 3508, h: 4967,
+    note: '대형 벽면·이젤 · 150dpi 실사출력 기준 · 도련 3mm 별도' },
+  { id: 'pop-a3', channel: 'POP', label: '포스터 A3 (297×420mm)', w: 3508, h: 4961,
+    note: '소형 안내·선반 · 300dpi 인쇄 원본 그대로 납품 가능 · 도련 3mm 별도' },
 ];
 
 /**
@@ -69,6 +80,8 @@ export const AUTO_SET: Record<Channel, string[]> = {
   '자사몰': ['web-main', 'mo-main'],
   '스마트스토어': ['ss-pc-main', 'ss-mo-main'],
   'SNS': ['ig-square', 'ig-port'],
+  // 포스터는 A 계열이라 비율이 같다 — A2 로 잡으면 A1 은 같은 배치가 그대로 커진다
+  'POP': ['pop-a2', 'pop-a1'],
 };
 
 /** 화면 목록에 내놓는 규격 — 채널로 거른다. 감춘 것은 findSize 로만 찾힌다 */

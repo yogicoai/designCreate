@@ -27,6 +27,8 @@ writeFileSync(conf, [
   '<!DOCTYPE fontconfig SYSTEM "fonts.dtd">',
   '<fontconfig>',
   `  <dir>${fontDir}</dir>`,
+  // PC 에 깔린 폰트도 배너 렌더에 쓴다 (포토샵 방식 편집기의 폰트 선택용, 로컬 전용)
+  '  <dir>C:/Windows/Fonts</dir>',
   `  <cachedir>${cacheDir.split(String.fromCharCode(92)).join('/')}</cachedir>`,
   '</fontconfig>',
   '',

@@ -15,7 +15,7 @@ export default async function CreatePage() {
     getPreservationModes(),
     getExpressions(),
     getCuts({ limit: 400 }),
-    getReferences(80),
+    getReferences(4000),
   ]);
 
   // 베이스로 쓸 수 있는 컷만 (라인이 있는 것) — 클라이언트로 넘기는 양을 줄인다

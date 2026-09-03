@@ -25,6 +25,8 @@ const CATEGORY_KR: Record<string, string> = {
   shoot: '촬영',
   banner: '배너',
   sns: 'SNS',
+  interior: '인테리어',
+  instagram: '인스타그램',
   // 구 값 폴백
   'web-banner': '배너',
   mobile: '배너',
@@ -37,6 +39,8 @@ const CATEGORY_OPTIONS: { value: string; label: string; desc: string }[] = [
   { value: 'shoot', label: '촬영', desc: '실제 촬영·연출 컷' },
   { value: 'banner', label: '배너', desc: '자사몰·스마트스토어·모바일 배너 규격' },
   { value: 'sns', label: 'SNS', desc: '인스타 정사각·스토리·릴스' },
+  { value: 'interior', label: '인테리어', desc: '빈 공간·인테리어 컷 — 생성 시 「배경으로 사용」 소스' },
+  { value: 'instagram', label: '인스타그램', desc: '인스타 게시물 (자동 백필 — 새 게시물은 스크립트 재실행)' },
 ];
 
 export default function ReferencesManager({ initial }: { initial: ReferenceDoc[] }) {
@@ -45,6 +49,22 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const [filter, setFilter] = useState<string>('');
+  /*
+   * 다중 선택 — 평소엔 동그라미 없이 깨끗한 목록.
+   * 상단 [분류 이동]/[삭제]를 누르면 선택 모드로 들어가 카드에 ○ 가 나타나고,
+   * 여러 장 고른 뒤 한 번에 실행한다 (사용자 요청: 클릭했을 때만 선택 동그라미).
+   */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState<null | 'move' | 'delete'>(null);
+
+  function enterMode(m: 'move' | 'delete') {
+    setSelectMode(m);
+    setSelected(new Set());
+  }
+  function exitMode() {
+    setSelectMode(null);
+    setSelected(new Set());
+  }
   const [page, setPage] = useState(1);
   /** 등록할 때 적용할 분류 — 고르기 전에는 파일창을 열지 않는다 */
   const [uploadCategory, setUploadCategory] = useState<string>('');
@@ -118,25 +138,24 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
     if ((await res.json()).ok) setItems((cur) => cur.map((x) => (x.url === url ? { ...x, category: next || null } : x)));
   }
 
-  async function rename(url: string, current: string) {
-    const title = window.prompt('레퍼런스 이름', current);
-    if (title == null || title === current) return;
+  /*
+   * 이름 변경 — window.prompt 는 Next dev 오버레이가 막는다(런타임 에러).
+   * 제목 자리를 그대로 입력창으로 바꾸는 인라인 방식으로 한다.
+   */
+  const [renaming, setRenaming] = useState<{ url: string; value: string } | null>(null);
+  async function commitRename() {
+    const r = renaming;
+    setRenaming(null);
+    if (!r) return;
+    const title = r.value.trim();
+    const cur = items.find((x) => x.url === r.url);
+    if (!title || !cur || title === cur.title) return;
     const res = await fetch('/api/references', {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url, title }),
+      body: JSON.stringify({ url: r.url, title }),
     });
-    if ((await res.json()).ok) setItems((cur) => cur.map((x) => (x.url === url ? { ...x, title } : x)));
-  }
-
-  async function hide(url: string) {
-    if (!window.confirm('보관함에서 숨길까요? 파일은 유지됩니다.')) return;
-    const res = await fetch('/api/references', {
-      method: 'DELETE',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    if ((await res.json()).ok) setItems((cur) => cur.filter((x) => x.url !== url));
+    if ((await res.json()).ok) setItems((c) => c.map((x) => (x.url === r.url ? { ...x, title } : x)));
   }
 
   async function hardDelete(url: string, source: string) {
@@ -158,6 +177,64 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
     }
     if (json.ok) setItems((cur) => cur.filter((x) => x.url !== url));
     else setErr(json.error || '삭제 실패');
+  }
+
+  function toggleSelect(url: string) {
+    setSelected((cur) => {
+      const n = new Set(cur);
+      if (n.has(url)) n.delete(url); else n.add(url);
+      return n;
+    });
+  }
+
+  /** 선택 항목 일괄 분류 이동 — '' 는 미지정 */
+  async function bulkCategory(cat: string) {
+    const urls = [...selected];
+    if (!urls.length) { setNote('먼저 ○ 를 눌러 항목을 선택하세요.'); return; }
+    let ok = 0;
+    for (const url of urls) {
+      const res = await fetch('/api/references', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url, category: cat || null }),
+      });
+      if ((await res.json()).ok) {
+        ok++;
+        setItems((cur) => cur.map((x) => (x.url === url ? { ...x, category: cat || null } : x)));
+      }
+    }
+    setNote(`${ok}개를 ${cat ? (CATEGORY_KR[cat] ?? cat) : '미지정'}(으)로 이동했습니다.`);
+    exitMode();
+  }
+
+  /** 선택 항목 일괄 삭제 — 업로드본은 파일까지, 디자인 빌더 항목은 목록에서만 빠진다 */
+  async function bulkDelete() {
+    const urls = [...selected];
+    if (!urls.length) { setNote('먼저 ○ 를 눌러 항목을 선택하세요.'); return; }
+    if (!window.confirm(
+      `${urls.length}개를 완전히 삭제할까요?\n업로드본은 FTP 파일까지 지워지며 되돌릴 수 없습니다. (디자인 빌더 항목은 목록에서만 빠집니다)`,
+    )) return;
+    const call = (url: string, force: boolean) => fetch('/api/references', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url, hard: true, ...(force ? { force: true } : {}) }),
+    }).then((r) => r.json());
+    let ok = 0;
+    const needForce: string[] = [];
+    for (const url of urls) {
+      const json = await call(url, false);
+      if (json.ok) { ok++; setItems((cur) => cur.filter((x) => x.url !== url)); }
+      else if (json.needsForce) needForce.push(url);
+    }
+    // 다른 곳에서 쓰는 항목들은 한 번만 다시 물어보고 강제 삭제
+    if (needForce.length && window.confirm(`${needForce.length}개는 다른 곳에서 사용 중입니다. 그래도 삭제할까요?`)) {
+      for (const url of needForce) {
+        const json = await call(url, true);
+        if (json.ok) { ok++; setItems((cur) => cur.filter((x) => x.url !== url)); }
+      }
+    }
+    setNote(`${ok}개 삭제됨.`);
+    exitMode();
   }
 
   const categories = [...new Set(items.map((x) => x.category).filter(Boolean))] as string[];
@@ -256,6 +333,36 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
         </div>
       )}
 
+      {/* 선택 모드 바 — 상단 [분류 이동]/[삭제]를 누르면 나타난다. ○로 고른 뒤 실행 */}
+      {selectMode && (
+        <div className="flex items-center gap-1.5 flex-wrap mb-3 p-2 rounded-[10px]"
+             style={{ background: 'var(--accent-soft)', border: '1px solid var(--accent)' }}>
+          <b className="text-[12px] mr-1" style={{ color: 'var(--accent)' }}>
+            {selectMode === 'move' ? '분류 이동' : '삭제'} · {selected.size}개 선택
+          </b>
+          <span className="text-[11px]" style={{ color: 'var(--text-dim)' }}>
+            사진의 ○ 를 눌러 항목을 고르세요{selectMode === 'move' ? ' — 그 다음 이동할 분류 클릭:' : ''}
+          </span>
+          {selectMode === 'move' && (
+            <>
+              {CATEGORY_OPTIONS.map((c) => (
+                <button key={c.value} className="chip" title={c.desc} onClick={() => bulkCategory(c.value)}>{c.label}</button>
+              ))}
+              <button className="chip" onClick={() => bulkCategory('')}>미지정</button>
+            </>
+          )}
+          {selectMode === 'delete' && (
+            <button className="chip" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={bulkDelete}>
+              {selected.size ? `${selected.size}개 삭제` : '삭제 실행'}
+            </button>
+          )}
+          <button className="chip" onClick={() => setSelected(new Set([...selected, ...shown.map((s) => s.url)]))}>
+            이 페이지 전체 선택
+          </button>
+          <button className="chip ml-auto" onClick={exitMode}>취소</button>
+        </div>
+      )}
+
       {/* 지금 몇 번째를 보고 있는지 — 게시판이면 이게 있어야 길을 잃지 않는다 */}
       {matched.length > 0 && (
         <div className="flex items-baseline justify-between mb-2">
@@ -268,11 +375,21 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
               </>
             )}
           </span>
-          {totalPages > 1 && (
-            <span className="text-[11.5px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
-              {current} / {totalPages} 페이지
-            </span>
-          )}
+          <span className="flex items-center gap-2">
+            {/* 선택 모드 진입 — 누르면 카드에 ○ 가 나타난다 */}
+            {!selectMode && (
+              <>
+                <button className="chip" onClick={() => enterMode('move')}>분류 이동</button>
+                <button className="chip" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                        onClick={() => enterMode('delete')}>삭제</button>
+              </>
+            )}
+            {totalPages > 1 && (
+              <span className="text-[11.5px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
+                {current} / {totalPages} 페이지
+              </span>
+            )}
+          </span>
         </div>
       )}
 
@@ -290,8 +407,25 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
                   alt={r.title}
                   caption={`${r.title}${r.width ? ` · ${r.width}×${r.height}` : ''}`}
                   className="w-full aspect-square object-cover rounded-lg border"
-                  style={{ borderColor: 'var(--line)', background: 'var(--surface-2)' }}
+                  style={{
+                    borderColor: selected.has(r.url) ? 'var(--accent)' : 'var(--line)',
+                    borderWidth: selected.has(r.url) ? 2 : 1,
+                    background: 'var(--surface-2)',
+                  }}
                 />
+                {/* 선택 ○ — 선택 모드에서만 나타난다 (상단 [분류 이동]/[삭제] 클릭 시) */}
+                {selectMode && (
+                  <button onClick={() => toggleSelect(r.url)}
+                          title={selected.has(r.url) ? '선택 해제' : '선택'}
+                          className="absolute top-1 right-1 w-[22px] h-[22px] rounded-full flex items-center justify-center text-[13px] leading-none"
+                          style={{
+                            border: '2px solid ' + (selected.has(r.url) ? 'var(--accent)' : 'rgba(255,255,255,.8)'),
+                            background: selected.has(r.url) ? 'var(--accent)' : 'rgba(0,0,0,.35)',
+                            color: '#fff', cursor: 'pointer', padding: 0,
+                          }}>
+                    {selected.has(r.url) ? '✓' : ''}
+                  </button>
+                )}
                 {r.source === 'eventtemp' && (
                   <span className="absolute top-1 left-1 text-[8.5px] px-1.5 py-0.5 rounded"
                         style={{ background: 'rgba(0,0,0,.55)', color: '#9fd1ff' }}>
@@ -305,14 +439,29 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
                   </span>
                 )}
               </div>
-              <button
-                onClick={() => rename(r.url, r.title)}
-                title="클릭해서 이름 변경"
-                className="mt-1 text-[10.5px] truncate text-left w-full"
-                style={{ color: 'var(--text-dim)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-              >
-                {r.title || '(이름 없음)'}
-              </button>
+              {renaming?.url === r.url ? (
+                <input
+                  autoFocus
+                  value={renaming.value}
+                  onChange={(e) => setRenaming({ url: r.url, value: e.target.value })}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitRename();
+                    if (e.key === 'Escape') setRenaming(null);
+                  }}
+                  className="mt-1 w-full text-[10.5px] px-1 py-0.5 rounded"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--accent)', color: 'var(--text)' }}
+                />
+              ) : (
+                <button
+                  onClick={() => setRenaming({ url: r.url, value: r.title })}
+                  title="클릭해서 이름 변경"
+                  className="mt-1 text-[10.5px] truncate text-left w-full"
+                  style={{ color: 'var(--text-dim)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                >
+                  {r.title || '(이름 없음)'}
+                </button>
+              )}
               {/* 분류 — 클릭하면 다음 분류로 순환 (미지정 포함) */}
               <button
                 onClick={() => changeCategory(r.url, r.category)}
@@ -324,18 +473,14 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
               </button>
               <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-mute)' }}>
                 <button onClick={() => { replaceTarget.current = r.url; replaceInput.current?.click(); }}
+                        title="이미지 파일을 새로 올려 갈아끼웁니다 (이름·분류 유지)"
                         style={{ color: 'var(--info)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                  교체
-                </button>
-                <button onClick={() => hide(r.url)}
-                        style={{ color: 'var(--text-mute)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                  숨김
+                  수정
                 </button>
                 <button onClick={() => hardDelete(r.url, r.source)}
                         style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                   삭제
                 </button>
-                <span className="ml-auto">{String(r.createdAt ?? '').slice(0, 10)}</span>
               </div>
             </div>
           ))}
