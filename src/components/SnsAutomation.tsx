@@ -17,8 +17,8 @@ import { useMemo, useState } from 'react';
 interface RefItem { url: string; title: string; cat: 'instagram' | 'shoot' }
 interface Props {
   pool: RefItem[];
-  /** 배정 후보 모델 — 성인만 (아동은 SNS 랜덤 배정에서 제외) */
-  models: { code: string; label: string }[];
+  /** 전속 모델 전체 — kid(아동)는 랜덤 배정에서 빠지고 카드에서 직접 고를 때만 쓴다 */
+  models: { code: string; label: string; kid?: boolean }[];
 }
 
 interface Row {
@@ -32,7 +32,7 @@ interface Row {
   locked?: boolean;
 }
 
-const WON_MIN = 230, WON_MAX = 314; // 나노바나나 실측 단가 범위
+// 금액 표시는 화면에서 뺐다 (사용자 지시: 장수만) — 나노바나나 실측 단가는 ₩230~314/장
 
 export default function SnsAutomation({ pool, models }: Props) {
   const [n, setN] = useState(5);
@@ -57,11 +57,13 @@ export default function SnsAutomation({ pool, models }: Props) {
     }
     return activePool[Math.floor(Math.random() * activePool.length)];
   };
-  const randModel = () => models[Math.floor(Math.random() * models.length)].code;
+  // 랜덤 추첨 풀은 성인만 — 아동 모델이 아무 SNS 컷에나 무작위로 들어가면 안 된다
+  const adults = useMemo(() => models.filter((m) => !m.kid), [models]);
+  const randModel = () => adults[Math.floor(Math.random() * adults.length)].code;
   /** 서로 다른 모델 k명 추첨 — 0이면 모델 미사용(원본 그대로 채택) */
   const randModels = (k: number) => {
     if (k <= 0) return [];
-    const shuffled = [...models].sort(() => Math.random() - 0.5);
+    const shuffled = [...adults].sort(() => Math.random() - 0.5);
     return shuffled.slice(0, Math.min(3, k)).map((m) => m.code);
   };
 
@@ -112,6 +114,17 @@ export default function SnsAutomation({ pool, models }: Props) {
   function swapModel(i: number) {
     setRows((cur) => cur.map((r, j) => (j === i ? { ...r, codes: randModels(r.codes.length), status: 'ready', resultUrl: undefined } : r)));
   }
+  /** 모델 직접 선택 패널이 열린 카드 — 아동 모델은 랜덤엔 안 섞이고 여기서만 고른다 */
+  const [pickerAt, setPickerAt] = useState<number | null>(null);
+  function toggleModel(i: number, code: string) {
+    setRows((cur) => cur.map((r, j) => {
+      if (j !== i) return r;
+      const has = r.codes.includes(code);
+      if (!has && r.codes.length >= 3) return r;                  // 최대 3명
+      const codes = has ? r.codes.filter((c) => c !== code) : [...r.codes, code];
+      return { ...r, codes, status: 'ready', resultUrl: undefined };
+    }));
+  }
   /** 카드의 인원 수 변경 — 그 수만큼 서로 다른 모델을 다시 추첨한다 */
   function setCount(i: number, k: number) {
     setRows((cur) => cur.map((r, j) => (j === i ? { ...r, codes: randModels(k), status: (r.status === 'done' ? 'done' : 'ready') as Row['status'], resultUrl: r.status === 'done' ? r.resultUrl : undefined } : r)));
@@ -151,6 +164,7 @@ export default function SnsAutomation({ pool, models }: Props) {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             engine: 'gemini',
+            origin: 'sns-auto',                // 자동화 생성분 표식 — 갤러리와 분리 관리
             sizeValue: '1080x1350',            // SNS 4:5
             mode: 'thumbnail',
             samples: 1,
@@ -173,14 +187,13 @@ export default function SnsAutomation({ pool, models }: Props) {
       }
     }
     setRunning(false);
-    setNote('끝났습니다 — 완료된 컷은 생성이미지 갤러리에 자동 등록돼 있습니다.');
+    setNote('끝났습니다 — 완료된 컷은 자동화 > 자동화 생성이미지에 쌓여 있습니다.');
   }
 
   const doneCount = rows.filter((r) => r.status === 'done').length;
   const todo = rows.filter((r) => r.status !== 'done').length;
-  // 과금은 모델을 배정한 컷만 — 인원 0(원본 채택)은 무과금
+  // 생성은 모델을 배정한 컷만 — 인원 0(원본 채택)은 생성 없이 통과
   const paidTodo = rows.filter((r) => r.status !== 'done' && r.codes.length > 0).length;
-  const cost = useMemo(() => `약 ₩${(paidTodo * WON_MIN).toLocaleString()}~${(paidTodo * WON_MAX).toLocaleString()}`, [paidTodo]);
   const modelLabel = (code: string) => models.find((m) => m.code === code)?.label ?? code;
   const modelLabels = (codes: string[]) => codes.map(modelLabel).join(" + ");
 
@@ -192,7 +205,7 @@ export default function SnsAutomation({ pool, models }: Props) {
         인스타+촬영 자산 <b>{pool.length.toLocaleString()}장</b>에서 랜덤 후보를 뽑고, 전속 모델을 랜덤 배정해 SNS(4:5) 컷을 만듭니다.
         마음에 드는 후보는 <b>👍 선정</b>하면 다시 뽑아도 자리에 남고, <b>확정·완료된 컷은 이후 랜덤에서 다시 나오지 않습니다</b>.
         인원은 원본 속 사람 수에 맞춰 주세요 — 지정 인원보다 사람이 많으면 나머지는 지워지고,
-        <b> 제품 단독 컷은 인원 0</b>으로 두면 생성 없이(무과금) 원본이 그대로 채택됩니다.
+        <b> 제품 단독 컷은 인원 0</b>으로 두면 생성 없이 원본이 그대로 채택됩니다.
         자동 스케줄은 아직 미적용 — 확정되면 이 실행을 그대로 예약으로 옮깁니다.
       </div>
 
@@ -223,8 +236,8 @@ export default function SnsAutomation({ pool, models }: Props) {
                   title="나노바나나로 순차 생성합니다. 완료된 컷은 갤러리에 자동 등록됩니다.">
             {running ? `생성 중… (${doneCount}/${rows.length})`
               : !todo ? '전부 완료됨'
-              : paidTodo ? `▶ ${todo}장 실행 — 생성 ${paidTodo}장 (${cost})${todo - paidTodo ? ` + 원본채택 ${todo - paidTodo}장` : ''}`
-              : `▶ 원본 채택 ${todo}장 처리 (무과금)`}
+              : paidTodo ? `▶ ${todo}장 실행 — 생성 ${paidTodo}장${todo - paidTodo ? ` + 원본채택 ${todo - paidTodo}장` : ''}`
+              : `▶ 원본 채택 ${todo}장 처리`}
           </button>
         )}
         {note && <span className="text-[11.5px]" style={{ color: 'var(--ok)' }}>{note}</span>}
@@ -256,19 +269,38 @@ export default function SnsAutomation({ pool, models }: Props) {
                       style={{ background: 'rgba(0,0,0,.55)', color: '#9fd1ff' }}>
                   {r.ref.cat === 'shoot' ? '촬영' : '인스타'}
                 </span>
-                <span className="absolute bottom-1 left-1 text-[9.5px] px-1.5 py-0.5 rounded"
-                      style={{ background: 'rgba(0,0,0,.62)', color: r.codes.length ? '#ffd34d' : '#b9c3cf' }}>
-                  {r.codes.length ? modelLabels(r.codes) : '모델 없음 · 원본 그대로'}
-                </span>
+                <button className="absolute bottom-1 left-1 text-[9.5px] px-1.5 py-0.5 rounded"
+                        title="클릭 = 모델 직접 선택 (키즈 모델 포함)"
+                        disabled={running}
+                        onClick={() => setPickerAt(pickerAt === i ? null : i)}
+                        style={{ background: 'rgba(0,0,0,.62)', color: r.codes.length ? '#ffd34d' : '#b9c3cf', border: pickerAt === i ? '1px solid #ffd34d' : 'none', cursor: 'pointer' }}>
+                  {r.codes.length ? modelLabels(r.codes) : '모델 없음 · 원본 그대로'} ▾
+                </button>
               </div>
               <div className="text-[10px] truncate mt-1" style={{ color: 'var(--text-mute)' }}>{r.ref.title || '(제목 없음)'}</div>
               {r.error && <div className="text-[9.5px] mt-0.5" style={{ color: 'var(--danger)' }}>{r.error}</div>}
+              {/* 모델 직접 선택 — 랜덤에 안 섞이는 아동 모델도 여기서는 고를 수 있다 */}
+              {pickerAt === i && (
+                <div className="flex gap-1 mt-1 flex-wrap items-center p-1 rounded-[8px]"
+                     style={{ background: 'var(--surface-2)', border: '1px solid var(--line)' }}>
+                  {models.map((m) => (
+                    <button key={m.code} className="chip px-1.5 py-0 text-[10px]"
+                            disabled={running}
+                            title={m.kid ? '아동 모델 — 랜덤 배정엔 안 섞이고 직접 선택만 됩니다' : m.label}
+                            onClick={() => toggleModel(i, m.code)}
+                            style={r.codes.includes(m.code) ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                      {m.kid ? '👶 ' : ''}{m.label}
+                    </button>
+                  ))}
+                  <span className="text-[9px]" style={{ color: 'var(--text-mute)' }}>최대 3명 · 다시 누르면 해제</span>
+                </div>
+              )}
               {/* 인원 — 베이스 사진 속 사람 수에 맞춘다 (1명만 보내면 나머지 사람은 지워짐, 0=원본 그대로) */}
               <div className="flex gap-1 mt-1 items-center">
                 <span className="text-[9px]" style={{ color: 'var(--text-mute)' }}>인원</span>
                 {[0, 1, 2, 3].map((k) => (
                   <button key={k} className="chip px-1.5 py-0"
-                          title={k === 0 ? '모델 미사용 — 생성·과금 없이 원본을 그대로 채택합니다 (제품 단독 컷용)' : `모델 ${k}명 배정 (서로 다른 모델 랜덤)`}
+                          title={k === 0 ? '모델 미사용 — 생성 없이 원본을 그대로 채택합니다 (제품 단독 컷용)' : `모델 ${k}명 배정 (서로 다른 모델 랜덤)`}
                           disabled={running}
                           onClick={() => setCount(i, k)}
                           style={r.codes.length === k ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>

@@ -593,6 +593,22 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
     setSelected(id);
     (e.target as Element).setPointerCapture?.(e.pointerId);
   }
+  /**
+   * 비율 유지 크기 손잡이(↘) — 선택한 레이어의 점 옆에 떠서, 끌면 상하좌우가 한 번에
+   * 같은 비율로 줄고 큰다 (사용자 요청: "상하좌우 한번에, 비율에 맞춰서").
+   */
+  const scaleRef = useRef<{ id: string; sx: number; sy: number; start: DesignLayer } | null>(null);
+  function onScaleDown(e: React.PointerEvent, id: string) {
+    const st = stageRef.current;
+    const l = layers.find((x) => x.id === id);
+    if (!st || !l) return;
+    e.stopPropagation();
+    const r = st.getBoundingClientRect();
+    scaleRef.current = { id, sx: (e.clientX - r.left) / r.width, sy: (e.clientY - r.top) / r.height, start: { ...l, points: l.points ? [...l.points] : undefined } };
+    setSelected(id);
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  }
+
   /** 무대에서 이미지(빈 곳 포함)를 잡아 끌면 배경 위치가 움직인다 — cover 크롭에서 남는 축만 */
   function onBgDown(e: React.PointerEvent) {
     // 레이어 손잡이를 잡았으면(자식에서 dragRef 세팅됨) 배경은 건드리지 않는다
@@ -605,6 +621,36 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   }
 
   function onMove(e: React.PointerEvent) {
+    // 비율 유지 크기 조절 — 오른쪽·아래로 끌면 커지고, 반대로 끌면 상하좌우가 같이 줄어든다
+    const sc = scaleRef.current;
+    if (sc && stageRef.current) {
+      const r = stageRef.current.getBoundingClientRect();
+      const dn = ((e.clientX - r.left) / r.width - sc.sx) + ((e.clientY - r.top) / r.height - sc.sy);
+      const k = Math.max(0.15, Math.min(5, 1 + dn * 1.6));
+      const st0 = sc.start;
+      setLayers((cur) => cur.map((l) => {
+        if (l.id !== sc.id) return l;
+        if (l.kind === 'text' || l.kind === 'icon') {
+          return { ...l, size: Math.max(0.01, Math.min(0.6, (st0.size ?? 0.06) * k)) };
+        }
+        if (l.kind === 'brush') {
+          const cx0 = st0.x ?? 0.5, cy0 = st0.y ?? 0.5;
+          return {
+            ...l,
+            strokeWidth: Math.max(0.002, (st0.strokeWidth ?? 0.01) * k),
+            points: (st0.points ?? []).map((q) => ({ x: cx0 + (q.x - cx0) * k, y: cy0 + (q.y - cy0) * k })),
+          };
+        }
+        // 이미지·도형·스크림 — 가로세로를 같은 배율로 (h 미지정 이미지는 srcAspect 가 따라온다)
+        return {
+          ...l,
+          w: Math.max(0.02, Math.min(2, (st0.w ?? 0.3) * k)),
+          ...(st0.h != null ? { h: Math.max(0.02, Math.min(2, st0.h * k)) } : {}),
+        };
+      }));
+      setResult(null);
+      return;
+    }
     const b = bgDragRef.current;
     if (b && !dragRef.current && stageRef.current) {
       // 포인터가 끈 만큼 이미지가 따라온다 — 숨어 있는 폭/높이 대비 비율로 환산
@@ -637,7 +683,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
       return cur.map((l) => (groupOf(l) === g ? { ...l, x: l.x + ddx, y: l.y + ddy } : l));
     });
   }
-  const onUp = () => { dragRef.current = null; bgDragRef.current = null; };
+  const onUp = () => { dragRef.current = null; bgDragRef.current = null; scaleRef.current = null; };
 
   /**
    * 자동 배치 — 규격의 비율을 보고, 배경에서 비어 있는 곳에 읽히는 색으로 얹는다.
@@ -1364,6 +1410,21 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
                       border: `2px solid ${isSel(l) ? 'var(--accent)' : 'rgba(255,255,255,.55)'}`,
                       background: isSel(l) ? 'rgba(226,80,60,.25)' : 'rgba(0,0,0,.25)',
                     }} />
+            ))}
+            {/* 선택한 레이어에만 붙는 비율 유지 크기 손잡이 — 끌면 상하좌우가 같은 비율로 줄고 큰다 */}
+            {layers.filter((l) => isSel(l)).map((l) => (
+              <div key={l.id + '-scale'}
+                   onPointerDown={(e) => onScaleDown(e, l.id)}
+                   title="끌어서 크기 조절 — 비율 유지 (오른쪽·아래 = 확대, 왼쪽·위 = 축소)"
+                   className="absolute grid place-items-center rounded-full text-[10px] select-none"
+                   style={{
+                     left: `calc(${l.x * 100}% + 20px)`, top: `calc(${l.y * 100}% + 20px)`,
+                     transform: 'translate(-50%,-50%)', width: 18, height: 18,
+                     cursor: 'nwse-resize', color: '#fff',
+                     border: '2px solid var(--accent)', background: 'rgba(226,80,60,.55)',
+                   }}>
+                ⤡
+              </div>
             ))}
             {!imageUrl && (
               <div className="absolute inset-0 grid place-items-center text-center text-[12px] px-4" style={{ color: 'var(--text-mute)' }}>

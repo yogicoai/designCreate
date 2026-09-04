@@ -105,6 +105,8 @@ interface Body {
    */
   handoff?: boolean;
   sizeValue?: string;
+  /** 어느 화면의 생성인가 — 'sns-auto' = SNS 자동화 (갤러리 분리 관리용) */
+  origin?: string;
   /** sizeValue='custom' 일 때 직접 지정한 규격 */
   customSize?: { width: number; height: number };
   variationIds?: string[];
@@ -163,6 +165,28 @@ export async function POST(req: Request) {
 
     // ── 2) 자산 로딩 ──────────────────────────────────────────────
     const talentPicks = (body.talents ?? []).slice(0, 4);
+
+    /*
+     * ── 2.5) 얼굴 보호 강제 상향 — 전속 모델이 들어간 컷(모델 변경 포함)은 서버가 해상도를 올려버린다 ──
+     * 실측 사고(9/3): 작업자가 1000×1000 으로 전신 모델 변경 컷을 뽑아 얼굴이 ~50px 로 뭉개짐
+     * (Max 네이비, ΔE 9.2/7.2). 생성은 2K 로 잘 됐어도 cropToSize 가 1000px 로 줄이며 얼굴 픽셀을 버린다.
+     * 안내로는 안 지켜지므로(사용자 지시: "아예 올려버려야 해") 요청값과 무관하게
+     *   ① 생성 화질 최소 2K (4K 요청은 존중)
+     *   ② 결과 파일 짧은 변 2048 목표 — 단, 생성 픽셀을 넘는 뻥튀기 업스케일은 하지 않는다
+     * 비율은 그대로라 배치·용도는 안 바뀌고 파일만 커진다. 자유 인물(freeform)만 있으면 건드리지 않는다.
+     */
+    if (talentPicks.some((t) => !t.freeform)) {
+      if (body.engine !== 'gpt' && body.imageSize !== '4K') body.imageSize = '2K';
+      const genLong = body.imageSize === '4K' ? 4096 : 2048;
+      const shortSide = Math.min(size.width, size.height);
+      const longSide = Math.max(size.width, size.height);
+      const k = Math.min(2048 / shortSide, genLong / longSide);
+      if (k > 1.01) {
+        const w2 = Math.round(size.width * k);
+        const h2 = Math.round(size.height * k);
+        size = { ...size, width: w2, height: h2, label: `${size.label} · 얼굴보호 ${w2}×${h2}` };
+      }
+    }
     const [baseCut, productDocs, talentDocs, shapeRef, poseRef, usageShot, preservation, variations, rules, exprDocs] =
       await Promise.all([
         body.baseCutId ? db.collection('cuts').findOne({ url: body.baseCutId }) : null,
@@ -290,7 +314,19 @@ export async function POST(req: Request) {
     for (const pick of picks) {
       const doc = productById.get(pick.line);
       if (!doc) continue;
-      const col = doc.colors?.find((c: { key: string }) => c.key === pick.colorKey);
+      let col = doc.colors?.find((c: { key: string }) => c.key === pick.colorKey);
+      /*
+       * 이 라인에 등록 안 된 컬러도 받는다 — 컬러 칩은 전 라인 공통 슬롯(맥스 기준)이라
+       * 미니에 맥스 전용 컬러를 고를 수 있다. 이름·hex 는 그 컬러를 가진 다른 라인에서
+       * 빌려오고, 뷰(views)는 라인이 달라 안 빌린다 → 아래 형태 폴백(같은 라인 다른 컬러
+       * → shapeViews)이 형태를 잡고, 색은 이름·hex 로 지시된다.
+       */
+      if (!col && pick.colorKey) {
+        const donor = await db.collection('products').findOne({ 'colors.key': pick.colorKey });
+        const hit = (donor?.colors as { key: string; name: string; nameEn?: string; hex?: string }[] | undefined)
+          ?.find((c) => c.key === pick.colorKey);
+        if (hit) col = { name: hit.name, nameEn: hit.nameEn, hex: hit.hex };
+      }
 
       /*
        * 공식 뷰 — 3단 폴백.
@@ -347,7 +383,11 @@ export async function POST(req: Request) {
 
     // 첫 제품 — 컬러 측정·파일명·DB 기록·Element 토큰의 대표값으로 쓴다
     const product = picks[0] ? productById.get(picks[0].line) ?? null : null;
-    const color = product?.colors?.find((c: { key: string }) => c.key === picks[0]?.colorKey) ?? null;
+    // 대표 컬러 — 라인에 없는 슬롯 컬러면 위에서 빌려온 스펙의 색을 그대로 쓴다 (ΔE 측정·기록용)
+    const color = product?.colors?.find((c: { key: string }) => c.key === picks[0]?.colorKey)
+      ?? (productSpecs[0]?.color
+        ? { name: productSpecs[0].color.name, nameEn: productSpecs[0].color.nameEn, hex: productSpecs[0].color.hex }
+        : null);
 
     // ── 3) 프롬프트 작성 ──────────────────────────────────────────
     /*
@@ -624,6 +664,7 @@ export async function POST(req: Request) {
           ...(talentPicks[0]?.outfitCode ? { outfit: talentPicks[0].outfitCode } : {}),
         },
         source: 'imgcreate' as const,
+        ...(body.origin ? { origin: String(body.origin).slice(0, 40) } : {}),
         prompt: written.prompt,
         promptMode: written.mode,
         aiModel: gen.model,

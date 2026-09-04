@@ -21,10 +21,12 @@ export default async function SnsAutomationPage() {
       title: (r.title || '').slice(0, 40),
       cat: (r.category === 'shoot' ? 'shoot' : 'instagram') as 'shoot' | 'instagram',
     }));
-  // 랜덤 배정은 성인 전속만 — 아동 모델을 무작위로 섞지 않는다
-  const models = talents
-    .filter((t) => t.category !== '아동')
-    .map((t) => ({ code: String(t.code), label: `${t.category}${t.slot ?? ''}` }));
+  // 전체 모델을 내려보내되 아동은 표시해둔다 — 랜덤 배정은 성인만, 아동은 카드에서 직접 선택할 때만
+  const models = talents.map((t) => ({
+    code: String(t.code),
+    label: `${t.category}${t.slot ?? ''}`,
+    kid: t.category === '아동',
+  }));
 
   return (
     <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">

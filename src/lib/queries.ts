@@ -70,6 +70,9 @@ export interface CutFilter {
   provider?: string;
   /** 배경 후보에서 배너를 빼기 위한 것 — 배너 위에 배너를 얹을 일은 없다 */
   notProvider?: string;
+  /** 만든 화면 필터 — 'sns-auto' 등. notOrigin 은 그걸 뺀 나머지 */
+  origin?: string;
+  notOrigin?: string;
   limit?: number;
 }
 
@@ -82,6 +85,8 @@ export async function getCuts(f: CutFilter = {}): Promise<WithId<CutDoc>[]> {
   if (f.source) q.source = f.source;
   if (f.provider) q.provider = f.provider;
   if (f.notProvider) q.provider = { $ne: f.notProvider };
+  if (f.origin) q.origin = f.origin;
+  if (f.notOrigin) q.origin = { $ne: f.notOrigin };
   const docs = await col.find(q).sort({ createdAt: -1 }).limit(f.limit ?? 500).toArray();
   // Date 는 직렬화되지 않으므로 문자열로 바꾼다
   return docs.map((d) => {

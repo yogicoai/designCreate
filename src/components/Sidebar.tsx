@@ -68,6 +68,7 @@ const NAV = [
     group: '자동화',
     items: [
       { href: '/automation/sns', label: 'SNS 이미지 생성', icon: '⚡' },
+      { href: '/automation/gallery', label: '자동화 생성이미지', icon: '▦' },
     ],
   },
   /*

@@ -221,6 +221,8 @@ export interface CutDoc {
   design?: DesignDoc;
   /** 웹+모바일을 한 번에 만든 짝의 묶음 표식 */
   pairId?: string;
+  /** 어느 화면이 만들었나 — 'sns-auto' = SNS 자동화. 갤러리에서 분리 관리한다 */
+  origin?: string;
   /** 수정으로 만들어진 판이면 원본 배너의 id — 게시판에서 계보를 보여준다 */
   revisedFrom?: string;
 

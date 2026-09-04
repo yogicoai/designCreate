@@ -34,7 +34,8 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
   const source = pick('source') as 'legacy' | 'imgcreate' | undefined;
 
   const [cuts, products, talents] = await Promise.all([
-    getCuts({ line, colorKey, talentCode, source, limit: 600 }),
+    // SNS 자동화 생성분은 자동화 > 자동화 생성이미지에서 따로 관리한다
+    getCuts({ line, colorKey, talentCode, source, notOrigin: 'sns-auto', limit: 600 }),
     getProducts(),
     getTalents(),
   ]);

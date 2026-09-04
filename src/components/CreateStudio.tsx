@@ -109,7 +109,7 @@ const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
  * 생성 후에는 응답의 실측 원가를 그대로 표시한다.
  *   gemini-3-pro-image 2K — 실측 ₩230~₩314
  */
-const WON_PER_IMAGE = 270;
+// (금액 표시는 화면에서 뺐다 — 사용자 지시: 장수만 보여준다. 단가 실측치는 위 주석에 남긴다)
 const ORD = ['①', '②', '③', '④'];
 const MY_SIZE_GROUP = '내 규격';
 
@@ -303,6 +303,25 @@ export default function CreateStudio(p: Props) {
   useEffect(() => { loadBalance(); }, [loadBalance]);
 
   const product = p.products.find((x) => x.line === line);
+
+  /**
+   * 컬러 칩 = 그 라인 등록 컬러 + **맥스 슬롯 컬러** (사용자 지시: "맥스 기준으로 다").
+   * 전 라인 합집합으로 했더니 메이트 인형·럭스 변형 같은 제품형 항목까지 칩에 딸려
+   * 나왔다 (실측 스샷) — 기준을 맥스 한 라인으로 고정한다. 같은 이름 중복(다른 키의
+   * 네이비블루 등)은 이름으로 걸러 한 번만 보여준다.
+   */
+  const maxColors = useMemo(() => {
+    const max = p.products.find((x) => /^max$/i.test(x.line))
+      ?? [...p.products].sort((a, b) => (b.colors?.length ?? 0) - (a.colors?.length ?? 0))[0];
+    return max?.colors ?? [];
+  }, [p.products]);
+  const colorsFor = (pr: { colors: (typeof p.products)[number]['colors'] } | undefined) => {
+    if (!pr) return [];
+    const own = pr.colors ?? [];
+    const seenKey = new Set(own.map((c) => c.key));
+    const seenName = new Set(own.map((c) => c.name));
+    return [...own, ...maxColors.filter((c) => !seenKey.has(c.key) && !seenName.has(c.name))];
+  };
   const size = sizes.find((s) => s.value === sizeValue);
   const linePoses = p.poses.filter((x) => x.line === line);
   const hasBaseUpload = uploads.some((u) => u.role === 'base');
@@ -645,7 +664,6 @@ export default function CreateStudio(p: Props) {
     }
   }
 
-  const cost = samples * WON_PER_IMAGE;
   const isMySize = size?.group === MY_SIZE_GROUP;
 
   return (
@@ -683,7 +701,7 @@ export default function CreateStudio(p: Props) {
                 {busy === 'gen'
                   ? `보통 25~35초 걸립니다${samples > 1 ? ` · ${samples}장` : ''}. 창을 닫지 마세요.`
                   : busy === 'handoff'
-                    ? '프롬프트와 선택값을 저장합니다. 과금 없이 바로 끝납니다.'
+                    ? '프롬프트와 선택값을 저장만 합니다 — 생성은 하지 않습니다.'
                     : '레퍼런스를 읽고 프롬프트를 씁니다. 40~50초 걸립니다.'}
               </div>
             </div>
@@ -910,7 +928,7 @@ export default function CreateStudio(p: Props) {
               <>
                 <div className="label mb-1">컬러</div>
                 <div className="flex flex-wrap gap-1.5">
-                  {product.colors.map((c) => (
+                  {colorsFor(product).map((c) => (
                     <button key={c.key} onClick={() => { setColorKey(c.key === colorKey ? '' : c.key); setBaseCutUrl(''); setBaseTab('none'); }}
                             className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-lg border text-[11px]"
                             style={{ borderColor: c.key === colorKey ? 'var(--accent)' : 'var(--line)',
@@ -1050,7 +1068,7 @@ ${c.spec}`}
                       </div>
                       {exProd && (
                         <div className="flex flex-wrap gap-1.5 mt-1.5 ml-5">
-                          {exProd.colors.map((c) => (
+                          {colorsFor(exProd).map((c) => (
                             <button key={c.key}
                                     onClick={() => setExtraProducts((cur) =>
                                       cur.map((x, j) => (j === i ? { ...x, colorKey: c.key === x.colorKey ? '' : c.key } : x)))}
@@ -1423,7 +1441,7 @@ ${hint}` : hint))}>
             />
             {promptEdited && (
               <div className="text-[10px] mt-1.5 px-0.5 leading-relaxed" style={{ color: 'var(--ok)' }}>
-                이 프롬프트가 그대로 들어갑니다 — 템플릿도 Opus 도 타지 않습니다 <b>(프롬프트 무과금)</b>.
+                이 프롬프트가 그대로 들어갑니다 — 템플릿도 Opus 도 타지 않습니다.
                 참조 이미지 순서는 아래 목록 그대로이니 FIRST/SECOND 지칭을 맞춰 쓰세요.
               </div>
             )}
@@ -1472,7 +1490,7 @@ ${hint}` : hint))}>
             {busy === 'dry'
               ? '만드는 중…'
               : writer === 'opus'
-                ? '프롬프트 확인 (Opus 작성 · 소액 과금)'
+                ? '프롬프트 확인 (Opus 작성)'
                 : '프롬프트 확인 (무료)'}
           </button>
 
@@ -1512,9 +1530,9 @@ ${hint}` : hint))}>
               </div>
 
               <button className="btn" onClick={leaveHandoff} disabled={!!busy || handoff === 'busy'}
-                      title="프롬프트와 지금 고른 값(모델·표정·의상·규격·레퍼런스)을 대기열에 저장합니다. 대화에서 '대기열 돌려줘' 한마디로 한꺼번에 뽑습니다. 프롬프트는 대화에서 쓰므로 Opus 를 타지 않습니다 (무과금)."
+                      title="프롬프트와 지금 고른 값(모델·표정·의상·규격·레퍼런스)을 대기열에 저장합니다. 대화에서 '대기열 돌려줘' 한마디로 한꺼번에 뽑습니다. 프롬프트는 대화에서 쓰므로 Opus 를 타지 않습니다."
                       style={handoff === 'done' ? { borderColor: 'var(--ok)', color: 'var(--ok)' } : {}}>
-                {handoff === 'busy' ? '남기는 중…' : handoff === 'done' ? '대기열에 넣었습니다 ✓' : '대기열에 추가 (무과금)'}
+                {handoff === 'busy' ? '남기는 중…' : handoff === 'done' ? '대기열에 넣었습니다 ✓' : '대기열에 추가'}
               </button>
 
               {handoff === 'done' && (
@@ -1563,14 +1581,13 @@ ${hint}` : hint))}>
             백엔드의 힉스필드 경로는 살려둔다 — 크레딧을 붙이면 다시 열면 된다.
           */}
 
-          {/* 잔액 — 생성 전에 "얼마 남았고 얼마 나간다" 를 항상 보여준다 */}
+          {/* 사용량 — 장수만 보여준다. 금액 표시는 사용자 지시로 뺐다 ("몇 개 생성했다 정도만") */}
           <div className="text-[10.5px] px-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
             {balance?.gemini ? (
               <>
-                월 한도 <b style={{ color: 'var(--text-dim)' }}>{balance.gemini.count}/{balance.gemini.limit}장</b>
-                {` (남은 ${balance.gemini.remaining}장) → 이번 생성 `}
-                <b style={{ color: 'var(--warn)' }}>{samples}장 · 약 ₩{cost.toLocaleString()}</b>
-                <br />실제 원가는 생성마다 달라집니다 (사고 토큰 변동 — 1장 ₩230~₩314 실측)
+                이번 달 생성 <b style={{ color: 'var(--text-dim)' }}>{balance.gemini.count}/{balance.gemini.limit}장</b>
+                {` (남은 ${balance.gemini.remaining}장) → 이번에 `}
+                <b style={{ color: 'var(--warn)' }}>{samples}장 생성</b>
               </>
             ) : '사용량을 불러오는 중…'}
           </div>
@@ -1592,7 +1609,7 @@ ${hint}` : hint))}>
           </div>
           {engine === 'gpt' && (
             <div className="text-[10px] px-1" style={{ color: 'var(--text-mute)' }}>
-              gpt-image-1 · 최대 1536px (POP/인쇄용 없음) · OpenAI 계정 과금 — 장당 약 $0.2 안팎(참고치)
+              gpt-image-1 · 최대 1536px (POP/인쇄용 없음)
             </div>
           )}
           {/* GPT 는 참조 조건화가 느슨해 전속 모델 얼굴이 유지되지 않는다 (실측) — 고르면 미리 경고 */}
@@ -1610,7 +1627,7 @@ ${hint}` : hint))}>
                 .map(([v, l]) => (
                 <button key={v} onClick={() => setImageSize(v)} className="chip flex-1 justify-center"
                         title={v === '4K'
-                          ? '4096px — A3 포스터 248dpi급 인쇄 화질. 단가가 2K보다 높습니다.'
+                          ? '4096px — A3 포스터 248dpi급 인쇄 화질.'
                           : '2048px — 자사몰·스마트스토어·SNS 게시엔 이 화질로 충분합니다.'}
                         style={imageSize === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
                   {l}
@@ -1619,7 +1636,13 @@ ${hint}` : hint))}>
             </div>
             {imageSize === '4K' && (
               <div className="text-[10px] px-1 mt-1" style={{ color: 'var(--warn)' }}>
-                4K는 단가가 2K보다 높습니다 — 실측 원가는 생성 후 표시됩니다. 포스터·인쇄물에만 권장.
+                4K는 포스터·인쇄물에만 권장 — 웹·SNS 게시는 2K로 충분합니다.
+              </div>
+            )}
+            {/* 얼굴 보호 — 서버가 강제하는 규칙을 화면에도 말해둔다. 몰래 커지면 "왜 파일이 크지?"가 된다 */}
+            {picks.length > 0 && (
+              <div className="text-[10px] px-1 mt-1" style={{ color: 'var(--text-mute)' }}>
+                🛡 전속 모델 컷은 얼굴 보호를 위해 결과물이 자동으로 짧은 변 2048px까지 상향됩니다 (작은 규격을 골라도 서버가 올립니다).
               </div>
             )}
           </div>
@@ -1637,16 +1660,13 @@ ${hint}` : hint))}>
                 {dry?.promptMode === 'opus' && dry.usage ? (
                   <>
                     직전 실측 <b>{(dry.usage.input_tokens + dry.usage.output_tokens).toLocaleString()} 토큰</b>
-                    {dry.promptCost
-                      ? <> · 약 ₩{dry.promptCost.krw.toLocaleString()}</>
-                      : <> (단가 미설정 — OPUS_PRICE_*_PER_MTOK)</>}
                   </>
                 ) : (
-                  <>이미지 생성비와 별도로 소액 과금됩니다.</>
+                  <>레퍼런스를 직접 읽고 프롬프트를 씁니다.</>
                 )}
               </>
             ) : (
-              <>프롬프트 — <b>템플릿 조립 · 무과금</b> (로컬 개발 모드)</>
+              <>프롬프트 — <b>템플릿 조립</b> (로컬 개발 모드)</>
             )}
           </div>
           <div className="flex gap-2">
@@ -1659,8 +1679,7 @@ ${hint}` : hint))}>
             </button>
           </div>
           <div className="text-[10.5px] text-center" style={{ color: 'var(--text-mute)' }}>
-            생성 약 <b style={{ color: 'var(--text-dim)' }}>₩{cost.toLocaleString()}</b> · 25~35초/장 (생성 후 실측 표시)
-            {writer === 'local' && <span> · 프롬프트는 템플릿 조립(무과금)</span>}
+            25~35초/장
           </div>
         </div>
 
@@ -1684,12 +1703,6 @@ ${hint}` : hint))}>
                     {r.deltaE != null && (
                       <span style={{ color: r.deltaE < 5 ? 'var(--ok)' : r.deltaE < 15 ? 'var(--warn)' : 'var(--danger)' }}>
                         컬러 ΔE {r.deltaE}
-                      </span>
-                    )}
-                    {r.cost && (
-                      <span title={r.tokenUsage ? `입력 ${r.tokenUsage.promptTokens} · 이미지 ${r.tokenUsage.imageTokens} · 사고 ${r.tokenUsage.thoughtTokens} 토큰` : ''}
-                            style={{ color: 'var(--text-dim)' }}>
-                        실제 ₩{r.cost.krw.toLocaleString()}
                       </span>
                     )}
                   </div>

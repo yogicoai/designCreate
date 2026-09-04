@@ -1512,7 +1512,7 @@ export default function DesignEditor(p: Props) {
 
           {/* ── AI 도구 — 나노바나나 1회 호출 (실측 ₩230~314/장) ── */}
           <div className="mt-3 pt-2.5" style={{ borderTop: '1px solid var(--line)' }}>
-            <div className="label mb-1.5">🪄 AI 도구 <span style={{ color: 'var(--warn)' }}>₩230~310/회</span></div>
+            <div className="label mb-1.5">🪄 AI 도구</div>
             <button className="btn w-full text-[12px] mb-1.5"
                     disabled={!!aiBusy || !selLayer || selLayer.kind !== 'image'}
                     title="선택한 이미지 레이어를 배경에 '찍은 것처럼' 녹입니다 — 조명·그림자·가장자리 재계산. 성공하면 배경에 구워지고 레이어는 사라집니다."
