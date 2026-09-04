@@ -5,6 +5,7 @@ import type { ProductDoc, TalentDoc, PoseRefDoc, ExpressionDoc } from '@/lib/typ
 import type { SizePresetDoc, PreservationDoc, ReferenceDoc } from '@/lib/queries';
 import { shrinkForUpload, formatBytes } from '@/lib/client-image';
 import Zoomable from '@/components/Zoomable';
+import { thumbUrl } from '@/lib/thumb';
 
 type WithId<T> = T & { id: string };
 
@@ -1320,7 +1321,7 @@ ${c.spec}`}
                               title={`${c.line} · ${c.colorName}
 ${c.spec}`}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={c.url} alt={c.spec} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
+                        <img src={thumbUrl(c.url, 256)} alt={c.spec} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
                              style={{ borderColor: c.url === baseCutUrl ? 'var(--accent)' : 'var(--line)', borderWidth: c.url === baseCutUrl ? 2 : 1 }} />
                         <div className="text-[8.5px] mt-0.5 truncate" style={{ color: c.line === line ? 'var(--accent)' : 'var(--text-mute)' }}>
                           {c.line}
@@ -1337,7 +1338,7 @@ ${c.spec}`}>
                   {lineCuts.map((c, ci) => (
                     <button key={`${c.url}#${ci}`} onClick={() => setBaseCutUrl(c.url === baseCutUrl ? '' : c.url)} title={c.spec}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={c.url} alt={c.spec} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
+                      <img src={thumbUrl(c.url, 256)} alt={c.spec} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
                            style={{ borderColor: c.url === baseCutUrl ? 'var(--accent)' : 'var(--line)', borderWidth: c.url === baseCutUrl ? 2 : 1 }} />
                     </button>
                   ))}
@@ -1361,7 +1362,7 @@ ${c.spec}`}>
                                       : setPoseRefKey(poseRefKey === r.key ? '' : r.key)}
                                     className="flex-1" title={`${r.name} · ${kind === 'off' ? '형태' : '포즈각도'}`}>
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={url} alt={r.name} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
+                              <img src={thumbUrl(url, 256)} alt={r.name} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
                                    style={{ borderColor: sel === r.key ? 'var(--accent)' : 'var(--line)', borderWidth: sel === r.key ? 2 : 1 }} />
                               <div className="text-[9px] mt-0.5" style={{ color: 'var(--text-mute)' }}>{kind === 'off' ? '형태' : '포즈'}</div>
                             </button>
@@ -1807,7 +1808,7 @@ ${hint}` : hint))}>
                           <div key={r.url} className="rounded-lg overflow-hidden border relative"
                                style={{ borderColor: used ? 'var(--accent)' : 'var(--line)', background: 'var(--surface-2)' }}>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={r.url} alt={r.title} className="w-full aspect-square object-cover"
+                            <img src={thumbUrl(r.url, 256)} alt={r.title} className="w-full aspect-square object-cover"
                                  style={{ opacity: used ? 0.5 : 1 }} draggable={false} loading="lazy" />
                             {!libCat && catLabel && (
                               <span className="absolute top-1 left-1 text-[8.5px] px-1 py-0.5 rounded"

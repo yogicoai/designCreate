@@ -307,8 +307,9 @@ export async function POST(req: Request) {
       low: ['front', 'side'],
     };
     const wantedAngles = ANGLE_PREF[cameraPick ?? ''] ?? ['a045', 'side', 'front'];
-    // 제품이 여러 종이면 참조 예산을 나눠 쓴다 (한 종이 뷰를 다 먹으면 나머지가 형태를 못 잡는다)
-    const viewsPerProduct = picks.length > 1 ? 1 : 2;
+    // 제품이 여러 종이면 참조 예산을 나눠 쓴다 (한 종이 뷰를 다 먹으면 나머지가 형태를 못 잡는다).
+    // 단독 제품은 3장(정면·측면·45도)까지 — 형태가 생성마다 흔들리는 걸 각도 수로 눌러 잡는다
+    const viewsPerProduct = picks.length > 1 ? 1 : 3;
 
     const productSpecs: ProductSpec[] = [];
     for (const pick of picks) {

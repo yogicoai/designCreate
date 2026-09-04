@@ -13,6 +13,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { thumbUrl } from '@/lib/thumb';
 
 interface RefItem { url: string; title: string; cat: 'instagram' | 'shoot' }
 interface Props {
@@ -255,7 +256,7 @@ export default function SnsAutomation({ pool, models }: Props) {
             <div key={r.ref.url + i} className="card p-2">
               <div className="relative">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={r.resultUrl ?? r.ref.url} alt={r.ref.title}
+                <img src={thumbUrl(r.resultUrl ?? r.ref.url, 384)} alt={r.ref.title}
                      className="w-full aspect-[4/5] object-cover rounded-lg border"
                      style={{
                        borderColor: r.status === 'done' ? 'var(--ok)' : r.status === 'fail' ? 'var(--danger)' : r.locked ? 'var(--accent)' : 'var(--line)',

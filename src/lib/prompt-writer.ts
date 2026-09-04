@@ -443,29 +443,41 @@ function compositionFor(spec: GenerationSpec): string {
    * 인테리어 컷 — 카메라가 물러나 제품 전체 + 주변 가구·바닥·벽이 함께 잡히고,
    * 사람은 그 안에 자연스럽게 앉아 있는 연출이다.
    */
-  const PRODUCT_HERO =
-    ' THE PRODUCT IS THE HERO of this frame, not the people. Shoot it like an editorial interior ' +
-    'photograph: the camera stands back far enough that the bean bag is fully visible with breathing ' +
-    'room around it, surrounded by its interior context — floor, rug, surrounding furniture, walls. ' +
-    'The people are supporting cast, naturally absorbed into the scene, never so large that they ' +
-    'dominate the frame or crop the product.';
+  /*
+   * 인물 유무에 따라 주어를 바꾼다 — 모델을 안 골랐는데 문구가 "product and model"이라
+   * AI 인물이 멋대로 등장하는 사고가 났다 (팟 검증 컷 실측). 제품 단독이면 사람 금지까지 명시.
+   */
+  const withPeople = (spec.talents?.length ?? 0) > 0;
+  const SUBJ = withPeople ? 'the product and model' : 'the product';
+  // 사람 금지는 "베이스 없이 새로 그리는 제품 단독 컷"에만 — 베이스에 있는 인물을 지우면 안 된다
+  const hasBaseImg = (!!spec.baseCut && spec.baseCut.usage !== 'pose')
+    || (spec.uploadedRefs ?? []).some((u) => u.role === 'base');
+  const NO_PEOPLE = withPeople || hasBaseImg ? '' : ' There are NO people in this image — the product alone.';
+  const PRODUCT_HERO = withPeople
+    ? ' THE PRODUCT IS THE HERO of this frame, not the people. Shoot it like an editorial interior ' +
+      'photograph: the camera stands back far enough that the bean bag is fully visible with breathing ' +
+      'room around it, surrounded by its interior context — floor, rug, surrounding furniture, walls. ' +
+      'The people are supporting cast, naturally absorbed into the scene, never so large that they ' +
+      'dominate the frame or crop the product.'
+    : ' THE PRODUCT IS THE HERO of this frame. Shoot it like an editorial interior photograph: the ' +
+      'camera stands back far enough that the bean bag is fully visible with breathing room around it.';
   if (spec.mode === 'thumbnail') {
     if (r >= 1.3) {
-      return `WIDE PRODUCT SHOT (${width}x${height}). Centre the product and model; keep generous even margin on both sides.` + PRODUCT_HERO + FILL_FRAME;
+      return `WIDE PRODUCT SHOT (${width}x${height}). Centre ${SUBJ}; keep generous even margin on both sides.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
     }
-    if (r >= 0.95) return `SQUARE PRODUCT THUMBNAIL (${width}x${height}). The product and model fill the frame with even margin — this is a catalogue thumbnail, so the product must read clearly at small size.` + FILL_FRAME;
-    return `TALL PRODUCT SHOT (${width}x${height}). Vertical framing; the product fills the lower two thirds.` + FILL_FRAME;
+    if (r >= 0.95) return `SQUARE PRODUCT THUMBNAIL (${width}x${height}). ${withPeople ? 'The product and model fill' : 'The product fills'} the frame with even margin — this is a catalogue thumbnail, so the product must read clearly at small size.${NO_PEOPLE}` + FILL_FRAME;
+    return `TALL PRODUCT SHOT (${width}x${height}). Vertical framing; the product fills the lower two thirds.${NO_PEOPLE}` + FILL_FRAME;
   }
   if (r >= 2.5) {
-    return `EXTREME WIDE BANNER (${width}x${height}). Place the product and model in the RIGHT third. The LEFT half must be an empty, uncluttered wall/floor plane. Keep every essential element inside the vertical middle band — the top and bottom will be cropped away.` + PRODUCT_HERO + FILL_FRAME;
+    return `EXTREME WIDE BANNER (${width}x${height}). Place ${SUBJ} in the RIGHT third. The LEFT half must be an empty, uncluttered wall/floor plane. Keep every essential element inside the vertical middle band — the top and bottom will be cropped away.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
   }
   if (r >= 1.6) {
-    return `WIDE WEB BANNER (${width}x${height}). Split composition: the LEFT 45% stays clean and empty for copy, product and model occupy the RIGHT side.` + PRODUCT_HERO + FILL_FRAME;
+    return `WIDE WEB BANNER (${width}x${height}). Split composition: the LEFT 45% stays clean and empty for copy, ${SUBJ.replace('the ', '')} occupies the RIGHT side.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
   }
   if (r >= 0.95) {
-    return `SQUARE SNS POST (${width}x${height}). Subject and product sit in the LOWER TWO THIRDS, centred slightly off-axis. The TOP THIRD stays a quiet, evenly lit area for copy.` + FILL_FRAME;
+    return `SQUARE SNS POST (${width}x${height}). ${withPeople ? 'Subject and product' : 'The product'} sit in the LOWER TWO THIRDS, centred slightly off-axis. The TOP THIRD stays a quiet, evenly lit area for copy.${NO_PEOPLE}` + FILL_FRAME;
   }
-  return `TALL MOBILE FORMAT (${width}x${height}). The TOP third stays clean and empty for copy; the product and model fill the LOWER two thirds.` + FILL_FRAME;
+  return `TALL MOBILE FORMAT (${width}x${height}). The TOP third stays clean and empty for copy; ${SUBJ.replace('the ', '')} fills the LOWER two thirds.${NO_PEOPLE}` + FILL_FRAME;
 }
 
 /** 제품 블록 — 12차 실측 4종 세트 */
@@ -508,7 +520,39 @@ function productBlock(spec: GenerationSpec): string[] {
     'PRODUCT VIEWS show each product in its factory resting orientation. In the scene, position the product however ' +
       'the pose and staging require, BUT its shell keeps the exact shape and true dimensions from the views — ' +
       'never bend, curl, stretch, inflate or merge a product to fit a pose, a person or the composition.',
+    /*
+     * 뷰 사진 > 텍스트 서술 — 형태가 생성마다 흔들리는 사고(라운저 등받이 각도·좌석 비례)의 대책.
+     * 글로는 각도·비례를 다 못 박는다. 사진을 형태의 최종 기준으로 못박는다.
+     */
+    'THE VIEW PHOTOGRAPHS ARE GROUND TRUTH for each product\'s shape. Match their silhouette EXACTLY — ' +
+      'the same backrest angle, the same seat-to-back proportion, the same curvature and stance. ' +
+      'If this text and the photographs ever disagree, FOLLOW THE PHOTOGRAPHS.',
+    /*
+     * 빈 제품 눌림 금지 — 전 제품 공통 선언 (사용자: "이게 가장 중요").
+     * 드롭·팟·라운저·피라미드 개별 정의에도 있지만, 엔진(제미나이·GPT·힉스필드)이
+     * 무엇을 그리든 공통으로 받도록 여기서 한 번 더 못박는다.
+     */
+    'UNOCCUPIED PRODUCTS STAY FULLY INFLATED: a bean bag with nobody on it is taut, plump and full — ' +
+      'never render dents, sitting hollows, sunken tops, creased pockets or sagging on an empty product. ' +
+      'Fabric compresses ONLY at the exact spots where a person is actually in contact, and nowhere else.',
   );
+  /*
+   * 제품 뷰 조명 복사 금지 — 배경·베이스 합성에서 합성티의 주범 (실측: 스튜디오 렌더의
+   * 평면광·채도가 방에 그대로 붙어 들어옴). 인물용 RELIGHT 와 같은 원리를 제품에도 건다.
+   * 순수 스튜디오 썸네일(배경 없음)에서는 스튜디오 룩이 정답이라 안 붙인다.
+   */
+  const inScene = (!!spec.baseCut && spec.baseCut.usage !== 'pose')
+    || (spec.uploadedRefs ?? []).some((u) => u.role === 'base' || u.role === 'background');
+  if (inScene) {
+    L.push(
+      'PRODUCT RELIGHT — the product view photographs are flat STUDIO shots on a plain background: take ONLY ' +
+        'each product\'s shape, proportions, colour identity, fabric and tag from them. NEVER copy their studio ' +
+        'lighting, white balance, saturation or clean studio sharpness into this scene. Re-light every product ' +
+        'entirely with THIS scene\'s light — same direction, warmth, softness and shadows as the room around it, ' +
+        'with natural colour bounce from nearby surfaces — and mute its colours into the scene\'s palette. ' +
+        'A product that looks brighter, sharper or more saturated than its surroundings reads as pasted-on and is a failure.',
+    );
+  }
   return L;
 }
 

@@ -1,10 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { thumbUrl } from '@/lib/thumb';
 
 /**
  * 클릭하면 전체화면으로 확대되는 이미지.
  * 시트(표정 8패널·턴어라운드 5패널)는 축소 상태로는 판별이 불가능해서 확대가 필수다.
+ *
+ * 목록 표시는 저화질 썸네일(프록시 축소)로 부르고, 확대했을 때만 원본을 부른다 —
+ * 원본이 장당 수 MB 라 목록에서 그대로 부르면 페이지가 기어간다 (사용자 확인).
  */
 export default function Zoomable({
   src,
@@ -13,6 +17,7 @@ export default function Zoomable({
   style,
   caption,
   action,
+  thumbW = 256,
 }: {
   src: string;
   alt: string;
@@ -21,6 +26,8 @@ export default function Zoomable({
   caption?: string;
   /** 팝업 안에 표시할 액션 버튼 (예: "이번 작업에 추가") — 누르면 실행 후 닫힌다 */
   action?: { label: string; onClick: () => void; disabled?: boolean };
+  /** 목록 썸네일 폭 — 카드가 크면 384 로 */
+  thumbW?: 128 | 256 | 384;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -40,7 +47,7 @@ export default function Zoomable({
       {/* 외부 cafe24 호스트라 next/image 최적화 대신 img 사용 */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={src}
+        src={thumbUrl(src, thumbW)}
         alt={alt}
         loading="lazy"
         onClick={() => setOpen(true)}

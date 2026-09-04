@@ -10,6 +10,7 @@ import {
 } from '@/lib/banner-sizes';
 import { shrinkForUpload } from '@/lib/client-image';
 import { BRAND_BUTTON_COLORS, brandButtonHex } from '@/lib/brand';
+import { thumbUrl } from '@/lib/thumb';
 
 /**
  * 배너 디자인 생성 — 간단한 포토샵.
@@ -1501,7 +1502,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
                               }}
                               className="block rounded-lg overflow-hidden border text-left" style={{ padding: 0, borderColor: 'var(--line)' }}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={c.url} alt={c.label} loading="lazy"
+                        <img src={thumbUrl(c.url, 256)} alt={c.label} loading="lazy"
                              style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', display: 'block',
                                       background: 'var(--surface-2)',
                                       outline: c.url === imageUrl ? '2px solid var(--accent)' : 'none', outlineOffset: -2 }} />
