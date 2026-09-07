@@ -28,27 +28,48 @@ function ownedPrefix(): string {
   return `${base}/${REF_SUBPATH}/`;
 }
 
-export async function GET() {
+/**
+ * GET /api/references?skip=&limit=
+ *
+ * 보관함이 수천 장이라 한 번에 다 내려보내면 화면이 뜨는 데만 오래 걸린다.
+ * 그래서 자산관리 화면은 첫 묶음만 서버에서 받아 바로 그리고, 나머지는 이 라우트로
+ * 조각조각 이어 받는다 (skip/limit). 화면이 쓰는 필드만 projection 으로 골라 담는다.
+ */
+export async function GET(req: Request) {
   try {
+    const url = new URL(req.url);
+    const skip = Math.max(0, Number(url.searchParams.get('skip') ?? 0) || 0);
+    const limit = Math.max(1, Math.min(3000, Number(url.searchParams.get('limit') ?? 300) || 300));
     const db = await getDb();
-    const docs = await db
-      .collection('references')
-      .find({ active: { $ne: false } })
-      .sort({ createdAt: -1 })
-      .limit(300)
-      .toArray();
+    const col = db.collection('references');
+    const q = { active: { $ne: false } };
+    const [docs, total] = await Promise.all([
+      col.find(q)
+        .project({ url: 1, title: 1, width: 1, height: 1, category: 1, sub: 1, source: 1, createdAt: 1 })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray(),
+      col.countDocuments(q),   // 수천 건이라도 밀리초 — 화면이 "몇 장 중 몇 장"을 알 수 있게 항상 센다
+    ]);
     return NextResponse.json({
       ok: true,
+      total,
+      skip,
       references: docs.map((d) => ({
         url: d.url,
         title: d.title ?? '',
         width: d.width ?? 0,
         height: d.height ?? 0,
-        category: d.category ?? null,
-        tags: d.tags ?? [],
+        category: normalizeRefCategory(d.category),
+        sub: d.sub ?? null,
+        tags: [],
         source: d.source ?? 'upload',
-        createdAt: d.createdAt ?? null,
+        createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : null,
       })),
+    }, {
+      // 같은 묶음을 연달아 부를 때(탭 이동·뒤로가기)는 브라우저 캐시에서 바로 — 개인 데이터라 private
+      headers: { 'Cache-Control': 'private, max-age=60, stale-while-revalidate=300' },
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });

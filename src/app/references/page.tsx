@@ -5,8 +5,11 @@ import { getReferences } from '@/lib/queries';
 export const dynamic = 'force-dynamic';
 
 export default async function ReferencesPage() {
-  // 페이지 나누기는 화면에서 한다(20개씩) — 여기서는 넉넉히 불러온다
-  const references = await getReferences(5000);
+  /*
+   * 첫 묶음(400장)만 서버에서 받아 화면을 바로 띄운다 — 수천 장을 한 번에 실어 보내면
+   * 그것만으로 페이지 진입이 느려진다. 나머지는 화면이 뜬 뒤 /api/references 로 이어 받는다.
+   */
+  const references = await getReferences(400);
 
   return (
     <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">

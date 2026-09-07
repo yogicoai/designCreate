@@ -1,8 +1,9 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Zoomable from '@/components/Zoomable';
 import { shrinkForUpload, formatBytes } from '@/lib/client-image';
+import { thumbUrl } from '@/lib/thumb';
 import type { ReferenceDoc } from '@/lib/queries';
 
 /**
@@ -47,6 +48,86 @@ const CATEGORY_OPTIONS: { value: string; label: string; desc: string }[] = [
 
 export default function ReferencesManager({ initial }: { initial: ReferenceDoc[] }) {
   const [items, setItems] = useState<ReferenceDoc[]>(initial);
+  /*
+   * 목록 불러오기 — 3단 구조로 "두 번째부터는 기다림 없음"을 만든다.
+   *   ① 이 PC 에 저장해둔 목록(localStorage)이 있으면 네트워크를 기다리지 않고 즉시 올린다
+   *   ② 맨 앞 묶음만 다시 받아 새로 등록된 것과 전체 개수를 확인한다
+   *   ③ 캐시가 모자란 만큼만 이어 받고, 끝나면 다시 저장한다
+   * 쿠키는 4KB 제한이라 수천 장 목록을 담을 수 없어 localStorage 를 쓴다
+   * (사파리 시크릿 등에서 막히면 그냥 ②③ 만 도는 기존 동작으로 떨어진다).
+   */
+  const [total, setTotal] = useState<number | null>(null);
+  const loadingMore = useRef(false);
+  useEffect(() => {
+    if (loadingMore.current) return;
+    loadingMore.current = true;
+
+    const KEY = 'imgc.refs.v1';
+    const TTL = 24 * 60 * 60 * 1000;                     // 하루 지나면 통째로 다시 받는다
+    const lean = (r: ReferenceDoc) => ({
+      url: r.url, title: r.title, width: r.width, height: r.height,
+      category: r.category, sub: r.sub, tags: [], source: r.source, createdAt: null,
+    }) as ReferenceDoc;
+    const merge = (cur: ReferenceDoc[], add: ReferenceDoc[]) => {
+      const seen = new Set(cur.map((x) => x.url));
+      const fresh = add.filter((x) => !seen.has(x.url));
+      return fresh.length ? [...cur, ...fresh] : cur;
+    };
+
+    let cached: ReferenceDoc[] = [];
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const c = JSON.parse(raw) as { at?: number; total?: number; items?: ReferenceDoc[] };
+        if (Array.isArray(c.items) && Date.now() - (c.at ?? 0) < TTL) {
+          cached = c.items;
+          setItems((cur) => merge(cur, cached));
+          if (typeof c.total === 'number') setTotal(c.total);
+        }
+      }
+    } catch { /* 저장소를 못 쓰는 브라우저 — 네트워크로만 간다 */ }
+
+    (async () => {
+      const CHUNK = 1500;
+      const all = merge(initial, cached);               // 화면 상태와 같은 순서로 캐시에 쌓을 사본
+      let known: number | null = null;
+      try {
+        // ② 맨 앞 묶음 — 새로 등록된 것과 전체 개수 확인
+        const head = await fetch('/api/references?skip=0&limit=400').then((r) => r.json());
+        if (head?.ok) {
+          known = typeof head.total === 'number' ? head.total : null;
+          if (known != null) setTotal(known);
+          const got = (head.references ?? []) as ReferenceDoc[];
+          const withHead = merge(all, got);
+          if (withHead !== all) setItems((cur) => merge(cur, got));
+          all.length = 0; all.push(...withHead);
+        }
+      } catch { /* 앞 묶음 실패 — 아래 이어받기로 넘어간다 */ }
+
+      // ③ 모자란 만큼만 이어 받기
+      for (let guard = 0; guard < 20; guard++) {
+        if (known != null && all.length >= known) break;
+        try {
+          const r = await fetch(`/api/references?skip=${all.length}&limit=${CHUNK}`);
+          const j = (await r.json()) as { ok?: boolean; total?: number; references?: ReferenceDoc[] };
+          if (!j.ok || !j.references?.length) break;
+          const got = j.references;
+          setItems((cur) => merge(cur, got));
+          const next = merge(all, got);
+          const grew = next.length > all.length;
+          all.length = 0; all.push(...next);
+          if (typeof j.total === 'number' && j.total >= 0) { known = j.total; setTotal(j.total); }
+          if (!grew || got.length < CHUNK) break;
+        } catch { break; }
+      }
+
+      // 다음 방문에 바로 뜨도록 이 PC 에 저장 (용량 초과면 조용히 포기)
+      try {
+        localStorage.setItem(KEY, JSON.stringify({ at: Date.now(), total: known ?? all.length, items: all.map(lean) }));
+      } catch { /* 용량 초과·차단 — 캐시 없이도 동작에는 문제 없다 */ }
+    })();
+    // 첫 렌더에서 한 번만 — initial 은 서버가 준 고정 배열이다
+  }, [initial]);
   const [uploading, setUploading] = useState(false);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
@@ -264,6 +345,30 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
   const current = Math.min(page, totalPages);
   const shown = matched.slice((current - 1) * PER_PAGE, current * PER_PAGE);
 
+  /*
+   * 다음·이전 페이지 썸네일 미리 받기 — 게시판을 넘기는 순간 이미 브라우저 캐시에 있어 바로 뜬다.
+   * 지금 보는 페이지가 먼저 그려지도록 250ms 늦춰서 조용히 받고, 한 번 받은 URL 은 다시 안 받는다.
+   * (프록시 썸네일은 첫 요청에서 생성되므로, 미리 받아두면 그 생성 시간도 같이 없앤다)
+   */
+  const preloaded = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const list = (filter ? items.filter((x) => x.category === filter) : items)
+        .filter((x) => !subFilter || x.sub === subFilter);
+      for (const p of [current + 1, current + 2, current - 1]) {
+        if (p < 1 || (p - 1) * PER_PAGE >= list.length) continue;
+        for (const r of list.slice((p - 1) * PER_PAGE, p * PER_PAGE)) {
+          if (preloaded.current.has(r.url)) continue;
+          preloaded.current.add(r.url);
+          const img = new window.Image();
+          img.decoding = 'async';
+          img.src = thumbUrl(r.url, 256);
+        }
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [current, filter, subFilter, items]);
+
   /** 1234 … 형태로 보여줄 페이지 번호 (최대 10개 창) */
   function pageWindow(): number[] {
     const WINDOW = 10;
@@ -409,6 +514,10 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
         <div className="flex items-baseline justify-between mb-2">
           <span className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
             총 <b style={{ color: 'var(--text-dim)' }}>{matched.length}</b>개
+            {/* 나머지를 이어 받는 중이면 알려준다 — 개수가 늘어나는 이유가 보이게 */}
+            {total != null && items.length < total && (
+              <span style={{ color: 'var(--warn)' }}> · 전체 {total.toLocaleString()}장 불러오는 중…</span>
+            )}
             {totalPages > 1 && (
               <>
                 {' · '}
@@ -446,7 +555,7 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
                 <Zoomable
                   src={r.url}
                   alt={r.title}
-                  thumbW={128}
+                  thumbW={256}
                   caption={`${r.title}${r.width ? ` · ${r.width}×${r.height}` : ''}`}
                   className="w-full aspect-square object-cover rounded-lg border"
                   style={{
