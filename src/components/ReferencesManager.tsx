@@ -338,9 +338,8 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
    * 삭제·숨김으로 개수가 줄어 현재 페이지가 비면 마지막 페이지로 당겨온다
    * (마지막 항목을 지우고 빈 화면만 남는 걸 막는다).
    */
-  // 한 줄 8개 × 5줄 = 40개 (사용자 지정 — 저화질 썸네일로 한 페이지에 최대한 많이).
-  // 줄이 딱 떨어져야 마지막 줄이 비어 보이지 않는다 — 그래서 8열 고정.
-  const PER_PAGE = 40;
+  // 한 줄 8개 × 3줄 = 24개 (사용자 지정). 줄이 딱 떨어져야 마지막 줄이 비어 보이지 않는다.
+  const PER_PAGE = 24;
   const totalPages = Math.max(1, Math.ceil(matched.length / PER_PAGE));
   const current = Math.min(page, totalPages);
   const shown = matched.slice((current - 1) * PER_PAGE, current * PER_PAGE);
