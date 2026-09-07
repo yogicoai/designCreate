@@ -27,6 +27,7 @@ const CATEGORY_KR: Record<string, string> = {
   sns: 'SNS',
   interior: '인테리어',
   instagram: '인스타그램',
+  model: '모델컷',
   // 구 값 폴백
   'web-banner': '배너',
   mobile: '배너',
@@ -41,6 +42,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; desc: string }[] = [
   { value: 'sns', label: 'SNS', desc: '인스타 정사각·스토리·릴스' },
   { value: 'interior', label: '인테리어', desc: '빈 공간·인테리어 컷 — 생성 시 「배경으로 사용」 소스' },
   { value: 'instagram', label: '인스타그램', desc: '인스타 게시물 (자동 백필 — 새 게시물은 스크립트 재실행)' },
+  { value: 'model', label: '모델컷', desc: '전속 모델 인물 컷 — 포즈·표정·연출 레퍼런스' },
 ];
 
 export default function ReferencesManager({ initial }: { initial: ReferenceDoc[] }) {
@@ -255,9 +257,9 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
    * 삭제·숨김으로 개수가 줄어 현재 페이지가 비면 마지막 페이지로 당겨온다
    * (마지막 항목을 지우고 빈 화면만 남는 걸 막는다).
    */
-  // 한 줄 6개 × 3줄 = 18개. 줄이 딱 떨어져야 마지막 줄이 비어 보이지 않는다.
-  // 그래서 그리드도 넓은 화면에서 6열로 고정한다 (8열이면 3줄로 안 떨어진다).
-  const PER_PAGE = 18;
+  // 한 줄 8개 × 5줄 = 40개 (사용자 지정 — 저화질 썸네일로 한 페이지에 최대한 많이).
+  // 줄이 딱 떨어져야 마지막 줄이 비어 보이지 않는다 — 그래서 8열 고정.
+  const PER_PAGE = 40;
   const totalPages = Math.max(1, Math.ceil(matched.length / PER_PAGE));
   const current = Math.min(page, totalPages);
   const shown = matched.slice((current - 1) * PER_PAGE, current * PER_PAGE);
@@ -389,6 +391,19 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
         </div>
       )}
 
+      {/*
+        목록이 흐릿해 보이는 이유를 먼저 말해준다 — 안 써두면 "화질이 깨졌나?" 로 읽힌다.
+        실제로는 목록만 줄여 부르고(로딩 속도), 클릭하면 원본을 부른다.
+      */}
+      {matched.length > 0 && (
+        <div className="text-[11px] px-2.5 py-1.5 rounded-[8px] mb-2 leading-relaxed"
+             style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--text-mute)' }}>
+          ℹ 목록의 이미지는 <b style={{ color: 'var(--text-dim)' }}>빠른 로딩을 위해 줄여서 보여주는 미리보기</b>라 흐릿하게 보입니다 —
+          원본 화질은 그대로이고, <b style={{ color: 'var(--text-dim)' }}>썸네일을 클릭하면 원본으로 크게</b> 볼 수 있습니다.
+          생성·디자인에 들어갈 때도 원본이 쓰입니다.
+        </div>
+      )}
+
       {/* 지금 몇 번째를 보고 있는지 — 게시판이면 이게 있어야 길을 잃지 않는다 */}
       {matched.length > 0 && (
         <div className="flex items-baseline justify-between mb-2">
@@ -424,13 +439,14 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
           {items.length === 0 ? '아직 등록된 레퍼런스가 없습니다.' : '이 분류에는 항목이 없습니다.'}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-2">
           {shown.map((r) => (
             <div key={r.url}>
               <div className="relative">
                 <Zoomable
                   src={r.url}
                   alt={r.title}
+                  thumbW={128}
                   caption={`${r.title}${r.width ? ` · ${r.width}×${r.height}` : ''}`}
                   className="w-full aspect-square object-cover rounded-lg border"
                   style={{

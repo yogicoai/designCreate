@@ -32,6 +32,30 @@ interface SavedTemplate { id: string; name: string; design: DesignDoc; updatedAt
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 /**
+ * 레이어를 기준 상태(base)에서 k 배로 키우거나 줄인 사본.
+ * ⤡ 손잡이 드래그와 수치 입력이 똑같이 계산되도록 한 곳에 모았다.
+ */
+function scaledFrom(base: DesignLayer, k: number): DesignLayer {
+  if (base.kind === 'text' || base.kind === 'icon') {
+    return { ...base, size: Math.max(0.01, Math.min(0.6, (base.size ?? 0.06) * k)) };
+  }
+  if (base.kind === 'brush') {
+    const cx0 = base.x ?? 0.5, cy0 = base.y ?? 0.5;
+    return {
+      ...base,
+      strokeWidth: Math.max(0.002, (base.strokeWidth ?? 0.01) * k),
+      points: (base.points ?? []).map((q) => ({ x: cx0 + (q.x - cx0) * k, y: cy0 + (q.y - cy0) * k })),
+    };
+  }
+  // 이미지·도형·스크림 — 가로세로를 같은 배율로 (h 미지정 이미지는 srcAspect 가 따라온다)
+  return {
+    ...base,
+    w: Math.max(0.02, Math.min(2, (base.w ?? 0.3) * k)),
+    ...(base.h != null ? { h: Math.max(0.02, Math.min(2, base.h * k)) } : {}),
+  };
+}
+
+/**
  * 새 레이어의 기본값 — 만들자마자 화면 가운데에 보이게.
  * 글자 외곽 그림자는 끈 채로 시작한다. 판판한 글씨가 깔끔하고,
  * 배경에 묻힐 때만 선택한 레이어에서 켜면 된다.
@@ -599,11 +623,34 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
    * 같은 비율로 줄고 큰다 (사용자 요청: "상하좌우 한번에, 비율에 맞춰서").
    */
   const scaleRef = useRef<{ id: string; sx: number; sy: number; start: DesignLayer } | null>(null);
+  /*
+   * 수치로 크기 조절 — 선택한 순간의 상태를 100% 기준으로 잡고, 입력한 %만큼 키우거나 줄인다.
+   * (사용자 요청: 손잡이 말고 숫자를 눌러 낮추면 작아지게)
+   */
+  const [sizePct, setSizePct] = useState(100);
+  const sizeBaseRef = useRef<{ id: string; base: DesignLayer } | null>(null);
+  const shownPct = sizeBaseRef.current?.id === selected ? sizePct : 100;
+  function applySizePct(pct: number) {
+    const l = layers.find((x) => x.id === selected);
+    if (!l) return;
+    if (sizeBaseRef.current?.id !== l.id) {
+      sizeBaseRef.current = { id: l.id, base: { ...l, points: l.points ? [...l.points] : undefined } };
+    }
+    const v = Math.max(10, Math.min(400, Math.round(pct)));
+    setSizePct(v);
+    const base = sizeBaseRef.current.base;
+    setLayers((cur) => cur.map((x) => (x.id === l.id ? { ...scaledFrom(base, v / 100), id: x.id } : x)));
+    setResult(null);
+  }
+
   function onScaleDown(e: React.PointerEvent, id: string) {
     const st = stageRef.current;
     const l = layers.find((x) => x.id === id);
     if (!st || !l) return;
     e.stopPropagation();
+    // 손잡이로 끌면 수치 기준을 새로 잡는다 — 끌고 난 크기가 다시 100% 가 된다
+    sizeBaseRef.current = null;
+    setSizePct(100);
     const r = st.getBoundingClientRect();
     scaleRef.current = { id, sx: (e.clientX - r.left) / r.width, sy: (e.clientY - r.top) / r.height, start: { ...l, points: l.points ? [...l.points] : undefined } };
     setSelected(id);
@@ -628,27 +675,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
       const r = stageRef.current.getBoundingClientRect();
       const dn = ((e.clientX - r.left) / r.width - sc.sx) + ((e.clientY - r.top) / r.height - sc.sy);
       const k = Math.max(0.15, Math.min(5, 1 + dn * 1.6));
-      const st0 = sc.start;
-      setLayers((cur) => cur.map((l) => {
-        if (l.id !== sc.id) return l;
-        if (l.kind === 'text' || l.kind === 'icon') {
-          return { ...l, size: Math.max(0.01, Math.min(0.6, (st0.size ?? 0.06) * k)) };
-        }
-        if (l.kind === 'brush') {
-          const cx0 = st0.x ?? 0.5, cy0 = st0.y ?? 0.5;
-          return {
-            ...l,
-            strokeWidth: Math.max(0.002, (st0.strokeWidth ?? 0.01) * k),
-            points: (st0.points ?? []).map((q) => ({ x: cx0 + (q.x - cx0) * k, y: cy0 + (q.y - cy0) * k })),
-          };
-        }
-        // 이미지·도형·스크림 — 가로세로를 같은 배율로 (h 미지정 이미지는 srcAspect 가 따라온다)
-        return {
-          ...l,
-          w: Math.max(0.02, Math.min(2, (st0.w ?? 0.3) * k)),
-          ...(st0.h != null ? { h: Math.max(0.02, Math.min(2, st0.h * k)) } : {}),
-        };
-      }));
+      setLayers((cur) => cur.map((l) => (l.id === sc.id ? { ...scaledFrom(sc.start, k), id: l.id } : l)));
       setResult(null);
       return;
     }
@@ -1387,11 +1414,39 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
                 <span className="text-[10.5px] shrink-0" style={{ color: 'var(--text-dim)' }}>이미지 크기</span>
                 <input type="range" min={1} max={2.5} step={0.02} value={Math.max(1, fitZoom)} className="flex-1"
                        onChange={(e) => { setFitZoom(Number(e.target.value)); setFocusTouched(true); setResult(null); }} />
-                <span className="text-[10.5px] tabular-nums w-[38px] text-right" style={{ color: 'var(--text-dim)' }}>
-                  {Math.round(Math.max(1, fitZoom) * 100)}%
-                </span>
+                {/* 수치 직접 입력 — 눌러서 숫자를 낮추면 그만큼 작아진다 */}
+                <input type="number" min={100} max={250} step={5}
+                       value={Math.round(Math.max(1, fitZoom) * 100)}
+                       onChange={(e) => {
+                         const v = Math.max(100, Math.min(250, Number(e.target.value) || 100));
+                         setFitZoom(v / 100); setFocusTouched(true); setResult(null);
+                       }}
+                       className="w-[58px] px-1.5 py-0.5 text-[12px] rounded-[6px] tabular-nums text-right"
+                       style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--text)' }} />
+                <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>%</span>
                 <button className="chip px-2" title="원래 크기로" onClick={() => { setFitZoom(1); setResult(null); }}>100%</button>
                 <button className="chip px-2" onClick={() => setBgTune(false)}>닫기</button>
+              </div>
+            )}
+            {/*
+              * 선택한 레이어 크기 — 수치 입력. 손잡이를 끄는 대신 숫자를 낮추면 그만큼 줄어든다.
+              * 선택한 순간이 100% 기준이고, 배경 패널이 떠 있으면 그 아래로 비켜 앉는다.
+              */}
+            {sel && (
+              <div className="absolute left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-3 py-1.5 rounded-[10px]"
+                   style={{ top: bgTune ? 52 : 8, background: 'var(--surface)', border: '1px solid var(--accent)', boxShadow: '0 4px 18px rgba(0,0,0,.35)' }}
+                   onPointerDown={(e) => e.stopPropagation()}
+                   onDoubleClick={(e) => e.stopPropagation()}>
+                <span className="text-[10.5px] shrink-0" style={{ color: 'var(--text-dim)' }}>
+                  {labelOf(sel, layers)} 크기
+                </span>
+                <input type="number" min={10} max={400} step={5} value={shownPct}
+                       onChange={(e) => applySizePct(Number(e.target.value) || 100)}
+                       title="숫자를 낮추면 상하좌우가 같은 비율로 작아집니다 (선택한 순간이 100%)"
+                       className="w-[62px] px-1.5 py-0.5 text-[12px] rounded-[6px] tabular-nums text-right"
+                       style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--text)' }} />
+                <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>%</span>
+                <button className="chip px-2" title="선택 시점 크기로" onClick={() => applySizePct(100)}>되돌리기</button>
               </div>
             )}
             {/*
@@ -1445,7 +1500,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
           <div className="card p-4 max-w-[min(1100px,94vw)] max-h-[92vh] overflow-y-auto w-full"
                onClick={(e) => e.stopPropagation()}>
             {(() => {
-              const CAT_KR: Record<string, string> = { shoot: '촬영', banner: '배너', sns: 'SNS', interior: '인테리어', instagram: '인스타그램' };
+              const CAT_KR: Record<string, string> = { shoot: '촬영', banner: '배너', sns: 'SNS', interior: '인테리어', instagram: '인스타그램', model: '모델컷' };
               const pool = browseSrc === 'refs'
                 ? refs.filter((r) => !browseCat || r.cat === browseCat).map((r) => ({ id: r.url, url: r.url, label: r.label }))
                 : cuts;

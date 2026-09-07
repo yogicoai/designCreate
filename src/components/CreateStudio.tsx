@@ -128,6 +128,7 @@ const REF_CATS: { value: string; label: string }[] = [
   { value: 'sns', label: 'SNS' },
   { value: 'interior', label: '인테리어' },
   { value: 'instagram', label: '인스타그램' },
+  { value: 'model', label: '모델컷' },
   { value: '__none', label: '미분류' },
 ];
 function refCatOf(cat: string | null | undefined): string {
@@ -136,6 +137,7 @@ function refCatOf(cat: string | null | undefined): string {
   if (cat === 'sns' || cat === 'sns-story') return 'sns';
   if (cat === 'interior') return 'interior';
   if (cat === 'instagram') return 'instagram';
+  if (cat === 'model') return 'model';
   return '__none';
 }
 
