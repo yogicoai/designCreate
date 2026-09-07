@@ -36,9 +36,10 @@ export default async function CreatePage() {
       {process.env.OPENAI_API_KEY && (
         <div className="mx-4 sm:mx-6 mt-4 px-3 py-2 rounded-[10px] text-[11.5px] leading-relaxed"
              style={{ background: 'rgba(240,180,41,.08)', border: '1px solid var(--warn)', color: 'var(--warn)' }}>
-          ⚠ <b>GPT 엔진 사용 기준</b> — GPT(gpt-image-1)는 전속 모델 얼굴이 유지되지 않습니다.
-          <b> 인물 노출이 없거나 최소인 컷, 또는 AI 가상 인물 컷에만</b> 사용하세요.
-          전속 모델을 선택한 상태에서는 GPT 생성이 차단됩니다. (얼굴 컷은 제미나이 사용)
+          ⚠ <b>GPT 엔진 사용 기준</b> — GPT(gpt-image-1)는 전속 모델 <b>얼굴</b>이 유지되지 않고,
+          <b>제품 형태·로고 재현과 배경 합성도 부정확합니다</b> (실측: 드롭·라운저가 다른 물건으로 생성됨).
+          전속 모델 선택 시 GPT는 차단되며, <b>제품 컷·씬 합성은 제미나이를 사용</b>하세요.
+          GPT는 분위기 참고용 러프 컷 정도에만 권장합니다.
         </div>
       )}
       <CreateStudio

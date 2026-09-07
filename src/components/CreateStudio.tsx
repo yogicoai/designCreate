@@ -526,6 +526,11 @@ export default function CreateStudio(p: Props) {
             ],
           }
         : {}),
+      /*
+       * 제품 단독 + 포즈 컷 조합은 화면 문구로 안내한다 (잠그지 않음 — 사용자 확정).
+       * 실수로 골라도 안전장치가 있다: 제품 단독의 포즈 역할은 "카메라 앵글만 복사"로 제한되고,
+       * 대표(마스터) 컷이 형태 충돌에서 이긴다.
+       */
       ...((baseTab === 'cut' || baseTab === 'posecut') && baseCutUrl
         ? { baseCutId: baseCutUrl, baseCutUsage: baseTab === 'posecut' ? 'pose' : 'full' }
         : {}),
@@ -856,6 +861,20 @@ export default function CreateStudio(p: Props) {
               </div>
             ))}
 
+            {/*
+              베이스 편집 3원칙 — 실측 사고에서 나온 규칙 (라운저 베이스에 Max 를 골라
+              장면이 통째로 재구성된 비교 사례). 베이스가 올라온 순간에만 뜬다.
+            */}
+            {hasBaseUpload && (
+              <div className="mt-2 px-3 py-2 rounded-[10px] text-[11px] leading-relaxed"
+                   style={{ background: 'rgba(240,180,41,.08)', border: '1px solid var(--warn)', color: 'var(--warn)' }}>
+                ⚠ <b>베이스 컷 편집 3원칙</b><br />
+                ① 사진 속 제품을 그대로 쓸 거면 <b>제품 선택을 비워두세요</b> — 제품을 고르는 순간 &ldquo;그 제품으로 바꿔라&rdquo;는 명령이 됩니다 (형태·장면이 재구성됨)<br />
+                ② 색만 바꿀 땐 방향 지시에 <b>&ldquo;빈백 색상만 ○○로, 나머지 전부 유지&rdquo;</b>라고 적으세요<br />
+                ③ 참조는 최소한만 — <b>많이 붙일수록 원본이 흐려집니다</b>
+              </div>
+            )}
+
             {/* base 역할이 있으면: 무엇을 바꿀지 */}
             {hasBaseUpload && (
               <div className="mt-2 p-2.5 rounded-lg" style={{ background: 'var(--accent-soft)' }}>
@@ -951,6 +970,14 @@ export default function CreateStudio(p: Props) {
                    hint="우리가 실제로 만든 썸네일 컷에서 포즈·앵글만 가져옵니다. 다른 색 컷도 쓸 수 있고, 제품·컬러는 위 선택이 적용됩니다.">
             {!product && (
               <div className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>먼저 제품을 고르세요.</div>
+            )}
+            {/* 제품 단독 작업 안내 — 잠그지 않고 문구로 알린다 (사용자 확정 UX) */}
+            {product && (
+              <div className="text-[11px] px-2 py-1.5 rounded-[8px] mb-1"
+                   style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--warn)' }}>
+                ⚠ 제품 컷으로만(모델 없이) 진행하실 땐 포즈를 선택하지 않고 <b>자동</b>으로 진행해주세요 —
+                포즈는 인물이 앉는 방식이라, 제품 단독 컷은 확정 대표 컷이 자동 기준이 됩니다.
+              </div>
             )}
             {product && (
               <>
@@ -1610,7 +1637,7 @@ ${hint}` : hint))}>
           </div>
           {engine === 'gpt' && (
             <div className="text-[10px] px-1" style={{ color: 'var(--text-mute)' }}>
-              gpt-image-1 · 최대 1536px (POP/인쇄용 없음)
+              gpt-image-1 · 최대 1536px (POP/인쇄용 없음) · 제품 형태·로고·씬 합성 부정확 — 정밀 컷은 제미나이
             </div>
           )}
           {/* GPT 는 참조 조건화가 느슨해 전속 모델 얼굴이 유지되지 않는다 (실측) — 고르면 미리 경고 */}

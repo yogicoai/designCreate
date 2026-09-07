@@ -1101,33 +1101,19 @@ export default function DesignEditor(p: Props) {
           ) : !selLayer ? (
             <div>
               <div className="label mb-1.5">배경 (사진)</div>
+              {/*
+               * 크기 = 비율 유지 확대/축소 하나로 통일 (사용자 확정 — "가로/세로 늘림이 아니라
+               * 비율대로"). 축별 스트레치(zoomX/zoomY)는 데이터로는 남아 저장본 호환되지만
+               * 슬라이더는 뺐다 — 필요하면 캔버스의 좌우/상하 핸들이 그 역할을 한다.
+               */}
               <div className={row}>
-                <span {...lbl}>크기</span>
+                <span {...lbl}>크기 (비율)</span>
                 <input className="flex-1" type="range"
                        min={fit.mode === 'cover' ? 1 : 0.2} max={3} step={0.02}
                        value={bgZoom}
                        onChange={(e) => patchFit({ zoom: Number(e.target.value) })} />
                 <span className="text-[10.5px] tabular-nums w-[38px] text-right" style={{ color: 'var(--text-dim)' }}>
                   {Math.round(bgZoom * 100)}%
-                </span>
-              </div>
-              {/* Ctrl+T 자유 변형 — 가로/세로를 따로 늘리거나 줄인다 */}
-              <div className={row}>
-                <span {...lbl}>가로 늘림</span>
-                <input className="flex-1" type="range" min={0.3} max={2.5} step={0.02}
-                       value={fit.zoomX ?? 1}
-                       onChange={(e) => { const v = Number(e.target.value); patchFit({ zoomX: v === 1 ? undefined : v }); }} />
-                <span className="text-[10.5px] tabular-nums w-[38px] text-right" style={{ color: 'var(--text-dim)' }}>
-                  {Math.round((fit.zoomX ?? 1) * 100)}%
-                </span>
-              </div>
-              <div className={row}>
-                <span {...lbl}>세로 늘림</span>
-                <input className="flex-1" type="range" min={0.3} max={2.5} step={0.02}
-                       value={fit.zoomY ?? 1}
-                       onChange={(e) => { const v = Number(e.target.value); patchFit({ zoomY: v === 1 ? undefined : v }); }} />
-                <span className="text-[10.5px] tabular-nums w-[38px] text-right" style={{ color: 'var(--text-dim)' }}>
-                  {Math.round((fit.zoomY ?? 1) * 100)}%
                 </span>
               </div>
               <div className={row}>

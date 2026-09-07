@@ -338,7 +338,14 @@ export async function POST(req: Request) {
        * 사진 참조 없이 텍스트만으로 형태를 지시하면 제품이 다른 물건으로 나온다 —
        * 이 프로젝트에서 확인된 가장 큰 품질 요인이다.
        */
-      const views: { angle: string; url: string; colorMatched: boolean }[] = [];
+      const views: { angle: string; url: string; colorMatched: boolean; canonical?: boolean }[] = [];
+      /*
+       * 대표(캐노니컬) 컷 — 형태·로고까지 확정한 마스터 렌더 (드롭·팟·라운저·피라미드).
+       * 어떤 컬러를 고르든 항상 1순위 앵커로 들어간다 — "우리가 지정한 제품컷이 정답"
+       * (사용자 확정). 색은 텍스트(hex)가, 조명은 씬이 다시 정한다.
+       */
+      const canonicalUrl: string | null = doc.shapeViews?.canonical ? (doc.shapeViews?.views?.front ?? null) : null;
+      if (canonicalUrl) views.push({ angle: 'front', url: canonicalUrl, colorMatched: false, canonical: true });
       let viewSrc: Record<string, string> | undefined = col?.views;
       let colorMatched = true;
       if (!viewSrc || !Object.keys(viewSrc).length) {
@@ -352,7 +359,7 @@ export async function POST(req: Request) {
       if (viewSrc) {
         for (const a of wantedAngles) {
           if (views.length >= viewsPerProduct) break;
-          if (viewSrc[a]) views.push({ angle: a, url: viewSrc[a], colorMatched });
+          if (viewSrc[a] && viewSrc[a] !== canonicalUrl) views.push({ angle: a, url: viewSrc[a], colorMatched });
         }
       }
 

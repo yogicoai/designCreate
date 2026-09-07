@@ -104,7 +104,8 @@ export interface ProductSpec {
    * 공식 제품 뷰 (360에서 뽑은 단일 각도 실사) — 형태·비례 앵커의 정본.
    * colorMatched=false 면 같은 라인의 다른 색 뷰(형태만 참고, 색은 스와치가 잡는다).
    */
-  views?: { angle: string; url: string; colorMatched: boolean }[];
+  /** canonical = 확정 대표(마스터) 컷 — 다른 참조와 충돌 시 이긴다 */
+  views?: { angle: string; url: string; colorMatched: boolean; canonical?: boolean }[];
   /** 화면상 위치 — 'left' | 'centre' | 'right' | 'back' 등. 다중 배치에서 색·형태를 못박는다 */
   placement?: string;
 }
@@ -224,7 +225,11 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
       title: `${spec.baseCut.usage === 'pose' ? '포즈 소스' : '베이스 컷'} · ${spec.baseCut.line} ${spec.baseCut.colorName}`,
       url: spec.baseCut.url,
       role: spec.baseCut.usage === 'pose'
-        ? 'a POSE reference from our own approved catalogue — copy ONLY the body pose, limb placement, camera angle, framing and how the fabric compresses under the body. Do NOT copy its product colour, its model identity or its outfit; those are specified separately below'
+        ? (spec.talents?.length
+          /* 인물 있음 — 몸이 가라앉는 방식까지가 포즈다 */
+          ? 'a POSE reference from our own approved catalogue — copy ONLY the body pose, limb placement, camera angle, framing and how the fabric compresses under the body. Do NOT copy its product colour, its model identity or its outfit; those are specified separately below'
+          /* 제품 단독 — 눌림을 복사하면 빈 제품이 눌린 채 나온다 (실측: 초코 드롭 주름 사고) */
+          : 'a POSE reference from our own approved catalogue — copy ONLY the camera angle, framing and where the product sits in frame. Do NOT copy its product colour, and do NOT copy its compression or dents: the product in THIS image is unoccupied, so it stays fully inflated and taut regardless of how the reference looks')
         : 'the base photograph — reproduce its camera angle, pose, product shape and compression, lighting and framing exactly',
     });
   }
@@ -342,11 +347,17 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
     for (const { p, v } of (spec.products ?? []).flatMap((p) => (p.views ?? []).map((v) => ({ p, v })))) {
       slots.push({
         kind: 'product',
-        title: `제품 뷰 · ${p.line}${p.placement ? `(${p.placement})` : ''} ${v.angle}${v.colorMatched ? '' : ' 형태만'}`,
+        title: `제품 뷰 · ${p.line}${p.placement ? `(${p.placement})` : ''} ${v.angle}${v.canonical ? ' 대표' : v.colorMatched ? '' : ' 형태만'}`,
         url: v.url,
         role: (() => {
           const who = `the Yogibo ${p.line}${p.placement ? ` ${wherePhrase(p.placement)}` : ''}`;
           const angle = ANGLE_EN[v.angle] ?? v.angle;
+          // 대표(마스터) 컷 — 형태·볼륨·태그까지 확정본. 다른 참조와 싸우면 이게 이긴다
+          if (v.canonical) {
+            return `the APPROVED MASTER photograph of ${who} — the definitive look of this product. Reproduce its ` +
+              'exact shape, proportions, plumpness and its small white brand tag. Repaint it to the colour specified ' +
+              'in the text and re-light it for this scene; if ANY other reference disagrees with this photograph, THIS ONE WINS';
+          }
           return v.colorMatched
             ? `an official product photograph of ${who}, seen from the ${angle} — reproduce this exact three-dimensional shape, proportions and smooth seamless cover`
             : `an official product photograph of ${who}, seen from the ${angle} — it is shown in a different colour, so take ONLY the shape and proportions; the colour is specified in the text`;
@@ -461,7 +472,17 @@ function compositionFor(spec: GenerationSpec): string {
       'dominate the frame or crop the product.'
     : ' THE PRODUCT IS THE HERO of this frame. Shoot it like an editorial interior photograph: the ' +
       'camera stands back far enough that the bean bag is fully visible with breathing room around it.';
+  /*
+   * 배경/베이스가 있는 "씬 합성"에서는 썸네일 구도의 "프레임을 채워라"가
+   * 가구 잣대(SCALE FROM THE ROOM)와 정면충돌해 제품을 뻥튀기했다 (실측 — GPT 라운저+팟 컷).
+   * 씬이면 채우기 대신 "방 안 실측 크기"를 구도가 다시 한 번 말한다.
+   */
+  const inScene = hasBaseImg
+    || (spec.uploadedRefs ?? []).some((u) => u.role === 'background');
   if (spec.mode === 'thumbnail') {
+    if (inScene) {
+      return `INTERIOR SCENE (${width}x${height}). ${SUBJ.charAt(0).toUpperCase() + SUBJ.slice(1)} stand at TRUE physical scale inside the photographed room — modest within the space, with generous floor and room visible around them. Do NOT enlarge the products to fill the frame; the room's furniture sets their size.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
+    }
     if (r >= 1.3) {
       return `WIDE PRODUCT SHOT (${width}x${height}). Centre ${SUBJ}; keep generous even margin on both sides.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
     }
@@ -1009,7 +1030,14 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
       'product. Reproduce its wordmark ONLY if it can be rendered cleanly and ' +
       'legibly at the size it occupies in this frame. If the tag is too small for the letterforms to hold their shape, ' +
       'render the tag BLANK instead, with no lettering at all. Never output distorted, misspelled, mirrored or ' +
-      'invented lettering: a garbled logo is worse than a clean blank tag.',
+      'invented lettering: a garbled logo is worse than a clean blank tag. ' +
+      /*
+       * 태그 실측 크기 고정 — 제품이 프레임에서 작아져도 태그가 같이 안 줄고
+       * 커 보이는 사고 (사용자 확인, 초코 드롭 씬). 실물 비례를 숫자로 박는다.
+       */
+      'THE TAG IS TINY IN REAL LIFE: about 5x3cm — roughly 1/15 of the product\'s width. It must scale WITH the ' +
+      'product: when the product is small in frame the tag is proportionally smaller still. An oversized tag that ' +
+      'reads like a label or poster on the fabric is WRONG.',
   );
 
   return L.join('\n');

@@ -88,20 +88,26 @@ export async function colorSwatch(hex: string): Promise<InlineImage> {
   return { mimeType: 'image/png', data: buf.toString('base64') };
 }
 
-/** 429 본문에서 재시도 대기시간과 일일 소진 여부를 읽는다 (구글은 헤더가 아니라 본문에 넣어준다) */
-export function readQuotaHint(body: string): { retryDelay?: string; daily: boolean } {
+/** 429 본문에서 재시도 대기시간과 소진 종류를 읽는다 (구글은 헤더가 아니라 본문에 넣어준다) */
+export function readQuotaHint(body: string): { retryDelay?: string; daily: boolean; billing: boolean } {
   try {
-    const parsed = JSON.parse(body) as { error?: { details?: Record<string, unknown>[] } };
+    const parsed = JSON.parse(body) as { error?: { message?: string; details?: Record<string, unknown>[] } };
     const details = parsed.error?.details ?? [];
     const typeOf = (d: Record<string, unknown>) => String(d['@type'] ?? '');
     const retryInfo = details.find((d) => typeOf(d).endsWith('RetryInfo'));
     const retryDelay = typeof retryInfo?.retryDelay === 'string' ? retryInfo.retryDelay : undefined;
+    /*
+     * 이용료(빌링/플랜) 한도 초과 — "You exceeded your current quota, please check
+     * your plan and billing details" 류. 분당 몰림과 달리 기다려도 소용없는데,
+     * daily 판정에만 안 걸려서 "몰렸습니다"로 오분류되던 사고 (사용자 실측).
+     */
+    const billing = /exceeded your current quota|check your plan|billing/i.test(parsed.error?.message ?? '');
     const quota = details.find((d) => typeOf(d).endsWith('QuotaFailure'));
     const violations = (quota?.violations ?? []) as Record<string, unknown>[];
     const daily = violations.some((v) => /per\s*day|perday/i.test(`${v.quotaId ?? ''} ${v.quotaMetric ?? ''}`));
-    return { retryDelay, daily };
+    return { retryDelay, daily, billing };
   } catch {
-    return { daily: false };
+    return { daily: false, billing: false };
   }
 }
 
@@ -196,13 +202,15 @@ export async function generateImage(input: GenerateInput): Promise<GenerateResul
       if (res.status === 429) {
         const hint = readQuotaHint(text);
         const err = new GeminiError(
-          hint.daily
-            ? '오늘 생성 가능한 이미지 수를 모두 사용했습니다. 내일 다시 시도하거나 결제 설정을 확인해주세요.'
-            : '생성 요청이 한꺼번에 몰렸습니다. 잠시 뒤 다시 시도합니다.',
+          hint.billing
+            ? '제미나이 이용 한도(크레딧)를 초과해 이미지 생성이 불가합니다. Google AI 결제·한도를 충전/상향한 뒤 다시 시도해주세요.'
+            : hint.daily
+              ? '오늘 생성 가능한 이미지 수를 모두 사용해 생성이 불가합니다. 내일 다시 시도하거나 결제 한도를 충전해주세요.'
+              : '생성 요청이 한꺼번에 몰렸습니다. 잠시 뒤 다시 시도합니다.',
           429,
         );
         err.retryAfter = res.headers.get('retry-after') ?? hint.retryDelay ?? null;
-        err.quotaExhausted = hint.daily;
+        err.quotaExhausted = hint.daily || hint.billing;   // 둘 다 기다려도 소용없다 — 재시도 중단
         throw err;
       }
       const err = new GeminiError(`Gemini 호출 실패 (HTTP ${res.status}): ${text.slice(0, 300)}`, res.status);
