@@ -1242,8 +1242,16 @@ ${c.spec}`}
                             <div key={o.code} className="text-center shrink-0" style={{ width: 66 }}>
                               <button onClick={() => setOutfit(o.code)} title={`${o.code} · ${o.desc}`}
                                       className="rounded-lg overflow-hidden border block" style={{ width: 66, height: 86, padding: 0, background: 'var(--surface)', ...sel(on) }}>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={o.imageUrl} alt={o.desc} loading="lazy" className="w-full h-full object-cover object-top" />
+                                {o.imageUrl ? (
+                                  /* eslint-disable-next-line @next/next/no-img-element */
+                                  <img src={o.imageUrl} alt={o.desc} loading="lazy" className="w-full h-full object-cover object-top" />
+                                ) : (
+                                  /* 전속 모델 화면에서 사진 없이 글로만 등록한 의상 — 프롬프트 문장으로 들어간다 */
+                                  <div className="w-full h-full flex items-center justify-center text-[8.5px] px-1 text-center leading-tight"
+                                       style={{ color: 'var(--text-mute)' }}>
+                                    글로만<br />지정
+                                  </div>
+                                )}
                               </button>
                               <div className="text-[9px] mt-0.5 truncate" style={{ color: on ? 'var(--accent)' : 'var(--text-mute)' }}>{o.desc}</div>
                             </div>
@@ -1774,6 +1782,28 @@ ${hint}` : hint))}>
                   <button key={c.value} className="chip"
                           style={libCat === c.value ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
                           onClick={() => { setLibCat(c.value); setLibSub(''); setLibPage(1); }}>{c.label} ({n})</button>
+                );
+              })}
+              {/*
+                고른 전속 모델의 레퍼런스로 한 번에 — 모델컷 분류 안에서 그 모델(sub)만 남긴다.
+                자산관리 > 레퍼런스에서 [모델 지정] 으로 묶어둔 사진들이 여기 걸린다.
+              */}
+              {picks.map((pk) => {
+                const t = p.talents.find((x) => x.code === pk.code);
+                const label = t ? `${t.category}${t.slot ?? ''}` : '';
+                const n = label ? library.filter((r) => refCatOf(r.category) === 'model' && r.sub === label).length : 0;
+                if (!label || !n) return null;
+                const on = libCat === 'model' && libSub === label;
+                return (
+                  <button key={pk.code} className="chip"
+                          title={`${label} 레퍼런스만 보기 (${n}장)`}
+                          onClick={() => {
+                            if (on) { setLibCat(''); setLibSub(''); } else { setLibCat('model'); setLibSub(label); }
+                            setLibPage(1);
+                          }}
+                          style={on ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                    ☺ {label} 레퍼런스 ({n})
+                  </button>
                 );
               })}
               <input value={libSearch} onChange={(e) => { setLibSearch(e.target.value); setLibPage(1); }} placeholder="이름 검색"

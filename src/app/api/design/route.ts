@@ -367,8 +367,19 @@ async function prepareBase(design: Pick<DesignDoc, 'imageUrl' | 'size' | 'fit'>)
   let buf = raw;
   const W = design.size?.w ?? srcW;
   const H = design.size?.h ?? srcH;
-  if (W !== srcW || H !== srcH) {
-    buf = await fitToSize(buf, W, H, design.fit ?? { mode: 'cover', fx: 0.5, fy: 0.5 });
+  /*
+   * 원본이 캔버스와 같은 크기여도 변형이 걸려 있으면 반드시 다시 굽는다.
+   * 예전에는 크기가 같으면 통째로 건너뛰어서, 화면에서 확대·이동·보정한 배경이
+   * 저장본에는 하나도 반영되지 않았다 (사용자 확인: 미리보기와 화면이 다름).
+   */
+  const f = design.fit;
+  const transformed = !!f && (
+    (f.zoom ?? 1) !== 1 || (f.zoomX ?? 1) !== 1 || (f.zoomY ?? 1) !== 1 ||
+    (f.panX ?? 0) !== 0 || (f.panY ?? 0) !== 0 ||
+    f.fx !== 0.5 || f.fy !== 0.5 || f.mode !== 'cover' || !!f.adjust
+  );
+  if (W !== srcW || H !== srcH || transformed) {
+    buf = await fitToSize(buf, W, H, f ?? { mode: 'cover', fx: 0.5, fy: 0.5 });
   }
   return { buf, W, H, srcW, srcH };
 }
@@ -381,7 +392,7 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       templates: docs.map((d) => ({
-        id: String(d._id), name: d.name, design: d.design,
+        id: String(d._id), name: d.name, design: d.design, thumb: d.thumb ?? null,
         updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : null,
       })),
     });
@@ -584,7 +595,7 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   try {
-    const body = (await req.json()) as { id?: string; name?: string; design?: DesignDoc };
+    const body = (await req.json()) as { id?: string; name?: string; design?: DesignDoc; thumb?: string };
     const name = String(body.name || '').trim();
     if (!name || !body.design) {
       return NextResponse.json({ ok: false, error: '이름과 디자인이 필요합니다.' }, { status: 400 });
@@ -594,12 +605,15 @@ export async function PUT(req: Request) {
     const now = new Date();
     // 템플릿은 배경 없이 배치만 저장한다 — 다른 컷에도 얹을 수 있어야 한다
     const design = { ...body.design, imageUrl: '' };
+    // 미리보기 썸네일 — 이름만으론 어떤 배치인지 못 고른다. 200KB 넘는 값은 버린다
+    const thumb = typeof body.thumb === 'string' && body.thumb.startsWith('data:image/') && body.thumb.length < 200_000
+      ? body.thumb : undefined;
     if (body.id) {
       const { ObjectId } = await import('mongodb');
-      await col.updateOne({ _id: new ObjectId(body.id) as never }, { $set: { name, design, updatedAt: now } });
+      await col.updateOne({ _id: new ObjectId(body.id) as never }, { $set: { name, design, updatedAt: now, ...(thumb ? { thumb } : {}) } });
       return NextResponse.json({ ok: true, id: body.id });
     }
-    const ins = await col.insertOne({ name, design, createdAt: now, updatedAt: now });
+    const ins = await col.insertOne({ name, design, createdAt: now, updatedAt: now, ...(thumb ? { thumb } : {}) });
     return NextResponse.json({ ok: true, id: String(ins.insertedId) });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });

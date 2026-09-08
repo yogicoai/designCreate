@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import Zoomable from '@/components/Zoomable';
+import TalentOutfits from '@/components/TalentOutfits';
 import { getTalents, getCuts, getExpressions } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
@@ -148,26 +149,14 @@ export default async function TalentsPage() {
                     </div>
                   )}
 
-                  {t.outfits.length > 0 && (
-                    <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--line)' }}>
-                      <div className="label mb-2">의상 컨셉 — 다른 모델 의상을 쓰면 안 됩니다</div>
-                      <div className="flex flex-wrap gap-2.5">
-                        {t.outfits.map((o) => (
-                          <div key={o.code} className="text-center">
-                            <Zoomable
-                              src={o.imageUrl}
-                              alt={o.desc}
-                              caption={`${cat} ${t.slot} · ${o.code} — ${o.desc}`}
-                              className="w-[92px] rounded-lg border object-cover"
-                              style={{ aspectRatio: '3/4', borderColor: 'var(--line-strong)', background: 'var(--surface-2)' }}
-                            />
-                            <div className="text-[9.5px] mt-1 font-mono" style={{ color: 'var(--accent)' }}>{o.code}</div>
-                            <div className="text-[9.5px] w-[92px] leading-tight" style={{ color: 'var(--text-mute)' }}>{o.desc}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {/* 의상 컨셉 — 여기서 직접 추가/수정하면 생성 화면의 '의상' 줄에 바로 반영된다 */}
+                  <TalentOutfits
+                    talentCode={t.code}
+                    label={`${cat} ${t.slot}`}
+                    category={cat}
+                    initial={t.outfits ?? []}
+                  />
+
                 </div>
               );
             })}

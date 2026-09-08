@@ -46,7 +46,9 @@ const CATEGORY_OPTIONS: { value: string; label: string; desc: string }[] = [
   { value: 'model', label: '모델컷', desc: '전속 모델 인물 컷 — 포즈·표정·연출 레퍼런스' },
 ];
 
-export default function ReferencesManager({ initial }: { initial: ReferenceDoc[] }) {
+export default function ReferencesManager(
+  { initial, talents = [] }: { initial: ReferenceDoc[]; talents?: { code: string; label: string }[] },
+) {
   const [items, setItems] = useState<ReferenceDoc[]>(initial);
   /*
    * 목록 불러오기 — 3단 구조로 "두 번째부터는 기다림 없음"을 만든다.
@@ -138,9 +140,9 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
    * 여러 장 고른 뒤 한 번에 실행한다 (사용자 요청: 클릭했을 때만 선택 동그라미).
    */
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [selectMode, setSelectMode] = useState<null | 'move' | 'delete'>(null);
+  const [selectMode, setSelectMode] = useState<null | 'move' | 'delete' | 'model'>(null);
 
-  function enterMode(m: 'move' | 'delete') {
+  function enterMode(m: 'move' | 'delete' | 'model') {
     setSelectMode(m);
     setSelected(new Set());
   }
@@ -287,6 +289,30 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
       }
     }
     setNote(`${ok}개를 ${cat ? (CATEGORY_KR[cat] ?? cat) : '미지정'}(으)로 이동했습니다.`);
+    exitMode();
+  }
+
+  /**
+   * 선택 항목에 전속 모델을 붙인다 — 하위 분류(sub)에 모델 이름을 넣는 방식이라
+   * 목록의 하위 칩과 생성 화면의 보관함 필터가 그대로 동작한다.
+   */
+  async function bulkModel(label: string) {
+    const urls = [...selected];
+    if (!urls.length) { setNote('먼저 ○ 를 눌러 항목을 선택하세요.'); return; }
+    let ok = 0;
+    for (const url of urls) {
+      const res = await fetch('/api/references', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url, sub: label || null, ...(label ? { category: 'model' } : {}) }),
+      });
+      if ((await res.json()).ok) {
+        ok++;
+        setItems((cur) => cur.map((x) => (x.url === url
+          ? { ...x, sub: label || null, ...(label ? { category: 'model' } : {}) } : x)));
+      }
+    }
+    setNote(label ? `${ok}개를 '${label}' 모델 레퍼런스로 지정했습니다.` : `${ok}개의 모델 지정을 해제했습니다.`);
     exitMode();
   }
 
@@ -470,10 +496,10 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
         <div className="flex items-center gap-1.5 flex-wrap mb-3 p-2 rounded-[10px]"
              style={{ background: 'var(--accent-soft)', border: '1px solid var(--accent)' }}>
           <b className="text-[12px] mr-1" style={{ color: 'var(--accent)' }}>
-            {selectMode === 'move' ? '분류 이동' : '삭제'} · {selected.size}개 선택
+            {selectMode === 'move' ? '분류 이동' : selectMode === 'model' ? '모델 지정' : '삭제'} · {selected.size}개 선택
           </b>
           <span className="text-[11px]" style={{ color: 'var(--text-dim)' }}>
-            사진의 ○ 를 눌러 항목을 고르세요{selectMode === 'move' ? ' — 그 다음 이동할 분류 클릭:' : ''}
+            사진의 ○ 를 눌러 항목을 고르세요{selectMode === 'move' ? ' — 그 다음 이동할 분류 클릭:' : selectMode === 'model' ? ' — 그 다음 모델 클릭:' : ''}
           </span>
           {selectMode === 'move' && (
             <>
@@ -481,6 +507,15 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
                 <button key={c.value} className="chip" title={c.desc} onClick={() => bulkCategory(c.value)}>{c.label}</button>
               ))}
               <button className="chip" onClick={() => bulkCategory('')}>미지정</button>
+            </>
+          )}
+          {selectMode === 'model' && (
+            <>
+              {talents.map((t) => (
+                <button key={t.code} className="chip" onClick={() => bulkModel(t.label)}
+                        title={`${t.label} 레퍼런스로 묶기 (분류는 모델컷으로 바뀝니다)`}>{t.label}</button>
+              ))}
+              <button className="chip" onClick={() => bulkModel('')}>지정 해제</button>
             </>
           )}
           {selectMode === 'delete' && (
@@ -529,6 +564,10 @@ export default function ReferencesManager({ initial }: { initial: ReferenceDoc[]
             {!selectMode && (
               <>
                 <button className="chip" onClick={() => enterMode('move')}>분류 이동</button>
+                {talents.length > 0 && (
+                  <button className="chip" onClick={() => enterMode('model')}
+                          title="선택한 사진을 특정 전속 모델의 레퍼런스로 묶습니다">모델 지정</button>
+                )}
                 <button className="chip" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
                         onClick={() => enterMode('delete')}>삭제</button>
               </>

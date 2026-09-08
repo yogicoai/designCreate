@@ -131,6 +131,10 @@ export default function DesignEditor(p: Props) {
     fy: p.base.fit?.fy ?? 0.5,
     ...(p.base.fit?.fillColor ? { fillColor: p.base.fit.fillColor } : {}),
     ...(p.base.fit?.zoom ? { zoom: p.base.fit.zoom } : {}),
+    ...(p.base.fit?.zoomX ? { zoomX: p.base.fit.zoomX } : {}),
+    ...(p.base.fit?.zoomY ? { zoomY: p.base.fit.zoomY } : {}),
+    ...(p.base.fit?.panX ? { panX: p.base.fit.panX } : {}),
+    ...(p.base.fit?.panY ? { panY: p.base.fit.panY } : {}),
     ...(p.base.fit?.adjust ? { adjust: p.base.fit.adjust } : {}),
   });
   const [localFonts, setLocalFonts] = useState<string[]>([]);
@@ -179,6 +183,12 @@ export default function DesignEditor(p: Props) {
   const viewRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  /**
+   * 파일 선택이 채울 대상 레이어 — 빈 이미지 칸을 두 번 눌러 고르거나 "교체…" 로 왔을 때.
+   * null 이면 새 이미지 레이어를 만든다 (툴바의 🖼 이미지).
+   */
+  const fillTargetRef = useRef<string | null>(null);
+  function pickImageFor(id: string | null) { fillTargetRef.current = id; fileRef.current?.click(); }
   const editRef = useRef<HTMLTextAreaElement>(null);
 
   // ── 실행취소 — 조작 시작 때 스냅샷을 잡아두고, 끝날 때 확정한다 ──
@@ -255,8 +265,9 @@ export default function DesignEditor(p: Props) {
   const bgZY = Math.max(0.15, Math.min(4, fit.zoomY ?? 1));
   const bgW = nat.w * bgBaseK * bgZoom * bgZX;   // 캔버스 px 단위
   const bgH = nat.h * bgBaseK * bgZoom * bgZY;
-  const bgLeft = fit.fx * (W - bgW);
-  const bgTop = fit.fy * (H - bgH);
+  // 여백 안 이동 + 캔버스 밖으로 민 이동(pan) — 서버 렌더(design-fit)와 같은 식
+  const bgLeft = fit.fx * (W - bgW) + (fit.panX ?? 0) * W;
+  const bgTop = fit.fy * (H - bgH) + (fit.panY ?? 0) * H;
   const adjFilter = fit.adjust
     ? `brightness(${fit.adjust.brightness ?? 1}) contrast(${fit.adjust.contrast ?? 1}) saturate(${fit.adjust.saturate ?? 1})`
     : '';
@@ -552,7 +563,7 @@ export default function DesignEditor(p: Props) {
         if (k === 'r') { e.preventDefault(); addRect('rect'); return; }
         if (k === 'o') { e.preventDefault(); addRect('ellipse'); return; }
         if (k === 'u') { e.preventDefault(); addIcon(); return; }
-        if (k === 'p') { e.preventDefault(); fileRef.current?.click(); return; }
+        if (k === 'p') { e.preventDefault(); pickImageFor(null); return; }
         if (k === 'b') { e.preventDefault(); setTool((t) => (t === 'brush' ? 'select' : 'brush')); return; }
         if (k === 'v') { e.preventDefault(); setTool('select'); return; }
       }
@@ -612,10 +623,25 @@ export default function DesignEditor(p: Props) {
       const r = await fetch('/api/upload', { method: 'POST', body: fd });
       const j = await r.json();
       if (!j.ok) { setErr(j.error || '업로드 실패'); return; }
-      addLayer({
-        id: uid(), kind: 'image', src: j.url, srcAspect: (j.width && j.height) ? j.width / j.height : 1,
-        x: 0.5, y: 0.5, w: 0.25, color: '#fff', opacity: 1,
-      });
+      const aspect = (j.width && j.height) ? j.width / j.height : 1;
+      const target = fillTargetRef.current;
+      fillTargetRef.current = null;
+      if (target && layers.some((x) => x.id === target)) {
+        // 빈 칸(또는 기존 이미지)을 그 자리·크기 그대로 채운다 — 칸은 고정, 사진만 들어간다
+        apply((cur) => cur.map((x) => (x.id === target
+          ? {
+              ...x, kind: 'image' as const, src: j.url, srcAspect: aspect,
+              cover: x.cover ?? true, srcFx: 0.5, srcFy: 0.5, srcZoom: 1,
+              name: x.name?.startsWith('우측 이미지') ? '우측 이미지' : x.name,
+            }
+          : x)));
+        selectOnly(target);
+      } else {
+        addLayer({
+          id: uid(), kind: 'image', src: j.url, srcAspect: aspect,
+          x: 0.5, y: 0.5, w: 0.25, color: '#fff', opacity: 1,
+        });
+      }
     } catch (e) { setErr((e as Error).message); } finally {
       setBusy(null);
       if (fileRef.current) fileRef.current.value = '';
@@ -756,7 +782,7 @@ export default function DesignEditor(p: Props) {
         <button className="chip" title="사각형 추가" onClick={() => addRect('rect')}>▭ 사각형</button>
         <button className="chip" title="원 추가" onClick={() => addRect('ellipse')}>○ 원</button>
         <button className="chip" title="아이콘 추가" onClick={addIcon}>★ 아이콘</button>
-        <button className="chip" title="이미지(로고·뱃지) 추가 (P)" onClick={() => fileRef.current?.click()} disabled={busy === 'upload'}>
+        <button className="chip" title="이미지(로고·뱃지) 추가 (P)" onClick={() => pickImageFor(null)} disabled={busy === 'upload'}>
           {busy === 'upload' ? '올리는 중…' : '🖼 이미지'}
         </button>
         {BRUSH_ENABLED && (
@@ -909,7 +935,15 @@ export default function DesignEditor(p: Props) {
                    const pt = stagePoint(e);
                    for (let i = layers.length - 1; i >= 0; i--) {
                      const l = layers[i];
-                     if (l.kind === 'text' && !l.hidden && !l.locked && hit(l, pt.x, pt.y, W, H)) { setEditing(l.id); return; }
+                     if (l.hidden || l.locked || !hit(l, pt.x, pt.y, W, H)) continue;
+                     if (l.kind === 'text') { setEditing(l.id); return; }
+                     // 아직 사진이 없는 이미지 칸 — 두 번 누르면 바로 사진 고르기
+                     if (l.kind === 'rect' && l.name?.startsWith('우측 이미지 자리')) {
+                       selectOnly(l.id); pickImageFor(l.id); return;
+                     }
+                     // 이미지·도형은 두 번 누르면 오른쪽 설정(크기 등)으로 — 선택만 해주면 패널이 그 레이어로 바뀐다
+                     selectOnly(l.id);
+                     return;
                    }
                  }}
                  className="relative select-none"
@@ -941,13 +975,16 @@ export default function DesignEditor(p: Props) {
               {/* 블러/모자이크 영역 미리보기 — backdrop-filter 로 근사 (저장은 서버가 정확히 굽는다) */}
               {layers.map((l) => {
                 if (l.kind !== 'blurpatch' || l.hidden) return null;
-                const b = bboxOf(l, W, H);
                 const st = l.strength ?? 0.5;
                 const blurPx = l.effect === 'mosaic' ? 6 + st * 10 : 4 + st * 18;
+                // 회전까지 그대로 — bbox 로 그리면 기울여도 화면에선 똑바로 서 보였다 (서버 렌더와 불일치)
+                const pw = (l.w ?? 0.3) * stW, ph = (l.h ?? 0.2) * stH;
                 return (
                   <div key={l.id} className="absolute pointer-events-none flex items-center justify-center"
                        style={{
-                         left: b.x * stW, top: b.y * stH, width: b.w * stW, height: b.h * stH,
+                         left: (l.x ?? 0.5) * stW - pw / 2, top: (l.y ?? 0.5) * stH - ph / 2,
+                         width: pw, height: ph,
+                         ...(l.rotate ? { transform: `rotate(${l.rotate}deg)` } : {}),
                          backdropFilter: `blur(${blurPx}px)`, WebkitBackdropFilter: `blur(${blurPx}px)`,
                          outline: '1px dashed rgba(255,255,255,.55)',
                        }}>
@@ -1150,7 +1187,7 @@ export default function DesignEditor(p: Props) {
                 </div>
               ))}
               <button className="btn w-full text-[11px] mb-3"
-                      onClick={() => patchFit({ zoom: undefined, zoomX: undefined, zoomY: undefined, fx: 0.5, fy: 0.5, adjust: undefined })}>
+                      onClick={() => patchFit({ zoom: undefined, zoomX: undefined, zoomY: undefined, panX: undefined, panY: undefined, fx: 0.5, fy: 0.5, adjust: undefined })}>
                 배경 원래대로
               </button>
 
@@ -1409,10 +1446,58 @@ export default function DesignEditor(p: Props) {
                            onChange={(e) => patchSel({ h: Number(e.target.value) }, true)}
                            onPointerDown={begin} onPointerUp={commit} />
                   </div>
+                  {/* 수치로도 — 슬라이더로는 정확히 못 맞춘다 (캔버스 대비 %) */}
+                  <div className={row}>
+                    <span {...lbl}>수치</span>
+                    <input type="number" min={3} max={150} step={1} value={Math.round(num(selLayer.w, 0.25) * 100)}
+                           title="가로 크기 (캔버스 폭 대비 %)"
+                           onChange={(e) => {
+                             const v = Math.max(3, Math.min(150, Number(e.target.value) || 25)) / 100;
+                             const keep = selLayer.h == null;   // 원본 비율이면 세로는 자동
+                             patchSel(keep ? { w: v } : { w: v, h: (selLayer.h ?? 0) * (v / num(selLayer.w, 0.25)) });
+                           }}
+                           className={inputCls} style={{ ...inputStyle, width: 62 }} />
+                    <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>% 가로</span>
+                  </div>
+                  {/* 슬롯형(cover) 이미지 — 칸은 그대로 두고 안의 사진만 확대·이동한다 */}
+                  {selLayer.cover && (
+                    <>
+                      <div className={row}>
+                        <span {...lbl}>안쪽 확대</span>
+                        <input className="flex-1" type="range" min={0.4} max={3} step={0.02}
+                               value={selLayer.srcZoom ?? 1}
+                               onChange={(e) => patchSel({ srcZoom: Number(e.target.value) }, true)}
+                               onPointerDown={begin} onPointerUp={commit} />
+                        <span className="text-[10.5px] tabular-nums w-[38px] text-right" style={{ color: 'var(--text-dim)' }}>
+                          {Math.round((selLayer.srcZoom ?? 1) * 100)}%
+                        </span>
+                      </div>
+                      <div className={row}>
+                        <span {...lbl}>보이는 곳 ↔</span>
+                        <input className="flex-1" type="range" min={-0.5} max={1.5} step={0.02}
+                               value={selLayer.srcFx ?? 0.5}
+                               onChange={(e) => patchSel({ srcFx: Number(e.target.value) }, true)}
+                               onPointerDown={begin} onPointerUp={commit} />
+                      </div>
+                      <div className={row}>
+                        <span {...lbl}>보이는 곳 ↕</span>
+                        <input className="flex-1" type="range" min={-0.5} max={1.5} step={0.02}
+                               value={selLayer.srcFy ?? 0.5}
+                               onChange={(e) => patchSel({ srcFy: Number(e.target.value) }, true)}
+                               onPointerDown={begin} onPointerUp={commit} />
+                      </div>
+                      <div className="text-[10px] mb-1" style={{ color: 'var(--text-mute)' }}>
+                        칸 크기는 그대로 두고 안의 사진만 움직입니다 — 넘치는 부분은 잘립니다.
+                      </div>
+                    </>
+                  )}
                   <div className="flex gap-1.5">
                     <button className="btn flex-1 text-[12px]" onClick={() => patchSel({ h: undefined })}
                             title="비율 무시 스트레치를 풀고 원본 비율로">원본 비율</button>
-                    <button className="btn flex-1 text-[12px]" onClick={() => fileRef.current?.click()}>교체…</button>
+                    <button className="btn flex-1 text-[12px]"
+                            onClick={() => patchSel({ srcZoom: undefined, srcFx: undefined, srcFy: undefined })}
+                            title="안쪽 확대·위치를 기본으로">안쪽 초기화</button>
+                    <button className="btn flex-1 text-[12px]" onClick={() => pickImageFor(selLayer.id)}>교체…</button>
                   </div>
                 </>
               )}

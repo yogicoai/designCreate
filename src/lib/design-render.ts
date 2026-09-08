@@ -94,6 +94,11 @@ export interface DesignLayer {
    */
   srcFx?: number;
   srcFy?: number;
+  /**
+   * cover 슬롯 안에서 그림만 확대/축소 (1 = 슬롯을 꼭 채우는 기본 크기).
+   * 슬롯의 위치·크기는 그대로라 넘치는 부분은 잘린다 (overflow: hidden 과 같다).
+   */
+  srcZoom?: number;
 
   /** 이 레이어만 다른 글꼴 — 없으면 배너 전체 글꼴(design.font)을 따른다 */
   font?: string;
@@ -147,6 +152,12 @@ export interface DesignDoc {
    */
   fit?: {
     mode: 'cover' | 'blur' | 'color' | 'gradient'; fx: number; fy: number; fillColor?: string; zoom?: number;
+    /**
+     * 캔버스 폭·높이 대비 추가 이동 (−1~1). fx/fy 는 "잘리는 여백 안에서" 만 움직여서
+     * 여백이 없으면 한 발도 못 민다 — 그때도 옆으로 밀 수 있게 별도로 더하는 값이다.
+     * 밀어낸 자리는 바탕(blur·color 모드면 그 바탕, cover 면 검정)이 드러난다.
+     */
+    panX?: number; panY?: number;
     /** 배경 가로/세로 개별 배율 (Ctrl+T 자유 변형) — zoom 위에 곱해진다. 1=변형 없음 */
     zoomX?: number;
     zoomY?: number;
@@ -314,10 +325,13 @@ export function renderLayersToSvg(
       if (l.cover && l.srcAspect) {
         const a = l.srcAspect;
         const wide = w / h > a;
-        const iw = wide ? w : h * a;
-        const ih = wide ? w / a : h;
-        const fx = Math.max(0, Math.min(1, l.srcFx ?? 0.5));
-        const fy = Math.max(0, Math.min(1, l.srcFy ?? 0.5));
+        const z = Math.max(0.2, Math.min(6, l.srcZoom ?? 1));   // 슬롯은 그대로, 그림만 확대
+        const iw = (wide ? w : h * a) * z;
+        const ih = (wide ? w / a : h) * z;
+        // 0~1 은 "슬롯을 꽉 채우는" 범위. 그 밖(-1~2)까지 허용해서 그림을 슬롯 밖으로 밀 수 있게 한다
+        // — 원본의 왼쪽만 쓰고 싶을 때처럼. 밀어낸 자리는 배경이 그대로 비친다.
+        const fx = Math.max(-1, Math.min(2, l.srcFx ?? 0.5));
+        const fy = Math.max(-1, Math.min(2, l.srcFy ?? 0.5));
         const ix = x - (iw - w) * fx;
         const iy = y - (ih - h) * fy;
         const cid = `imgclip${i}`;

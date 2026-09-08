@@ -27,7 +27,7 @@ import { thumbUrl } from '@/lib/thumb';
  */
 
 interface CutOption { id: string; url: string; label: string }
-interface SavedTemplate { id: string; name: string; design: DesignDoc; updatedAt: string | null }
+interface SavedTemplate { id: string; name: string; design: DesignDoc; updatedAt: string | null; thumb?: string | null }
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -218,6 +218,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   const [layers, setLayers] = useState<DesignLayer[]>(initial?.layers ?? []);
   const [selected, setSelected] = useState<string | null>(null);
   const [templates, setTemplates] = useState<SavedTemplate[]>([]);
+  /** 내 템플릿 드롭다운 열림 — 칩이 줄줄이 늘어지지 않게 접어둔다 */
+  const [tplOpen, setTplOpen] = useState(false);
   const [busy, setBusy] = useState<'auto' | 'save' | 'tpl' | 'upload' | null>(null);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
@@ -237,7 +239,9 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
       }
     | null
   >(null);
-  const [tweakOpen, setTweakOpen] = useState(false);
+  const [tweakOpen, setTweakOpen] = useState(true);
+  /** 규격 단계 — 기본은 접어둔다 (대개 기본 규격을 그대로 쓰고, 배치·문구가 먼저다) */
+  const [sizeOpen, setSizeOpen] = useState(false);
   // 배경 전체보기 게시판 — 생성 컷을 20개씩 페이지로 넘겨 고른다.
   // A안 웹의 우측 이미지도 같은 게시판에서 고른다 (browseFor 로 어느 자리에 넣을지 구분)
   const [browseOpen, setBrowseOpen] = useState(false);
@@ -265,6 +269,9 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   // 포토샵 방식에서 만지는 배경 변형(확대)·보정 — 템플릿 방식에선 기본값 그대로다
   const [fitZoom, setFitZoom] = useState(initial?.fit?.zoom ?? 1);
   const [fitZoomX, setFitZoomX] = useState(initial?.fit?.zoomX ?? 1);
+  /** 배경을 캔버스 밖까지 미는 이동량 (폭·높이 대비 비율) — 잘릴 여백이 없어도 움직인다 */
+  const [fitPanX, setFitPanX] = useState(initial?.fit?.panX ?? 0);
+  const [fitPanY, setFitPanY] = useState(initial?.fit?.panY ?? 0);
   const [fitZoomY, setFitZoomY] = useState(initial?.fit?.zoomY ?? 1);
   const [fitAdjust, setFitAdjust] = useState<NonNullable<DesignDoc['fit']>['adjust']>(initial?.fit?.adjust);
   /*
@@ -306,7 +313,9 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   const stageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
   /** 배경 이미지 자체를 끄는 중 — 기본 템플릿에서도 이미지를 잡아 위치(fx/fy)를 옮긴다 */
-  const bgDragRef = useRef<{ sx: number; sy: number; fx0: number; fy0: number } | null>(null);
+  const bgDragRef = useRef<{ sx: number; sy: number; fx0: number; fy0: number; px0: number; py0: number; pan: boolean } | null>(null);
+  /** 이미지 칸(우측 이미지 등) 안에서 끌 때 — 그 칸의 사진만 움직인다 (배경이 아니라) */
+  const imgPanRef = useRef<{ id: string; sx: number; sy: number; fx0: number; fy0: number } | null>(null);
   /** 이미지 더블클릭으로 여는 배경 크기 패널 (무대 상단에 뜬다) */
   const [bgTune, setBgTune] = useState(false);
 
@@ -351,8 +360,10 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
     ...(fitZoom !== 1 ? { zoom: fitZoom } : {}),
     ...(fitZoomX !== 1 ? { zoomX: fitZoomX } : {}),
     ...(fitZoomY !== 1 ? { zoomY: fitZoomY } : {}),
+    ...(fitPanX ? { panX: fitPanX } : {}),
+    ...(fitPanY ? { panY: fitPanY } : {}),
     ...(fitAdjust ? { adjust: fitAdjust } : {}),
-  }), [fitMode, fx, fy, fillColor, fitZoom, fitZoomX, fitZoomY, fitAdjust]);
+  }), [fitMode, fx, fy, fillColor, fitZoom, fitZoomX, fitZoomY, fitPanX, fitPanY, fitAdjust]);
 
   const design: DesignDoc = useMemo(
     () => ({ imageUrl, layers, size: { id: sizeId || undefined, w: dims.w, h: dims.h }, fit, font: fontFamily || undefined }),
@@ -395,6 +406,48 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
     });
   }
 
+  /**
+   * 저장해둔 배경 상태를 무대에 되돌린다.
+   * 크기(zoom)·밀기(pan)·늘림·보정까지 전부 — 이걸 빠뜨리면 웹에서 키운 배경이
+   * 모바일 탭에도 그대로 남아 "한쪽만 바꿔도 둘 다 바뀐다" 가 된다 (사용자 확인).
+   */
+  function applyFit(f: NonNullable<DesignDoc['fit']>) {
+    setFitMode(f.mode);
+    setFx(f.fx); setFy(f.fy);
+    if (f.fillColor) setFillColor(f.fillColor);
+    setFitZoom(f.zoom ?? 1);
+    setFitZoomX(f.zoomX ?? 1);
+    setFitZoomY(f.zoomY ?? 1);
+    setFitPanX(f.panX ?? 0);
+    setFitPanY(f.panY ?? 0);
+    setFitAdjust(f.adjust);
+  }
+
+  /** '모든 설정 초기화' 한 번 더 묻기 — 실수로 눌러 배치가 날아가지 않게 */
+  const [resetArm, setResetArm] = useState(false);
+  /**
+   * 이 버전의 손댄 설정을 처음 상태로 — 배경 변형(크기·밀기·늘림·보정)과 색 테마,
+   * 문구 크기·줄간격을 되돌리고 배치는 지금 고른 시안으로 다시 깐다.
+   * 되돌리기(↩) 로 복구되므로 한 번 더 묻기만 하고 바로 실행한다.
+   */
+  function resetAll() {
+    snapUndo();
+    setFitMode('cover');
+    setFx(0.5); setFy(0.5);
+    setFitZoom(1); setFitZoomX(1); setFitZoomY(1);
+    setFitPanX(0); setFitPanY(0);
+    setFitAdjust(undefined);
+    setThemeId('dark');
+    setTuneScale(1); setTuneGap(1);
+    setSelected(null); setPanelClosedFor(null); setBgTune(false);
+    if (stageIsTemplateA()) applyPlan('A');
+    else if (stageIsTemplateB()) applyPlan('B');
+    else setLayers([]);
+    setResult(null);
+    setResetArm(false);
+    setNote('모든 설정을 처음 상태로 되돌렸습니다. (↩ 이전 작업으로 로 복구 가능)');
+  }
+
   /** 무대에 있는 버전을 보관함에 내려둔다 */
   function stashActive() {
     if (!sizeId || !layers.length) return;
@@ -432,22 +485,20 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
     const stored = variants[sid];
     applyingFocus.current = true;                        // 규격 변경으로 자동 재배치가 돌아 덮지 않게
     setSizeId(sid);
+    setUndoDepth((undoRef.current[sid] ?? []).length);    // 되돌리기도 버전마다 따로다
     setFocusTouched(true);
     setSelected(null);
     setResult(null);
     if (stored) {
       setLayers(stored.layers);
-      setFitMode(stored.fit.mode);
-      setFx(stored.fit.fx);
-      setFy(stored.fit.fy);
-      if (stored.fit.fillColor) setFillColor(stored.fit.fillColor);
+      applyFit(stored.fit);
       return;
     }
     setBusy('auto'); setErr('');
     try {
       const got = await fetchAutoFor(sid);
       setLayers(got.layers);
-      if (got.fit) { setFitMode(got.fit.mode); setFx(got.fit.fx); setFy(got.fit.fy); }
+      if (got.fit) applyFit(got.fit);
       setVariants((v) => ({ ...v, [sid]: got }));
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
@@ -536,6 +587,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
    * (사용자 확인: 모바일이 이전 배치로 저장됨). 시안 버튼 = "이 짝은 이 시안이다" 선언.
    */
   function applyPlan(plan: 'A' | 'B', style?: 'scrim' | 'band') {
+    snapUndo();
     const st = style ?? mobStyle;
     if (style) setMobStyle(style);
     const make = (w: number, h: number) =>
@@ -546,9 +598,10 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
       if (sid === sizeId) continue;
       const b = findSize(sid);
       const pseeds = make(b.w, b.h);
-      setVariants((v) => ({ ...v, [sid]: { layers: pseeds, fit } }));
+      // 배경 상태는 버전마다 따로 — 이미 잡아둔 게 있으면 그대로 둔다
+      setVariants((v) => ({ ...v, [sid]: { layers: pseeds, fit: v[sid]?.fit ?? fit } }));
     }
-    setSelected(seeds.find((l) => l.name === '타이틀')?.id ?? seeds[0].id);
+    setSelected(null);   // 깔자마자 아무것도 선택하지 않는다 — 크기 패널이 먼저 뜨면 화면을 가린다
     setResult(null);
     if (plan === 'B') {
       setNote('B안 배치를 올렸습니다 — 이미지 한 장 + 중앙정렬 문구. 짝 버전에도 B안이 같이 깔렸습니다.');
@@ -562,6 +615,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
 
   /** A안 우측 이미지를 정한다 — 무대에 A안이 있으면 자리표시(회색)든 기존 것이든 바꿔 끼운다 */
   function setRightImage(url: string, aspect?: number) {
+    snapUndo();
     setRightImg(url);
     setRightAspect(aspect);
     setLayers((cur) => cur.map((l) => (l.name?.startsWith('우측 이미지')
@@ -624,7 +678,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
       opacity: 1,
     }));
     setLayers([...decs, ...txts]);
-    setSelected(txts[0]?.id ?? null);
+    setSelected(null);   // 자동 배치도 마찬가지 — 손대는 순간에만 패널이 뜬다
     setResult(null);
   }
 
@@ -634,6 +688,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
     if (!st) return;
     const l = layers.find((x) => x.id === id);
     if (!l) return;
+    snapUndo();
     const r = st.getBoundingClientRect();
     dragRef.current = { id, dx: (e.clientX - r.left) / r.width - l.x, dy: (e.clientY - r.top) / r.height - l.y };
     setSelected(id);
@@ -651,12 +706,61 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   const [sizePct, setSizePct] = useState(100);
   /** 100% 기준이 되는 레이어 id — 렌더에서 ref 를 읽지 않으려고 상태로 둔다 */
   const [sizeBaseId, setSizeBaseId] = useState<string | null>(null);
+  /** X 로 접어둔 레이어 id — 다른 레이어를 고르면 패널이 다시 뜬다 */
+  const [panelClosedFor, setPanelClosedFor] = useState<string | null>(null);
+  /*
+   * 이전 작업으로 돌아가기 — 조작을 시작하는 지점(시안 적용·이동·크기·이미지 교체 등)에서
+   * 그 직전 배치를 최대 20단계까지 쌓아둔다. 슬라이더를 연속으로 움직여도 한 번만 쌓이도록
+   * "조작 시작"에서만 부른다.
+   */
+  type UndoStep = { layers: DesignLayer[]; fit: NonNullable<DesignDoc['fit']> };
+  /*
+   * 버전(규격)마다 따로 쌓는다 — 웹에서 한 작업을 모바일에서 되돌리면 엉뚱한 배치가 올라온다.
+   * 배경 변형(fit)도 함께 담아, 크기·위치를 만진 것도 같이 되짚는다.
+   */
+  const undoRef = useRef<Record<string, UndoStep[]>>({});
+  const [undoDepth, setUndoDepth] = useState(0);
+  const undoKey = () => sizeId || '__free';
+  function snapUndo() {
+    const k = undoKey();
+    const cur = undoRef.current[k] ?? [];
+    undoRef.current = { ...undoRef.current, [k]: [...cur.slice(-19), { layers, fit }] };
+    setUndoDepth(undoRef.current[k].length);
+  }
+  function undoLast() {
+    const k = undoKey();
+    const cur = [...(undoRef.current[k] ?? [])];
+    const prev = cur.pop();
+    undoRef.current = { ...undoRef.current, [k]: cur };
+    setUndoDepth(cur.length);
+    if (!prev) return;
+    setLayers(prev.layers);
+    applyFit(prev.fit);
+    setSelected(null);
+    setResult(null);
+    setNote('이전 작업으로 되돌렸습니다. (이 버전에만 적용됩니다)');
+  }
   const sizeBaseRef = useRef<{ id: string; base: DesignLayer } | null>(null);
-  const shownPct = sizeBaseId === selected ? sizePct : 100;
+  const shownPct = sizeBaseId === selected
+    ? sizePct
+    : (sel?.kind === 'image' && sel.cover ? Math.round((sel.srcZoom ?? 1) * 100) : 100);
   function applySizePct(pct: number) {
     const l = layers.find((x) => x.id === selected);
     if (!l) return;
+    /*
+     * cover 이미지 슬롯(A안 우측 이미지 등)은 최종 자리·크기가 고정이다.
+     * 그래서 여기서는 슬롯을 키우지 않고 그 안의 그림만 확대한다 — 넘치면 잘린다.
+     */
+    if (l.kind === 'image' && l.cover) {
+      const v = Math.max(20, Math.min(400, Math.round(pct)));
+      if (sizeBaseId !== l.id) { snapUndo(); setSizeBaseId(l.id); }
+      setSizePct(v);
+      patch(l.id, { srcZoom: v / 100 });
+      setResult(null);
+      return;
+    }
     if (sizeBaseRef.current?.id !== l.id) {
+      snapUndo();
       sizeBaseRef.current = { id: l.id, base: { ...l, points: l.points ? [...l.points] : undefined } };
       setSizeBaseId(l.id);
     }
@@ -668,6 +772,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   }
 
   function onScaleDown(e: React.PointerEvent, id: string) {
+    snapUndo();
     const st = stageRef.current;
     const l = layers.find((x) => x.id === id);
     if (!st || !l) return;
@@ -685,22 +790,90 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   /** 무대에서 이미지(빈 곳 포함)를 잡아 끌면 배경 위치가 움직인다 — cover 크롭에서 남는 축만 */
   function onBgDown(e: React.PointerEvent) {
     // 레이어 손잡이를 잡았으면(자식에서 dragRef 세팅됨) 배경은 건드리지 않는다
-    if (dragRef.current || !imageUrl || fitMode !== 'cover' || !stageRef.current) return;
-    const k = Math.max(dims.w / src.w, dims.h / src.h) * Math.max(1, fitZoom);
-    if (src.w * k - dims.w <= 1 && src.h * k - dims.h <= 1) return; // 크롭이 없으면 움직일 것도 없다
+    if (dragRef.current || !imageUrl || !stageRef.current) return;
+    /*
+     * 캔버스 밖으로 밀어내기(pan)는 A안·B안 배치에서만 연다 (사용자 지정).
+     * 그 외 배치에서는 예전 그대로 — 잘리는 여백이 없으면 아예 잡히지 않는다.
+     */
+    /*
+     * 이미지 칸(cover) 위를 눌렀으면 배경이 아니라 그 칸의 사진을 민다 —
+     * 화면에서 보이는 대로 "누른 그림이 움직인다" 가 맞다 (사용자 지정).
+     */
+    {
+      const r0 = stageRef.current.getBoundingClientRect();
+      const nx = (e.clientX - r0.left) / r0.width, ny = (e.clientY - r0.top) / r0.height;
+      const hit = [...layers].reverse().find((l) =>
+        l.kind === 'image' && l.cover && !l.hidden && l.src
+        && Math.abs(nx - (l.x ?? 0.5)) <= (l.w ?? 0) / 2
+        && Math.abs(ny - (l.y ?? 0.5)) <= (l.h ?? (l.srcAspect ? (l.w ?? 0.2) * dims.w / l.srcAspect / dims.h : 0.2)) / 2);
+      if (hit) {
+        snapUndo();
+        setSelected(hit.id);
+        imgPanRef.current = { id: hit.id, sx: nx, sy: ny, fx0: hit.srcFx ?? 0.5, fy0: hit.srcFy ?? 0.5 };
+        (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+        return;
+      }
+    }
+    const panAllowed = stageIsTemplateA() || stageIsTemplateB();
+    if (!panAllowed) {
+      const k = Math.max(dims.w / src.w, dims.h / src.h) * Math.max(0.4, Math.min(4, fitZoom));
+      if (src.w * k - dims.w <= 1 && src.h * k - dims.h <= 1) return;
+    }
     const r = stageRef.current.getBoundingClientRect();
-    bgDragRef.current = { sx: (e.clientX - r.left) / r.width, sy: (e.clientY - r.top) / r.height, fx0: fx, fy0: fy };
+    bgDragRef.current = {
+      sx: (e.clientX - r.left) / r.width, sy: (e.clientY - r.top) / r.height,
+      fx0: fx, fy0: fy, px0: fitPanX, py0: fitPanY, pan: panAllowed,
+    };
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
   }
 
   function onMove(e: React.PointerEvent) {
+    // 이미지 칸 안에서 끄는 중 — 칸은 그대로, 안의 사진만 민다 (넘치는 부분은 잘린다)
+    const im = imgPanRef.current;
+    if (im && stageRef.current) {
+      const l = layers.find((x) => x.id === im.id);
+      if (l) {
+        const r = stageRef.current.getBoundingClientRect();
+        const w = (l.w ?? 0.2) * dims.w;
+        const h = l.h != null ? l.h * dims.h : (l.srcAspect ? w / l.srcAspect : 0.2 * dims.h);
+        const a = l.srcAspect ?? 1;
+        const z = Math.max(0.2, Math.min(6, l.srcZoom ?? 1));
+        const wide = w / h > a;
+        const iw = (wide ? w : h * a) * z;
+        const ih = (wide ? w / a : h) * z;
+        const dnx = ((e.clientX - r.left) / r.width - im.sx) * dims.w;   // 캔버스 px 이동량
+        const dny = ((e.clientY - r.top) / r.height - im.sy) * dims.h;
+        const ovX = iw - w, ovY = ih - h;
+        const cl = (v: number) => Math.max(-0.5, Math.min(1.5, v));
+        /*
+         * 넘칠 때(ov>0)는 "보이는 부분"을 고르는 것이고, 칸보다 작을 때(ov<0)는
+         * 칸 안에서 사진의 자리를 잡는 것이다 — 부호가 반대일 뿐 식은 같아서 절댓값으로 판단한다.
+         */
+        patch(im.id, {
+          srcFx: Math.abs(ovX) > 1 ? cl(im.fx0 - dnx / ovX) : im.fx0,
+          srcFy: Math.abs(ovY) > 1 ? cl(im.fy0 - dny / ovY) : im.fy0,
+        });
+        setResult(null);
+      }
+      return;
+    }
     // 비율 유지 크기 조절 — 오른쪽·아래로 끌면 커지고, 반대로 끌면 상하좌우가 같이 줄어든다
     const sc = scaleRef.current;
     if (sc && stageRef.current) {
       const r = stageRef.current.getBoundingClientRect();
       const dn = ((e.clientX - r.left) / r.width - sc.sx) + ((e.clientY - r.top) / r.height - sc.sy);
       const k = Math.max(0.15, Math.min(5, 1 + dn * 1.6));
-      setLayers((cur) => cur.map((l) => (l.id === sc.id ? { ...scaledFrom(sc.start, k), id: l.id } : l)));
+      setLayers((cur) => cur.map((l) => {
+        if (l.id !== sc.id) return l;
+        /*
+         * 이미지 칸(cover)은 최종 자리·크기가 고정이다 — 손잡이로 끌어도 칸을 키우지 않고
+         * 안의 사진만 확대·축소한다 (넘치면 잘림). 칸까지 커지면 옆 영역을 침범한다.
+         */
+        if (l.kind === 'image' && l.cover) {
+          return { ...l, srcZoom: Math.max(0.2, Math.min(6, (sc.start.srcZoom ?? 1) * k)) };
+        }
+        return { ...scaledFrom(sc.start, k), id: l.id };
+      }));
       setResult(null);
       return;
     }
@@ -708,12 +881,46 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
     if (b && !dragRef.current && stageRef.current) {
       // 포인터가 끈 만큼 이미지가 따라온다 — 숨어 있는 폭/높이 대비 비율로 환산
       const r = stageRef.current.getBoundingClientRect();
-      const k = Math.max(dims.w / src.w, dims.h / src.h) * Math.max(1, fitZoom);
-      const hidW = src.w * k - dims.w, hidH = src.h * k - dims.h;
+      const zoom = Math.max(0.4, Math.min(4, fitZoom));   // cover 도 40% 까지 줄일 수 있다
+      const baseK = fitMode === 'cover'
+        ? Math.max(dims.w / src.w, dims.h / src.h)
+        : Math.min(dims.w / src.w, dims.h / src.h);
+      const fgW = src.w * baseK * zoom * Math.max(0.15, Math.min(4, fitZoomX));
+      const fgH = src.h * baseK * zoom * Math.max(0.15, Math.min(4, fitZoomY));
       const dnx = (e.clientX - r.left) / r.width - b.sx;
       const dny = (e.clientY - r.top) / r.height - b.sy;
-      if (hidW > 1) { setFx(Math.max(0, Math.min(1, b.fx0 - (dnx * dims.w) / hidW))); setFocusTouched(true); }
-      if (hidH > 1) { setFy(Math.max(0, Math.min(1, b.fy0 - (dny * dims.h) / hidH))); setFocusTouched(true); }
+      /*
+       * 사진의 왼쪽 끝 위치(px) 를 기준으로 계산한다.
+       *   먼저 "잘리는 여백" 안(fx/fy)에서 움직이고, 그 끝을 넘어가면 나머지를 pan 이 받는다.
+       *   → 여백이 있을 땐 예전처럼 빈틈 없이 슬라이드, 여백이 없거나 다 쓰면 밖으로 밀린다.
+       */
+      const slide = (axis: 'x' | 'y') => {
+        const size = axis === 'x' ? dims.w : dims.h;
+        const fgSize = axis === 'x' ? fgW : fgH;
+        const f0 = axis === 'x' ? b.fx0 : b.fy0;
+        const p0 = axis === 'x' ? b.px0 : b.py0;
+        const dn = axis === 'x' ? dnx : dny;
+        const span = size - fgSize;                       // cover 면 음수(=잘리는 여백)
+        const wantRaw = f0 * span + p0 * size + dn * size;   // 옮기고 싶은 위치(px)
+        /*
+         * 사진이 화면에서 통째로 사라지지는 않게 막는다 (사용자 지정) —
+         * 어느 방향으로 밀어도 캔버스의 최소 30% 는 사진이 덮고 있어야 한다.
+         */
+        const minVis = size * 0.3;
+        const want = b.pan
+          ? Math.max(minVis - fgSize, Math.min(size - minVis, wantRaw))
+          : wantRaw;
+        const lo = Math.min(0, span), hi = Math.max(0, span);
+        const within = Math.max(lo, Math.min(hi, want));  // 여백 안에서 가능한 만큼
+        const f = Math.abs(span) > 0.5 ? within / span : f0;
+        // A안·B안이 아니면 여백 밖으로는 안 나간다 (pan 을 0 으로 눌러 둔다)
+        const p = b.pan ? Math.max(-1.2, Math.min(1.2, (want - within) / size)) : 0;
+        return { f: Math.max(0, Math.min(1, f)), p };
+      };
+      const X = slide('x'), Y = slide('y');
+      setFx(X.f); setFitPanX(X.p);
+      setFy(Y.f); setFitPanY(Y.p);
+      setFocusTouched(true);
       setResult(null);
       return;
     }
@@ -736,7 +943,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
       return cur.map((l) => (groupOf(l) === g ? { ...l, x: l.x + ddx, y: l.y + ddy } : l));
     });
   }
-  const onUp = () => { dragRef.current = null; bgDragRef.current = null; scaleRef.current = null; };
+  const onUp = () => { dragRef.current = null; bgDragRef.current = null; scaleRef.current = null; imgPanRef.current = null; };
 
   /**
    * 자동 배치 — 규격의 비율을 보고, 배경에서 비어 있는 곳에 읽히는 색으로 얹는다.
@@ -879,8 +1086,9 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
         const texts = Object.fromEntries(
           layers.filter((l) => l.kind === 'text' && l.name).map((l) => [l.name as string, l.text ?? '']),
         );
-        if (stageIsTemplateA()) doc = { layers: templateASeeds(b.w, b.h, texts, mobStyle), fit };
-        else if (stageIsTemplateB()) doc = { layers: templateBSeeds(b.w, b.h, texts), fit };
+        const pairFit = variants[sid]?.fit ?? fit;   // 그 버전이 갖고 있던 배경 상태 우선
+        if (stageIsTemplateA()) doc = { layers: templateASeeds(b.w, b.h, texts, mobStyle), fit: pairFit };
+        else if (stageIsTemplateB()) doc = { layers: templateBSeeds(b.w, b.h, texts), fit: pairFit };
         else doc = await fetchAutoFor(sid);
         const filled = doc;
         setVariants((v) => ({ ...v, [sid]: filled }));
@@ -958,15 +1166,68 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   /** 모바일 A안 하단 처리 — 그늘형(Luxe, 사진 위 그라데이션) / 밴드형(Modju, 단색 블록) */
   const [mobStyle, setMobStyle] = useState<'scrim' | 'band'>('scrim');
   const [tplName, setTplName] = useState('');
+  /** dataURI 를 가로 max 픽셀로 줄인 JPEG dataURI 로 — 템플릿 썸네일용 */
+  async function shrinkDataUrl(dataUrl: string, max: number): Promise<string | undefined> {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const k = Math.min(1, max / (img.naturalWidth || max));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round((img.naturalWidth || max) * k));
+        c.height = Math.max(1, Math.round((img.naturalHeight || max) * k));
+        const ctx = c.getContext('2d');
+        if (!ctx) return resolve(undefined);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.7));
+      };
+      img.onerror = () => resolve(undefined);
+      img.src = dataUrl;
+    });
+  }
+
+  /** 저장해둔 배치를 지금 컷에 올린다 — 배경은 그대로, 문구·도형만 갈아 끼운다 */
+  function applySavedTemplate(t: SavedTemplate) {
+    snapUndo();
+    setLayers(t.design.layers.map((l) => ({ ...l, id: uid() })));
+    setSelected(null);
+    setResult(null);
+    setNote(`템플릿 "${t.name}" 배치를 올렸습니다 — 문구만 고쳐 쓰면 됩니다.`);
+  }
+
+  /** 템플릿 삭제 — 목록에서만 지운다 (지금 무대의 배치는 그대로) */
+  async function removeSavedTemplate(t: SavedTemplate) {
+    setBusy('tpl');
+    try {
+      const j = await (await fetch('/api/design', {
+        method: 'DELETE', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: t.id }),
+      })).json();
+      if (j.ok) { setNote(`템플릿 "${t.name}" 을 지웠습니다.`); loadTemplates(); }
+      else setErr(j.error || '삭제 실패');
+    } finally { setBusy(null); }
+  }
+
   async function saveTemplate() {
     const name = tplName.trim();
     if (!name) { setTplNaming(true); return; }
     setTplNaming(false); setTplName('');
     setBusy('tpl');
     try {
+      /*
+       * 썸네일 — 이름만으론 어떤 배치인지 못 고른다. 지금 화면을 그대로 한 장 구워
+       * 캔버스로 240px 까지 줄여 담는다 (원본 미리보기는 수백 KB 라 그대로는 못 넣는다).
+       */
+      let thumb: string | undefined;
+      try {
+        const pv = await (await fetch('/api/design', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ design, save: false }),
+        })).json();
+        if (pv?.ok && pv.preview) thumb = await shrinkDataUrl(pv.preview, 240);
+      } catch { /* 썸네일은 없어도 저장은 된다 */ }
       const r = await fetch('/api/design', {
         method: 'PUT', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, design }),
+        body: JSON.stringify({ name, design, ...(thumb ? { thumb } : {}) }),
       });
       const j = await r.json();
       if (j.ok) { setNote(`템플릿 "${name}" 저장됨`); loadTemplates(); }
@@ -991,12 +1252,31 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   const [focusTick, setFocusTick] = useState(0);
   useEffect(() => {
     if (!focusTick) return;
-    inspectorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    // 목록 바로 아래에 펴지므로 화면을 옮기지 않는다 — 필요한 만큼만 살짝 보이게
+    inspectorRef.current?.scrollIntoView({ block: 'nearest' });
     textRef.current?.focus();
     textRef.current?.select?.();
   }, [focusTick]);
 
+  /** 우측 이미지 고르기 팝업 (직접 올리기·레퍼런스·생성 컷) */
+  function openRightPicker() {
+    setBrowseFor('right');
+    setBrowsePage(0);
+    setBrowseOpen(true);
+  }
+
+  /** 아직 사진이 없는 "우측 이미지 자리"(회색 칸)를 가리키는 좌표인가 */
+  function placeholderAt(nx: number, ny: number) {
+    return layers.find((l) =>
+      l.kind === 'rect' && l.name?.startsWith('우측 이미지 자리')
+      && Math.abs(nx - (l.x ?? 0.5)) <= (l.w ?? 0) / 2
+      && Math.abs(ny - (l.y ?? 0.5)) <= (l.h ?? 0) / 2);
+  }
+
   function openInspector(id: string) {
+    // 빈 이미지 칸은 속성 편집이 아니라 "사진 고르기" 가 하고 싶은 일이다
+    const l = layers.find((x) => x.id === id);
+    if (l?.kind === 'rect' && l.name?.startsWith('우측 이미지 자리')) { openRightPicker(); return; }
     setSelected(id);
     setFocusTick((n) => n + 1);
   }
@@ -1041,9 +1321,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   /*
    * 선택한 것을 고치는 자리.
    *
-   * 오른쪽 열 맨 위에 둔다. 아래쪽에 있으면 무대에서 뭔가를 고른 뒤
-   * 한참 스크롤해야 해서, 고르는 곳과 고치는 곳이 멀어진다.
-   * 무대에서 두 번 누르면 여기로 와서 곧바로 문구를 고칠 수 있다.
+   * "화면에 올라간 요소" 목록 바로 아래에 편다 — 고른 자리에서 그대로 고치는 게
+   * 자연스럽고, 맨 위로 올라가면 화면이 튀어 어디를 보고 있었는지 놓친다.
    */
   const inspector = !sel ? null : (
     <div ref={inspectorRef} className="card p-3 mb-3" style={{ borderColor: 'var(--accent-dim)' }}>
@@ -1202,7 +1481,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
     ? `brightness(${fitAdjust.brightness ?? 1}) contrast(${fitAdjust.contrast ?? 1}) saturate(${fitAdjust.saturate ?? 1})`
     : '';
   const bgImgStyle: React.CSSProperties = (() => {
-    if (fitZoom === 1 && fitZoomX === 1 && fitZoomY === 1) {
+    if (fitZoom === 1 && fitZoomX === 1 && fitZoomY === 1 && !fitPanX && !fitPanY) {   // 변형이 하나도 없을 때만 빠른 경로
       return {
         inset: 0, width: '100%', height: '100%',
         objectFit: needsFit && fitMode !== 'cover' ? 'contain' : 'cover',
@@ -1210,7 +1489,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
         ...(adjFilter ? { filter: adjFilter } : {}),
       };
     }
-    const zoom = fitMode === 'cover' ? Math.max(1, fitZoom) : Math.max(0.15, Math.min(4, fitZoom));
+    const zoom = Math.max(0.4, Math.min(4, fitZoom));   // cover 도 40% 까지 줄일 수 있다
     const baseK = fitMode === 'cover'
       ? Math.max(dims.w / src.w, dims.h / src.h)
       : Math.min(dims.w / src.w, dims.h / src.h);
@@ -1219,7 +1498,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
     const fgH = src.h * k * Math.max(0.15, Math.min(4, fitZoomY));
     return {
       width: `${(fgW / dims.w) * 100}%`, height: `${(fgH / dims.h) * 100}%`,
-      left: `${(fx * (dims.w - fgW)) / dims.w * 100}%`, top: `${(fy * (dims.h - fgH)) / dims.h * 100}%`,
+      left: `${((fx * (dims.w - fgW)) / dims.w + fitPanX) * 100}%`,
+      top: `${((fy * (dims.h - fgH)) / dims.h + fitPanY) * 100}%`,
       maxWidth: 'none',
       ...(adjFilter ? { filter: adjFilter } : {}),
     };
@@ -1307,6 +1587,11 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
                     title="피그마·포토샵처럼 레이어를 직접 만지는 전체 화면 편집기 — 텍스트·도형·아이콘·이미지 추가, 드래그·회전·그림자, PC 폰트, Ctrl+Z. 만진 레이어는 돌아와도 유지됩니다.">
               🎨 포토샵 방식
             </button>
+            {/* 되돌리기 — 방금 한 조작을 한 단계씩 되짚는다 (최대 20단계) */}
+            <button className="btn" onClick={undoLast} disabled={!undoDepth}
+                    title={undoDepth ? `이전 작업으로 되돌립니다 (남은 단계 ${undoDepth})` : '되돌릴 작업이 없습니다'}>
+              ↩ 이전 작업으로{undoDepth ? ` (${undoDepth})` : ''}
+            </button>
             <button className="btn btn-primary" onClick={() => saveBoth(true)} disabled={!!busy || !layers.length || !imageUrl}
                     title={`${autoSetText} 두 버전을 함께 그려 보여드리고, 확인하면 둘 다 저장됩니다. 아직 안 만든 버전은 같은 배치·문구로 채워집니다.`}>
               {busy === 'save' ? '그리는 중…' : '✔ 완성 · 저장'}
@@ -1319,9 +1604,10 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
             <b>완성 · 저장</b> = {channel}용 두 규격({autoSetText})을 나란히 보여드리고, 확인하면 함께 저장됩니다.
             아직 안 다듬은 버전은 지금 배치·문구로 자동으로 채워집니다.
           </div>
-          {channel === '자사몰' && (
+          {(
             <div className="flex gap-1.5 mb-2 items-center flex-wrap">
-              <span className="label">기본 시안</span>
+              <span className="label">배치 고르기</span>
+              {channel === '자사몰' && (<>
               {/* 선택된 시안만 칠한다 — 둘 다 칠해두면 뭐가 골라졌는지 안 보인다 (사용자 피드백) */}
               <button className="chip" onClick={() => applyTemplateA()} disabled={!!busy}
                       title="디자인팀 실물 실측 — 웹: 좌 60% 문구+우 40% 이미지 / 모바일: 하단 그늘 + 문구 3줄"
@@ -1338,7 +1624,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
                 <>
                   <button className="chip"
                           title="직접 올리기 / 레퍼런스 보관함 / 생성 컷에서 고릅니다"
-                          onClick={() => { setBrowseFor('right'); setBrowsePage(0); setBrowseOpen(true); }}
+                          onClick={openRightPicker}
                           style={rightImg ? {} : { borderColor: 'var(--warn)', color: 'var(--warn)' }}>
                     {rightImg ? '우측 이미지 바꾸기' : '＋ 우측 이미지 추가하기'}
                   </button>
@@ -1363,10 +1649,100 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
                   </button>
                 </>
               )}
+              </>)}
+              <span className="mx-0.5" style={{ color: 'var(--line-strong)' }}>|</span>
+              {/*
+                내 템플릿 — 저장해둔 배치를 같은 층위에서 고른다. 개수가 늘면 칩이 줄줄이
+                늘어지므로 접어두고, 열면 썸네일로 무엇인지 바로 알아보게 한다.
+              */}
+              <span className="relative inline-flex items-center">
+                <button className="chip" onClick={() => setTplOpen((v) => !v)} disabled={!!busy}
+                        title="저장해둔 배치를 골라 지금 컷에 올립니다">
+                  📁 내 템플릿{templates.length ? ` (${templates.length})` : ''} ▾
+                </button>
+                {tplOpen && (
+                  <div className="absolute z-20 p-2 rounded-[10px]"
+                       style={{ top: 28, left: 0, width: 340, maxHeight: 320, overflowY: 'auto',
+                                background: 'var(--surface)', border: '1px solid var(--line-strong)',
+                                boxShadow: '0 6px 24px rgba(0,0,0,.4)' }}>
+                    {templates.length === 0 ? (
+                      <div className="text-[11px] p-2" style={{ color: 'var(--text-mute)' }}>
+                        저장한 템플릿이 없습니다. 마음에 드는 배치를 만든 뒤 [💾 지금 배치 저장] 을 누르면 여기에 쌓입니다.
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        {templates.map((t) => (
+                          <div key={t.id} className="flex items-center gap-2 p-1 rounded-[8px]"
+                               style={{ background: 'var(--surface-2)' }}>
+                            <button className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                                    onClick={() => { applySavedTemplate(t); setTplOpen(false); }}>
+                              {t.thumb ? (
+                                /* eslint-disable-next-line @next/next/no-img-element */
+                                <img src={t.thumb} alt={t.name} className="rounded"
+                                     style={{ width: 76, height: 44, objectFit: 'cover', border: '1px solid var(--line)' }} />
+                              ) : (
+                                <span className="rounded grid place-items-center text-[9px]"
+                                      style={{ width: 76, height: 44, background: 'var(--surface)', border: '1px solid var(--line)', color: 'var(--text-mute)' }}>
+                                  미리보기 없음
+                                </span>
+                              )}
+                              <span className="text-[11.5px] truncate" style={{ color: 'var(--text-dim)' }}>{t.name}</span>
+                            </button>
+                            <button className="chip px-1.5" title="이 템플릿 삭제" disabled={!!busy}
+                                    style={{ color: 'var(--danger)' }}
+                                    onClick={() => removeSavedTemplate(t)}>✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </span>
+              {tplNaming ? (
+                <input autoFocus value={tplName}
+                       onChange={(e) => setTplName(e.target.value)}
+                       onKeyDown={(e) => {
+                         if (e.key === 'Enter') saveTemplate();
+                         if (e.key === 'Escape') { setTplNaming(false); setTplName(''); }
+                       }}
+                       placeholder="템플릿 이름 (Enter=저장)"
+                       className="px-2 py-1 text-[12px] rounded-[8px] w-[180px]"
+                       style={{ background: 'var(--surface)', border: '1px solid var(--accent)', color: 'var(--text)' }} />
+              ) : (
+                <button className="chip" onClick={saveTemplate} disabled={!!busy || !layers.length}
+                        title="지금 화면의 문구·위치·크기·색 배치를 저장합니다 (배경 사진은 저장되지 않습니다)">
+                  💾 지금 배치 저장
+                </button>
+              )}
+              {/*
+                배경 크기 — 더블클릭 패널에만 있으면 찾기 어렵다는 피드백으로 상단에도 둔다.
+                숫자를 낮추면 배경이 규격보다 작아지고(40%까지) 남는 자리는 바탕이 보인다.
+              */}
+              <span className="mx-0.5" style={{ color: 'var(--line-strong)' }}>|</span>
+              <span data-bgsize-top className="text-[10.5px]" style={{ color: 'var(--text-dim)' }}>배경 크기</span>
+              <input type="number" min={40} max={250} step={5} disabled={!imageUrl}
+                     value={Math.round(Math.max(0.4, fitZoom) * 100)}
+                     title="배경 사진 크기 (%) — 40%까지 줄일 수 있고, 캔버스 안에서 드래그하면 위치가 움직입니다"
+                     onChange={(e) => {
+                       const v = Math.max(40, Math.min(250, Number(e.target.value) || 100));
+                       setFitZoom(v / 100); setFocusTouched(true); setResult(null);
+                     }}
+                     className="w-[56px] px-1.5 py-0.5 text-[12px] rounded-[6px] tabular-nums text-right"
+                     style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--text)' }} />
+              <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>%</span>
+              <button className="chip px-2" disabled={!imageUrl} title="배경 크기·위치를 처음 상태로"
+                      onClick={() => { setFitZoom(1); setFitPanX(0); setFitPanY(0); setFx(0.5); setFy(0.5); setResult(null); }}>
+                원위치
+              </button>
               <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>A = 2분할 · B = 중앙 문구</span>
             </div>
           )}
 
+          {/*
+            템플릿 — 마음에 든 문구 배치를 저장해두고 다른 컷에 그대로 올린다.
+            (배경 사진은 저장하지 않는다 — 배치·문구·색만 남아서 어떤 컷에도 얹힌다)
+          */}
           {/*
             버전 탭 — 웹/모바일을 오가며 각각 다듬는다.
             위치·크기는 버전마다 따로, 색은 두 버전에 같이 들어간다.
@@ -1392,7 +1768,15 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
           <div
             ref={stageRef}
             onPointerDown={onBgDown}
-            onDoubleClick={() => { if (imageUrl) setBgTune(true); }}
+            onDoubleClick={(e) => {
+              const st = stageRef.current;
+              if (st) {
+                const r = st.getBoundingClientRect();
+                const hit = placeholderAt((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+                if (hit) { openRightPicker(); return; }   // 빈 우측 이미지 칸 — 바로 고르기로
+              }
+              if (imageUrl) setBgTune(true);
+            }}
             onPointerMove={onMove}
             onPointerUp={onUp}
             onPointerLeave={onUp}
@@ -1439,19 +1823,20 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
                    onPointerDown={(e) => e.stopPropagation()}
                    onDoubleClick={(e) => e.stopPropagation()}>
                 <span className="text-[10.5px] shrink-0" style={{ color: 'var(--text-dim)' }}>이미지 크기</span>
-                <input type="range" min={1} max={2.5} step={0.02} value={Math.max(1, fitZoom)} className="flex-1"
+                <input type="range" min={0.4} max={2.5} step={0.02} value={Math.max(0.4, fitZoom)} className="flex-1"
                        onChange={(e) => { setFitZoom(Number(e.target.value)); setFocusTouched(true); setResult(null); }} />
                 {/* 수치 직접 입력 — 눌러서 숫자를 낮추면 그만큼 작아진다 */}
-                <input type="number" min={100} max={250} step={5}
-                       value={Math.round(Math.max(1, fitZoom) * 100)}
+                <input type="number" min={40} max={250} step={5}
+                       value={Math.round(Math.max(0.4, fitZoom) * 100)}
                        onChange={(e) => {
-                         const v = Math.max(100, Math.min(250, Number(e.target.value) || 100));
+                         const v = Math.max(40, Math.min(250, Number(e.target.value) || 100));
                          setFitZoom(v / 100); setFocusTouched(true); setResult(null);
                        }}
                        className="w-[58px] px-1.5 py-0.5 text-[12px] rounded-[6px] tabular-nums text-right"
                        style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--text)' }} />
                 <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>%</span>
-                <button className="chip px-2" title="원래 크기로" onClick={() => { setFitZoom(1); setResult(null); }}>100%</button>
+                <button className="chip px-2" title="원래 크기·위치로"
+                        onClick={() => { setFitZoom(1); setFitPanX(0); setFitPanY(0); setFx(0.5); setFy(0.5); setResult(null); }}>원위치</button>
                 <button className="chip px-2" onClick={() => setBgTune(false)}>닫기</button>
               </div>
             )}
@@ -1459,13 +1844,15 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
               * 선택한 레이어 크기 — 수치 입력. 손잡이를 끄는 대신 숫자를 낮추면 그만큼 줄어든다.
               * 선택한 순간이 100% 기준이고, 배경 패널이 떠 있으면 그 아래로 비켜 앉는다.
               */}
-            {sel && (
+            {sel && panelClosedFor !== sel.id && (
               <div className="absolute left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-3 py-1.5 rounded-[10px]"
-                   style={{ top: bgTune ? 52 : 8, background: 'var(--surface)', border: '1px solid var(--accent)', boxShadow: '0 4px 18px rgba(0,0,0,.35)' }}
+                   style={{ top: bgTune ? 60 : 8, background: 'var(--surface)', border: '1px solid var(--accent)',
+                            maxWidth: '92%', flexWrap: 'wrap', rowGap: 4,
+                            boxShadow: '0 4px 18px rgba(0,0,0,.35)' }}
                    onPointerDown={(e) => e.stopPropagation()}
                    onDoubleClick={(e) => e.stopPropagation()}>
                 <span className="text-[10.5px] shrink-0" style={{ color: 'var(--text-dim)' }}>
-                  {labelOf(sel, layers)} 크기
+                  {labelOf(sel, layers)} {sel.kind === 'image' && sel.cover ? '이미지 확대 (칸 고정)' : '크기'}
                 </span>
                 <input type="number" min={10} max={400} step={5} value={shownPct}
                        onChange={(e) => applySizePct(Number(e.target.value) || 100)}
@@ -1474,6 +1861,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
                        style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--text)' }} />
                 <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>%</span>
                 <button className="chip px-2" title="선택 시점 크기로" onClick={() => applySizePct(100)}>되돌리기</button>
+                <button className="chip px-1.5" title="이 패널 닫기 (다른 레이어를 고르면 다시 뜹니다)"
+                        onClick={() => setPanelClosedFor(sel.id)}>✕</button>
                 {/*
                   * 이미지 슬롯은 자리·크기를 고정한 채 "원본의 어느 부분이 보일지"만 옮긴다.
                   * 우측 이미지처럼 꽉 채워 자르는 슬롯에서 인물이 잘리는 걸 여기서 맞춘다.
@@ -1483,12 +1872,12 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
                     <span className="mx-0.5" style={{ color: 'var(--line-strong)' }}>|</span>
                     <span className="text-[10.5px] shrink-0" style={{ color: 'var(--text-dim)' }}>보이는 부분</span>
                     <span className="text-[10px]" style={{ color: 'var(--text-mute)' }}>좌우</span>
-                    <input type="range" min={0} max={1} step={0.02} value={sel.srcFx ?? 0.5} style={{ width: 72 }}
-                           title="원본의 왼쪽·오른쪽 중 어디를 보여줄지"
+                    <input type="range" min={-0.5} max={1.5} step={0.02} value={sel.srcFx ?? 0.5} style={{ width: 72 }}
+                           title="원본의 왼쪽·오른쪽 중 어디를 보여줄지 (슬롯 밖으로도 밀 수 있습니다)" onPointerDown={() => snapUndo()}
                            onChange={(e) => { patch(sel.id, { srcFx: Number(e.target.value) }); setResult(null); }} />
                     <span className="text-[10px]" style={{ color: 'var(--text-mute)' }}>상하</span>
-                    <input type="range" min={0} max={1} step={0.02} value={sel.srcFy ?? 0.5} style={{ width: 72 }}
-                           title="원본의 위·아래 중 어디를 보여줄지"
+                    <input type="range" min={-0.5} max={1.5} step={0.02} value={sel.srcFy ?? 0.5} style={{ width: 72 }}
+                           title="원본의 위·아래 중 어디를 보여줄지 (슬롯 밖으로도 밀 수 있습니다)" onPointerDown={() => snapUndo()}
                            onChange={(e) => { patch(sel.id, { srcFy: Number(e.target.value) }); setResult(null); }} />
                     <button className="chip px-2" title="가운데로"
                             onClick={() => { patch(sel.id, { srcFx: 0.5, srcFy: 0.5 }); setResult(null); }}>가운데</button>
@@ -1706,7 +2095,6 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
 
       {/* ── 오른쪽: 밟는 순서 ── */}
       <aside className="w-full xl:w-[340px] shrink-0">
-        {inspector}
 
         {/* 채널이 최초 선택 — 자사몰용인지 스마트스토어용인지 SNS 용인지가 모든 것의 출발점 */}
         <Step n={1} title="어디에 쓸 배너인가" done={!!channel}>
@@ -1796,7 +2184,244 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
         </Step>
 
         {/* 규격 — 채널이 정해졌으니 그 채널의 규격만 보여준다 */}
-        <Step n={3} title="규격" done={!!sizeId} disabled={!imageUrl}>
+        <Step n={3} title="직접 수정" open={tweakOpen} onToggle={() => setTweakOpen((v) => !v)}
+              hint={layers.length ? `레이어 ${layers.length}` : undefined}>
+          {/*
+            A안·B안은 위치·크기가 이미 정해진 배치라, 여기 기본 배치들(정사각 기준)을 덧씌우면
+            그 규칙이 깨진다. 그래서 A안·B안을 고른 상태에서는 이 묶음을 감춘다 (사용자 지정).
+            템플릿 저장은 무대 위 [배치 고르기] 줄에 있으므로 여기 중복 버튼은 뺐다.
+          */}
+          {!stageIsTemplateA() && !stageIsTemplateB() && (
+            <>
+            <div className="label mb-1.5">다른 배치로 바꾸기</div>
+            <div className="flex flex-wrap gap-1.5 mb-1">
+              {TEMPLATES.map((t) => (
+                <button key={t.id} className="chip" title={t.hint} onClick={() => applyTemplate(t.id)}>{t.name}</button>
+              ))}
+            </div>
+            {shape !== 'square' && (
+              <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                이 템플릿들은 정사각 기준으로 잡아둔 것이라 {shapeWord} 규격에서는 간격이 어색할 수 있습니다.
+                자동 배치가 이 비율에 맞게 잡아줍니다.
+              </div>
+            )}
+
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              {tplNaming && (
+                <input
+                  autoFocus
+                  value={tplName}
+                  onChange={(e) => setTplName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveTemplate();
+                    if (e.key === 'Escape') { setTplNaming(false); setTplName(''); }
+                  }}
+                  placeholder="템플릿 이름 (Enter=저장)"
+                  className="px-2 py-1 text-[12px] rounded-[8px] w-[170px]"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--accent)', color: 'var(--text)' }}
+                />
+              )}
+              <button className="chip" onClick={saveTemplate} disabled={!!busy || !layers.length}
+                      title="배경 없이 지금 배치만 저장해서 다른 컷에도 얹을 수 있게 합니다.">
+                {tplNaming ? '이 이름으로 저장' : '지금 배치를 템플릿으로 저장'}
+              </button>
+            </div>
+            </>
+          )}
+
+          {/* 색 테마·내 템플릿 목록도 A안·B안에선 감춘다 — 색과 배치가 이미 정해져 있고,
+             템플릿은 무대 위 [배치 고르기] 줄에서 고른다 (중복 노출 방지) */}
+          {!stageIsTemplateA() && !stageIsTemplateB() && (
+            <>
+            <div className="label mb-1.5 mt-2">색 테마</div>
+            <select className="input py-1 text-[11.5px]" value={themeId} onChange={(e) => setThemeId(e.target.value)}>
+              {THEMES.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+
+            {templates.length > 0 && (
+              <>
+                <div className="label mt-3 mb-1.5">내 템플릿</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {templates.map((t) => (
+                    <button key={t.id} className="chip"
+                            onClick={() => applySavedTemplate(t)}>
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            </>
+          )}
+          <div className="flex items-center justify-between mt-3 mb-1.5">
+            <div className="label">화면에 올라간 요소</div>
+            {/* 요소 추가는 자유 배치에서만 — A안·B안은 들어갈 요소가 이미 정해져 있다 (사용자 지정) */}
+            {!stageIsTemplateA() && !stageIsTemplateB() && (
+              <div className="flex gap-1">
+                {(['text', 'icon', 'rect', 'scrim'] as const).map((k) => (
+                  <button key={k} className="chip" title={`${k} 추가`}
+                          onClick={() => { const l = newLayer(k, theme.strong); setLayers((c) => [...c, l]); setSelected(l.id); }}>
+                    ＋{k === 'text' ? '글자' : k === 'icon' ? '아이콘' : k === 'rect' ? '도형' : '그늘'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="text-[10.5px] mb-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+            문구·그늘·이미지가 한 줄씩 있습니다. <b style={{ color: 'var(--text-dim)' }}>보임</b> 을 누르면
+            그 요소만 잠시 감춰지고(저장본에도 안 나옵니다), <b style={{ color: 'var(--text-dim)' }}>숨김</b> 을
+            다시 누르면 돌아옵니다 — 지우는 게 아니라 껐다 켜는 겁니다.
+            예: 사진이 밝아 글자가 잘 보이면 &lsquo;좌측 어둡게&rsquo; 를 잠시 꺼보세요.
+          </div>
+          {layers.length === 0 && (
+            <div className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
+              위 &lsquo;문구 넣고 자동 배치&rsquo; 를 누르거나, ＋ 로 요소를 추가하세요.
+            </div>
+          )}
+          {/* 무리는 한 줄로 — 버튼이 세 줄로 늘어서면 무엇이 한 몸인지 안 보인다 */}
+          <div className="flex flex-col gap-1">
+            {leaders(layers).map((l) => {
+              const g = groupOf(l);
+              const grouped = !!l.group;
+              return (
+                <div key={l.id} className="flex items-center gap-1.5 p-1.5 rounded-lg text-[11px]"
+                     style={{ background: isSel(l) ? 'var(--accent-soft)' : 'var(--surface-2)', cursor: 'pointer' }}
+                     onClick={() => setSelected(l.id)}
+                     onDoubleClick={() => openInspector(l.id)}>
+                  <span className="w-3 h-3 rounded shrink-0" style={{ background: l.color }} />
+                  <span className="truncate flex-1"
+                        style={{ color: 'var(--text-dim)', opacity: l.hidden ? 0.45 : 1, textDecoration: l.hidden ? 'line-through' : 'none' }}>
+                    {labelOf(l, layers)}
+                  </span>
+                  {/*
+                    보임/숨김 — 어둡게 깔린 그늘처럼 "지우긴 아깝고 잠깐 꺼보고 싶은" 레이어가 있다.
+                    묶음(버튼 등)은 한 몸이라 무리 전체를 함께 끈다. 숨긴 레이어는 저장본에도 안 나온다.
+                  */}
+                  <button className="chip px-1.5 py-0 text-[10px]"
+                          title={l.hidden ? '지금은 안 보이는 상태 — 눌러서 다시 보이게 합니다' : '이 요소를 화면에서 잠시 감춥니다 (지우는 게 아니라 껐다 켤 수 있어요)'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            snapUndo();
+                            const ids = new Set(leaders(layers).filter((x) => groupOf(x) === g).map((x) => x.id));
+                            setLayers((c) => c.map((x) => (
+                              (l.group ? x.group === l.group : ids.has(x.id) || x.id === l.id)
+                                ? { ...x, hidden: !l.hidden } : x)));
+                            setResult(null);
+                          }}
+                          style={{ color: l.hidden ? 'var(--warn)' : 'var(--text-mute)',
+                                   borderColor: l.hidden ? 'var(--warn)' : 'var(--line)' }}>
+                    {l.hidden ? '숨김' : '보임'}
+                  </button>
+                  {!grouped && (
+                    <button title="위로" onClick={(e) => {
+                      e.stopPropagation();
+                      setLayers((c) => {
+                        const i = c.findIndex((x) => x.id === l.id);
+                        if (i <= 0) return c;
+                        const n = [...c]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; return n;
+                      });
+                    }} style={{ background: 'none', border: 'none', color: 'var(--text-mute)', cursor: 'pointer', padding: 0 }}>▲</button>
+                  )}
+                  <button title="삭제" onClick={(e) => {
+                    e.stopPropagation();
+                    setLayers((c) => c.filter((x) => groupOf(x) !== g));   // 무리는 통째로 지운다
+                    setSelected(null);
+                  }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0 }}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+          {/*
+            고른 요소의 설정은 목록 "바로 아래" 에 편다 — 맨 위로 올라가 버리면
+            고르는 곳과 고치는 곳이 멀어져서 화면이 튀는 느낌이 든다 (사용자 지정).
+          */}
+          {inspector}
+
+          {/* 처음으로 되돌리기 — 이것저것 만지다 원점에서 다시 시작하고 싶을 때 */}
+          <div className="mt-3 pt-2" style={{ borderTop: '1px solid var(--line)' }}>
+            {resetArm ? (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px]" style={{ color: 'var(--warn)' }}>
+                  배경 크기·위치·보정과 색, 배치를 처음 상태로 되돌립니다.
+                </span>
+                <button className="chip" style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}
+                        onClick={resetAll}>네, 초기화</button>
+                <button className="chip" onClick={() => setResetArm(false)}>취소</button>
+              </div>
+            ) : (
+              <button className="chip" onClick={() => setResetArm(true)} disabled={!!busy}
+                      title="배경 크기·위치·보정, 색, 문구 크기 설정을 처음 상태로 되돌립니다 (↩ 로 복구 가능)">
+                ↺ 모든 설정 초기화
+              </button>
+            )}
+          </div>
+        </Step>
+
+        {/*
+          A안·B안은 문구 자리가 이미 정해져 있어 자동 배치가 필요 없다 —
+          문구는 위 "화면에 올라간 요소" 에서 해당 줄을 눌러 직접 고친다 (사용자 지정).
+        */}
+        {!stageIsTemplateA() && !stageIsTemplateB() && (
+          <Step n={4} title="문구 넣고 자동 배치" accent disabled={!imageUrl}
+                done={layers.length > 0 && layers.every(isAuto)}>
+            <input className="input py-1 text-[11.5px] mb-1.5" value={autoEyebrow}
+                   onChange={(e) => setAutoEyebrow(e.target.value)} placeholder="윗 문구 — 작게 한 줄 (선택)" />
+            <input className="input py-1 text-[12px] mb-1.5" value={autoTitle}
+                   onChange={(e) => setAutoTitle(e.target.value)} placeholder="제목 — 가장 크게" />
+            <input className="input py-1 text-[11.5px] mb-1.5" value={autoSub}
+                   onChange={(e) => setAutoSub(e.target.value)} placeholder="혜택 한 줄 (선택)" />
+            <input className="input py-1 text-[11.5px] mb-2" value={autoCta}
+                   onChange={(e) => setAutoCta(e.target.value)} placeholder="버튼 문구 (선택)" />
+
+
+            <div className="label mb-1">버튼 색</div>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              <button className="chip" onClick={() => setBtnColor('photo')}
+                      style={btnColor === 'photo' ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                사진에서 뽑기
+              </button>
+              {BRAND_BUTTON_COLORS.map((c) => (
+                <button key={c.id} className="chip" onClick={() => setBtnColor(c.id)}
+                        style={btnColor === c.id ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                  <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: c.hex }} />
+                  {c.name}
+                </button>
+              ))}
+            </div>
+
+            {fonts.length > 1 && (
+              <>
+                <div className="label mb-1">글꼴</div>
+                <select className="input py-1 text-[11.5px] mb-2" value={fontFamily}
+                        onChange={(e) => { setFontFamily(e.target.value); setResult(null); }}>
+                  {fonts.map((f) => (
+                    <option key={f.file} value={f.family}>{f.family}</option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            {/* 기본값(100%)이 기존 자사몰 배너 실측 — 취향껏 벌리고 줄일 수 있게 열어둔다 */}
+            {num('문구 크기', tuneScale, 0.7, 1.3, 0.01, (n) => { setTuneScale(n); setResult(null); },
+                 (n) => `${Math.round(n * 100)}%`)}
+            {num('줄 간격', tuneGap, 0.7, 1.5, 0.01, (n) => { setTuneGap(n); setResult(null); },
+                 (n) => `${Math.round(n * 100)}%`)}
+
+            <button className="btn btn-primary w-full" onClick={() => autoLayout(false)} disabled={!!busy || !imageUrl}>
+              {busy === 'auto' ? '분석 중…' : '✨ 자동 배치'}
+            </button>
+            <div className="text-[10.5px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+              규격의 비율에 맞는 배치를 고르고, 배경에서 <b>비어 있는 곳</b>에 글자를 놓습니다.
+              배경 밝기에 따라 글자색과 그늘도 정합니다.
+              {picked && <><br />이번엔 <b style={{ color: 'var(--text-dim)' }}>{picked.where}</b> 여백을 골랐습니다.
+                규격을 바꾸면 알아서 다시 잡습니다.</>}
+            </div>
+          </Step>
+        )}
+
+        <Step n={5} title="규격" done={!!sizeId} disabled={!imageUrl}
+              open={sizeOpen} onToggle={() => setSizeOpen((v) => !v)}>
           <select className="input py-1 text-[12px]" value={sizeId}
                   onChange={(e) => { setSizeId(e.target.value); setFocusTouched(false); setResult(null); }}>
             <option value="">컷 크기 그대로 ({src.w}×{src.h})</option>
@@ -1876,167 +2501,6 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
           )}
         </Step>
 
-        {/* 기본 동선 — 문구만 넣고 누르면 끝난다 */}
-        <Step n={4} title="문구 넣고 자동 배치" accent disabled={!imageUrl}
-              done={layers.length > 0 && layers.every(isAuto)}>
-          <input className="input py-1 text-[11.5px] mb-1.5" value={autoEyebrow}
-                 onChange={(e) => setAutoEyebrow(e.target.value)} placeholder="윗 문구 — 작게 한 줄 (선택)" />
-          <input className="input py-1 text-[12px] mb-1.5" value={autoTitle}
-                 onChange={(e) => setAutoTitle(e.target.value)} placeholder="제목 — 가장 크게" />
-          <input className="input py-1 text-[11.5px] mb-1.5" value={autoSub}
-                 onChange={(e) => setAutoSub(e.target.value)} placeholder="혜택 한 줄 (선택)" />
-          <input className="input py-1 text-[11.5px] mb-2" value={autoCta}
-                 onChange={(e) => setAutoCta(e.target.value)} placeholder="버튼 문구 (선택)" />
-
-
-          <div className="label mb-1">버튼 색</div>
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            <button className="chip" onClick={() => setBtnColor('photo')}
-                    style={btnColor === 'photo' ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
-              사진에서 뽑기
-            </button>
-            {BRAND_BUTTON_COLORS.map((c) => (
-              <button key={c.id} className="chip" onClick={() => setBtnColor(c.id)}
-                      style={btnColor === c.id ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
-                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: c.hex }} />
-                {c.name}
-              </button>
-            ))}
-          </div>
-
-          {fonts.length > 1 && (
-            <>
-              <div className="label mb-1">글꼴</div>
-              <select className="input py-1 text-[11.5px] mb-2" value={fontFamily}
-                      onChange={(e) => { setFontFamily(e.target.value); setResult(null); }}>
-                {fonts.map((f) => (
-                  <option key={f.file} value={f.family}>{f.family}</option>
-                ))}
-              </select>
-            </>
-          )}
-
-          {/* 기본값(100%)이 기존 자사몰 배너 실측 — 취향껏 벌리고 줄일 수 있게 열어둔다 */}
-          {num('문구 크기', tuneScale, 0.7, 1.3, 0.01, (n) => { setTuneScale(n); setResult(null); },
-               (n) => `${Math.round(n * 100)}%`)}
-          {num('줄 간격', tuneGap, 0.7, 1.5, 0.01, (n) => { setTuneGap(n); setResult(null); },
-               (n) => `${Math.round(n * 100)}%`)}
-
-          <button className="btn btn-primary w-full" onClick={() => autoLayout(false)} disabled={!!busy || !imageUrl}>
-            {busy === 'auto' ? '분석 중…' : '✨ 자동 배치'}
-          </button>
-          <div className="text-[10.5px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
-            규격의 비율에 맞는 배치를 고르고, 배경에서 <b>비어 있는 곳</b>에 글자를 놓습니다.
-            배경 밝기에 따라 글자색과 그늘도 정합니다.
-            {picked && <><br />이번엔 <b style={{ color: 'var(--text-dim)' }}>{picked.where}</b> 여백을 골랐습니다.
-              규격을 바꾸면 알아서 다시 잡습니다.</>}
-          </div>
-        </Step>
-
-        <Step n={5} title="손으로 다듬기 (선택)" open={tweakOpen} onToggle={() => setTweakOpen((v) => !v)}
-              hint={layers.length ? `레이어 ${layers.length}` : undefined}>
-          <div className="label mb-1.5">다른 배치로 바꾸기</div>
-          <div className="flex flex-wrap gap-1.5 mb-1">
-            {TEMPLATES.map((t) => (
-              <button key={t.id} className="chip" title={t.hint} onClick={() => applyTemplate(t.id)}>{t.name}</button>
-            ))}
-          </div>
-          {shape !== 'square' && (
-            <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
-              이 템플릿들은 정사각 기준으로 잡아둔 것이라 {shapeWord} 규격에서는 간격이 어색할 수 있습니다.
-              자동 배치가 이 비율에 맞게 잡아줍니다.
-            </div>
-          )}
-
-          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-            {tplNaming && (
-              <input
-                autoFocus
-                value={tplName}
-                onChange={(e) => setTplName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') saveTemplate();
-                  if (e.key === 'Escape') { setTplNaming(false); setTplName(''); }
-                }}
-                placeholder="템플릿 이름 (Enter=저장)"
-                className="px-2 py-1 text-[12px] rounded-[8px] w-[170px]"
-                style={{ background: 'var(--surface)', border: '1px solid var(--accent)', color: 'var(--text)' }}
-              />
-            )}
-            <button className="chip" onClick={saveTemplate} disabled={!!busy || !layers.length}
-                    title="배경 없이 지금 배치만 저장해서 다른 컷에도 얹을 수 있게 합니다.">
-              {tplNaming ? '이 이름으로 저장' : '지금 배치를 템플릿으로 저장'}
-            </button>
-          </div>
-
-          <div className="label mb-1.5 mt-2">색 테마</div>
-          <select className="input py-1 text-[11.5px]" value={themeId} onChange={(e) => setThemeId(e.target.value)}>
-            {THEMES.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-
-          {templates.length > 0 && (
-            <>
-              <div className="label mt-3 mb-1.5">내 템플릿</div>
-              <div className="flex flex-wrap gap-1.5">
-                {templates.map((t) => (
-                  <button key={t.id} className="chip"
-                          onClick={() => { setLayers(t.design.layers.map((l) => ({ ...l, id: uid() }))); setResult(null); }}>
-                    {t.name}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          <div className="flex items-center justify-between mt-3 mb-1.5">
-            <div className="label">레이어</div>
-            <div className="flex gap-1">
-              {(['text', 'icon', 'rect', 'scrim'] as const).map((k) => (
-                <button key={k} className="chip" title={`${k} 추가`}
-                        onClick={() => { const l = newLayer(k, theme.strong); setLayers((c) => [...c, l]); setSelected(l.id); }}>
-                  ＋{k === 'text' ? '글자' : k === 'icon' ? '아이콘' : k === 'rect' ? '도형' : '그늘'}
-                </button>
-              ))}
-            </div>
-          </div>
-          {layers.length === 0 && (
-            <div className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
-              4번에서 자동 배치를 누르거나, ＋ 로 레이어를 추가하세요.
-            </div>
-          )}
-          {/* 무리는 한 줄로 — 버튼이 세 줄로 늘어서면 무엇이 한 몸인지 안 보인다 */}
-          <div className="flex flex-col gap-1">
-            {leaders(layers).map((l) => {
-              const g = groupOf(l);
-              const grouped = !!l.group;
-              return (
-                <div key={l.id} className="flex items-center gap-1.5 p-1.5 rounded-lg text-[11px]"
-                     style={{ background: isSel(l) ? 'var(--accent-soft)' : 'var(--surface-2)', cursor: 'pointer' }}
-                     onClick={() => setSelected(l.id)}
-                     onDoubleClick={() => openInspector(l.id)}>
-                  <span className="w-3 h-3 rounded shrink-0" style={{ background: l.color }} />
-                  <span className="truncate flex-1" style={{ color: 'var(--text-dim)' }}>{labelOf(l, layers)}</span>
-                  {!grouped && (
-                    <button title="위로" onClick={(e) => {
-                      e.stopPropagation();
-                      setLayers((c) => {
-                        const i = c.findIndex((x) => x.id === l.id);
-                        if (i <= 0) return c;
-                        const n = [...c]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; return n;
-                      });
-                    }} style={{ background: 'none', border: 'none', color: 'var(--text-mute)', cursor: 'pointer', padding: 0 }}>▲</button>
-                  )}
-                  <button title="삭제" onClick={(e) => {
-                    e.stopPropagation();
-                    setLayers((c) => c.filter((x) => groupOf(x) !== g));   // 무리는 통째로 지운다
-                    setSelected(null);
-                  }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0 }}>✕</button>
-                </div>
-              );
-            })}
-          </div>
-        </Step>
-
       </aside>
 
       {/* ── 포토샵 방식 편집기 (전체 화면) ── */}
@@ -2056,6 +2520,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
               setFitZoom(f.zoom ?? 1);
               setFitZoomX(f.zoomX ?? 1);
               setFitZoomY(f.zoomY ?? 1);
+              setFitPanX(f.panX ?? 0);
+              setFitPanY(f.panY ?? 0);
               setFitAdjust(f.adjust);
             }
             setEditorOpen(false); setResult(null);

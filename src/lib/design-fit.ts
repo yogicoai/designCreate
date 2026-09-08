@@ -41,7 +41,8 @@ export async function fitToSize(
    *   → zoom=1 에서 기존 cover(object-position)·contain(중앙) 결과와 정확히 같다.
    */
   const zoomRaw = fit.zoom ?? 1;
-  const zoom = fit.mode === 'cover' ? Math.max(1, zoomRaw) : Math.max(0.15, Math.min(4, zoomRaw));
+  // cover 도 0.4 까지 줄일 수 있게 열어둔다 (사용자 지정) — 남는 자리는 바탕이 보인다
+  const zoom = Math.max(0.4, Math.min(4, zoomRaw));
   const baseK = fit.mode === 'cover' ? Math.max(W / sw, H / sh) : Math.min(W / sw, H / sh);
   const k = baseK * zoom;
   // 가로/세로 개별 변형(Ctrl+T) — zoom 위에 곱한다
@@ -51,8 +52,11 @@ export async function fitToSize(
   const fgH = Math.max(1, Math.round(sh * k * zy));
   const fx = Math.max(0, Math.min(1, fit.fx));
   const fy = Math.max(0, Math.min(1, fit.fy));
-  const left = Math.round(fx * (W - fgW));
-  const top = Math.round(fy * (H - fgH));
+  // 여백 안 이동(fx/fy) + 캔버스 밖까지 미는 추가 이동(panX/panY)
+  const panX = Math.max(-1.2, Math.min(1.2, fit.panX ?? 0));
+  const panY = Math.max(-1.2, Math.min(1.2, fit.panY ?? 0));
+  const left = Math.round(fx * (W - fgW) + panX * W);
+  const top = Math.round(fy * (H - fgH) + panY * H);
 
   // 바탕 만들기
   let bg: Buffer;
@@ -130,6 +134,48 @@ export async function applyPatches(buf: Buffer, W: number, H: number, layers: De
         .toBuffer();
     } else {
       eff = await sharp(region).blur(Math.max(1, (s * Math.min(w, h)) / 6)).toBuffer();
+    }
+    /*
+     * 회전한 블러 — 지금까지는 축에 맞춘 네모로만 가려서, 레이어를 기울여도
+     * 가림막은 똑바로 서 있었다 (사용자 확인). 기울였으면 그 각도대로 가린다:
+     *   ① 회전 사각형을 덮는 바깥 네모(bbox)를 잘라 흐리게 만들고
+     *   ② 그 위에 "기울어진 흰 네모" 마스크를 dest-in 으로 씌워 모양을 만든 뒤
+     *   ③ 원본에 얹는다.
+     */
+    if (l.rotate) {
+      const rad = (l.rotate * Math.PI) / 180;
+      const cx = (l.x ?? 0.5) * W, cy = (l.y ?? 0.5) * H;
+      const rw = (l.w ?? 0.3) * W, rh = (l.h ?? 0.2) * H;
+      const ext = (Math.abs(rw * Math.cos(rad)) + Math.abs(rh * Math.sin(rad))) / 2;
+      const eyt = (Math.abs(rw * Math.sin(rad)) + Math.abs(rh * Math.cos(rad))) / 2;
+      const bl = Math.max(0, Math.round(cx - ext));
+      const bt = Math.max(0, Math.round(cy - eyt));
+      const bw = Math.min(W - bl, Math.round(ext * 2));
+      const bh = Math.min(H - bt, Math.round(eyt * 2));
+      if (bw > 3 && bh > 3) {
+        const bregion = await sharp(base).extract({ left: bl, top: bt, width: bw, height: bh }).toBuffer();
+        const st = Math.max(0, Math.min(1, l.strength ?? 0.5));
+        let beff: Buffer;
+        if (l.effect === 'mosaic') {
+          const cell = Math.max(4, Math.round(Math.min(bw, bh) * (0.03 + st * 0.12)));
+          beff = await sharp(bregion)
+            .resize(Math.max(1, Math.round(bw / cell)), Math.max(1, Math.round(bh / cell)), { kernel: 'nearest' })
+            .resize(bw, bh, { kernel: 'nearest' }).toBuffer();
+        } else {
+          beff = await sharp(bregion).blur(Math.max(1, (st * Math.min(bw, bh)) / 6)).toBuffer();
+        }
+        const mx = cx - bl, my = cy - bt;
+        const mask = Buffer.from(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="${bw}" height="${bh}">` +
+          `<rect width="${bw}" height="${bh}" fill="black"/>` +
+          `<rect x="${mx - rw / 2}" y="${my - rh / 2}" width="${rw}" height="${rh}" fill="white"` +
+          ` transform="rotate(${l.rotate} ${mx} ${my})"/></svg>`);
+        const shaped = await sharp(beff).ensureAlpha()
+          .composite([{ input: await sharp(mask).png().toBuffer(), blend: 'dest-in' }])
+          .png().toBuffer();
+        comps.push({ input: shaped, left: bl, top: bt });
+        continue;
+      }
     }
     comps.push({ input: eff, left, top });
   }

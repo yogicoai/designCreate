@@ -78,7 +78,7 @@ export async function GET(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const body = (await req.json()) as { url?: string; title?: string; category?: string | null };
+    const body = (await req.json()) as { url?: string; title?: string; category?: string | null; sub?: string | null };
     if (!body.url) return NextResponse.json({ ok: false, error: 'url 이 필요합니다.' }, { status: 400 });
     const db = await getDb();
     const set: Record<string, unknown> = {};
@@ -87,6 +87,11 @@ export async function PATCH(req: Request) {
       // 새 3종(shoot/banner/sns)으로 정규화 — 구 값이 와도 흡수한다
       set.category = normalizeRefCategory(body.category);
     }
+    /*
+     * sub = 하위 분류. 촬영은 '22 맥스' 처럼 촬영 회차가 들어가고,
+     * 모델컷은 '여성B' 처럼 전속 모델 이름이 들어간다 — 같은 칸을 쓰면 칩 UI 가 그대로 붙는다.
+     */
+    if (body.sub !== undefined) set.sub = body.sub ? String(body.sub).slice(0, 40) : null;
     if (!Object.keys(set).length) return NextResponse.json({ ok: false, error: '변경할 값이 없습니다.' }, { status: 400 });
     await db.collection('references').updateOne({ url: body.url }, { $set: set });
     return NextResponse.json({ ok: true });
