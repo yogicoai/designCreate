@@ -9,7 +9,8 @@ import { Readable } from 'node:stream';
  *
  * ⚠️ cafe24 nginx 는 비-ASCII 파일명을 EUC-KR 로 디코드해서 매칭에 실패한다(403).
  *    한글이 섞인 이름은 반드시 ASCII 로 바꿔서 올려야 한다.
- * ⚠️ cafe24 는 .mp4 업로드를 막는다. 이미지만 다루므로 이 앱에선 문제가 없다.
+ * ⚠️ cafe24 는 .mp4 업로드를 막는다. 그래서 영상은 .jpg 로 위장해 올리고
+ *    /api/video 프록시가 video/mp4 로 바꿔 서빙한다 (youtube 프로젝트와 같은 방식).
  */
 
 const HOST = (process.env.FTP_HOST || '').replace(/^(https?|ftp):\/\//, '').replace(/\/$/, '');
@@ -79,6 +80,45 @@ export async function uploadBuffer(
   });
   return publicUrl(subpath, safe);
 }
+
+/**
+ * 디스크의 파일을 그대로 올린다 (버퍼로 다 읽지 않는다).
+ * 영상은 수십~수백 MB 라 메모리에 통째로 올리면 안 된다.
+ * @returns 공개 URL
+ */
+export async function uploadLocalFile(
+  subpath: string | undefined,
+  filename: string,
+  localPath: string,
+): Promise<string> {
+  const safe = sanitizeFilename(filename);
+  await withClient(async (c) => {
+    await c.ensureDir(remoteDir(subpath));
+    await c.uploadFrom(localPath, safe);
+  });
+  return publicUrl(subpath, safe);
+}
+
+/** 사이트 루트(/web/...) 기준 경로 — 영상 프록시가 쓰는 키 */
+export function siteKeyFromUrl(url: string): string {
+  try {
+    return new URL(url).pathname.replace(/^\/+/, '');
+  } catch {
+    return String(url || '').replace(/^\/+/, '');
+  }
+}
+
+/** cafe24 사이트 오리진 — 프록시가 키를 실제 주소로 되돌릴 때 쓴다 */
+export function siteOrigin(): string {
+  try {
+    return new URL(PUBLIC_BASE).origin;
+  } catch {
+    return HOST ? `https://${HOST}` : '';
+  }
+}
+
+/** 영상이 들어갈 폴더 — /web/design/video */
+export const VIDEO_SUBPATH = 'video';
 
 /** 업로드된 파일 삭제 (없으면 조용히 넘어간다) */
 export async function deleteRemote(subpath: string | undefined, filename: string): Promise<void> {

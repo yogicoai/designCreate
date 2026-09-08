@@ -13,10 +13,19 @@ export type VideoPurpose = 'product' | 'review' | 'event';
 export interface Shot {
   no: number;
   seconds: number;
-  /** 장면 — 한글로 무엇을 보여줄지 */
+  /** 장면 — 한글로 무엇을 보여줄지. 이 글이 그대로 스틸 생성 지시가 된다. */
   scene: string;
   /** 카메라 움직임 */
   camera: string;
+  /** 이 컷의 시작 프레임 — 여기서 생성했거나 보관함에서 고른 스틸 */
+  image?: string;
+  imageTitle?: string;
+  /**
+   * 앞 컷의 스틸을 배경 레퍼런스로 물려서 만든다.
+   * 켜면 방·조명·컬러 그레이드가 이어져 컷 사이 톤이 흔들리지 않는다
+   * (컷을 따로 뽑아 톤 보정으로 메우던 일을 없애는 게 목적).
+   */
+  chain?: boolean;
 }
 
 export interface StoryboardInput {
@@ -83,6 +92,22 @@ export function draftShots(i: StoryboardInput): Shot[] {
     { no: 3, seconds: s, scene: `${who}가 앉으며 몸이 잠기는 순간`, camera: '고정 (움직임 없음)' },
     { no: 4, seconds: s, scene: '편안하게 기댄 상태로 마무리, 공간이 함께 보인다', camera: '천천히 물러나기 (풀 백)' },
   ];
+}
+
+/**
+ * 컷 하나의 스틸을 만들 때 /api/generate 에 넘길 한글 연출 지시.
+ *
+ * 제품·모델은 payload 의 line/colorKey/talents 로 따로 들어가므로 여기 다시 쓰지 않는다.
+ * (프롬프트 작성기가 제품 형태·컬러·얼굴 락을 알아서 붙인다.)
+ */
+export function sceneDirection(s: Shot, aspect: string): string {
+  const cam = CAMERA_EN[s.camera] ?? s.camera;
+  return [
+    s.scene,
+    `이 장면은 ${aspect} 영상의 시작 프레임입니다 — 곧이어 "${cam}" 카메라 움직임이 이어집니다.`,
+    '그 움직임이 들어갈 여백을 남기고, 실제 공간 사진처럼 자연스럽게 담아주세요.',
+    '화면에 글자·자막·로고 오버레이는 넣지 마세요.',
+  ].join('\n');
 }
 
 /**

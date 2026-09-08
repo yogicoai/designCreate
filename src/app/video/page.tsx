@@ -1,5 +1,5 @@
 import PageHeader from '@/components/PageHeader';
-import VideoStudio from '@/components/VideoStudio';
+import StoryboardStudio from '@/components/StoryboardStudio';
 import { getCuts, getReferences, getProducts, getTalents } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
@@ -21,10 +21,10 @@ export default async function VideoPage() {
   return (
     <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">
       <PageHeader
-        title="영상 제작"
-        desc="첫 프레임과 용도를 고르면 컷 분할 스토리 시트를 만들어 드립니다. 시트를 확인·수정해 대기열에 넣으면 제작 후 완성 영상을 올려드립니다."
+        title="영상 스토리보드"
+        desc="컷마다 장면을 적고 이미지를 만들면 그 자리에 스토리보드가 그려집니다. 컷은 서로 이어받아 방·조명·색이 유지되고, 완성되면 그대로 영상 대기열로 넘어갑니다."
       />
-      <VideoStudio
+      <StoryboardStudio
         cuts={cuts.map((c) => ({
           url: c.url,
           title: c.title || `${c.line} ${c.colorName}`.trim() || c.spec || '컷',

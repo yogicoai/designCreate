@@ -52,8 +52,15 @@ const NAV = [
     items: [
       { href: '/design', label: '배너 디자인 생성', icon: '✎' },
       { href: '/design/manage', label: '배너 디자인 관리', icon: '▤' },
-      // 영상은 시트(요청서)까지 앱에서 만들고 렌더는 오너가 힉스필드에서 돌린다
-      { href: '/video', label: '영상 제작', icon: '🎬' },
+    ],
+  },
+  {
+    // 영상은 시트(요청서)까지 앱에서 만들고 렌더는 오너가 힉스필드에서 돌린다.
+    // 만드는 화면과 완성본이 쌓이는 화면으로 나눈다 — 디자인 무리와 같은 결.
+    group: '영상 제작',
+    items: [
+      { href: '/video', label: '영상 스토리 시트', icon: '🎬' },
+      { href: '/video/gallery', label: '영상 갤러리', icon: '▶' },
     ],
   },
   {

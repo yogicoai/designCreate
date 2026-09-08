@@ -56,4 +56,5 @@ export const COLLECTIONS = {
   trendPromos: 'trend_promos',             // 경쟁사 이벤트·프로모션 기록 (제목+링크+날짜, 텍스트만)
   trendArchives: 'trend_archives',         // 웨이백에 남은 경쟁사 과거 메인 스냅샷 링크
   designTemplates: 'design_templates',     // 디자인 생성 — 저장한 텍스트 배치 (배경 없이 배치만)
+  videos: 'videos',                        // 완성 영상 (cafe24 에 .jpg 로 위장 저장, 프록시로 재생)
 } as const;
