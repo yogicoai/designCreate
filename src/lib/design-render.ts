@@ -88,6 +88,12 @@ export interface DesignLayer {
    * 끼우는 슬롯은 cover 가 맞다 — 비율이 달라도 옆이 비지 않는다.
    */
   cover?: boolean;
+  /**
+   * cover 슬롯 안에서 원본의 어느 지점을 보여줄지 (0~1, 기본 0.5 = 가운데).
+   * CSS object-position 과 같은 개념 — 슬롯의 위치·크기는 그대로 두고 그림만 밀어 넣는다.
+   */
+  srcFx?: number;
+  srcFy?: number;
 
   /** 이 레이어만 다른 글꼴 — 없으면 배너 전체 글꼴(design.font)을 따른다 */
   font?: string;
@@ -300,6 +306,29 @@ export function renderLayersToSvg(
       const x = (l.x ?? 0.5) * W - w / 2;
       const y = (l.y ?? 0.5) * H - h / 2;
       const rot = l.rotate ? ` transform="rotate(${l.rotate} ${x + w / 2} ${y + h / 2})"` : '';
+      /*
+       * cover 슬롯 + 원본 비율을 알면 잘라낼 위치를 초점(srcFx/srcFy)으로 고른다.
+       * preserveAspectRatio 는 9칸(xMid 등)밖에 못 잡아서, 직접 확대해 클립으로 자른다 —
+       * 슬롯의 위치·크기는 그대로 두고 그 안의 그림만 밀어 넣는 방식이다 (CSS object-position).
+       */
+      if (l.cover && l.srcAspect) {
+        const a = l.srcAspect;
+        const wide = w / h > a;
+        const iw = wide ? w : h * a;
+        const ih = wide ? w / a : h;
+        const fx = Math.max(0, Math.min(1, l.srcFx ?? 0.5));
+        const fy = Math.max(0, Math.min(1, l.srcFy ?? 0.5));
+        const ix = x - (iw - w) * fx;
+        const iy = y - (ih - h) * fy;
+        const cid = `imgclip${i}`;
+        parts.push(
+          `<clipPath id="${cid}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>` +
+          `<g clip-path="url(#${cid})"${rot}>` +
+          `<image x="${ix}" y="${iy}" width="${iw}" height="${ih}" opacity="${op}" preserveAspectRatio="none"` +
+          ` href="${esc(href)}" xlink:href="${esc(href)}"/></g>`,
+        );
+        return;
+      }
       parts.push(
         `<image x="${x}" y="${y}" width="${w}" height="${h}" opacity="${op}" preserveAspectRatio="xMidYMid ${l.cover ? 'slice' : 'meet'}"` +
         ` href="${esc(href)}" xlink:href="${esc(href)}"${rot}/>`,

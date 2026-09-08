@@ -492,7 +492,9 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
     // 웹 A안(실물 1920×680 실측) — 좌 60.6% 씬+어둡게+문구 3줄, 우 39.4% 이미지 슬롯
     return [
       rightImg
-        ? { id: uid(), kind: 'image', x: 0.803, y: 0.5, w: 0.394, h: 1.0, src: rightImg, cover: true, color: '#ffffff', opacity: 1, name: '우측 이미지' }
+        ? { id: uid(), kind: 'image', x: 0.803, y: 0.5, w: 0.394, h: 1.0, src: rightImg, cover: true,
+            ...(rightAspect ? { srcAspect: rightAspect } : {}), srcFx: 0.5, srcFy: 0.5,
+            color: '#ffffff', opacity: 1, name: '우측 이미지' }
         : { id: uid(), kind: 'rect', x: 0.803, y: 0.5, w: 0.394, h: 1.0, color: '#d9dde3', opacity: 1, name: '우측 이미지 자리 — 이미지로 교체' },
       { id: uid(), kind: 'rect', x: 0.303, y: 0.5, w: 0.606, h: 1.0, color: '#000000', opacity: 0.25, name: '좌측 어둡게' },
       // 문자: 65px/700/-2%/lh75 · 45px/700/-2%/lh80 · 25px/500/lh100% (피그마 실측, 680 기준)
@@ -559,11 +561,30 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   const applyTemplateA = (style?: 'scrim' | 'band') => applyPlan('A', style);
 
   /** A안 우측 이미지를 정한다 — 무대에 A안이 있으면 자리표시(회색)든 기존 것이든 바꿔 끼운다 */
-  function setRightImage(url: string) {
+  function setRightImage(url: string, aspect?: number) {
     setRightImg(url);
+    setRightAspect(aspect);
     setLayers((cur) => cur.map((l) => (l.name?.startsWith('우측 이미지')
-      ? { ...l, kind: 'image' as const, src: url, cover: true, color: '#ffffff', name: '우측 이미지' }
+      ? {
+          ...l, kind: 'image' as const, src: url, cover: true, color: '#ffffff', name: '우측 이미지',
+          ...(aspect ? { srcAspect: aspect } : {}),
+          // 새 사진을 끼우면 초점은 가운데로 초기화 — 이전 사진의 초점이 남으면 엉뚱한 데가 보인다
+          srcFx: 0.5, srcFy: 0.5,
+        }
       : l)));
+    /*
+     * 비율을 모르면 브라우저에서 재서 채운다 — srcAspect 가 있어야 슬롯 안에서
+     * 초점(보이는 부분)을 옮길 수 있다. 없으면 가운데 고정으로만 잘린다.
+     */
+    if (!aspect) {
+      const img = new window.Image();
+      img.onload = () => {
+        const a = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+        setRightAspect(a);
+        setLayers((cur) => cur.map((l) => (l.src === url && l.name?.startsWith('우측 이미지') ? { ...l, srcAspect: a } : l)));
+      };
+      img.src = url;
+    }
   }
 
   /** A안 우측 이미지 업로드 — 배경 업로드와 같은 경로, 보관함 등록은 안 한다 */
@@ -579,7 +600,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
       fd.append('register', '0');
       const j = await (await fetch('/api/upload', { method: 'POST', body: fd })).json();
       if (!j.ok) { setErr(j.error || '업로드 실패'); return; }
-      setRightImage(j.url);
+      setRightImage(j.url, j.width && j.height ? j.width / j.height : undefined);
       setNote(`우측 이미지 준비됨 — "${f.name}"`);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
   }
@@ -628,13 +649,16 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
    * (사용자 요청: 손잡이 말고 숫자를 눌러 낮추면 작아지게)
    */
   const [sizePct, setSizePct] = useState(100);
+  /** 100% 기준이 되는 레이어 id — 렌더에서 ref 를 읽지 않으려고 상태로 둔다 */
+  const [sizeBaseId, setSizeBaseId] = useState<string | null>(null);
   const sizeBaseRef = useRef<{ id: string; base: DesignLayer } | null>(null);
-  const shownPct = sizeBaseRef.current?.id === selected ? sizePct : 100;
+  const shownPct = sizeBaseId === selected ? sizePct : 100;
   function applySizePct(pct: number) {
     const l = layers.find((x) => x.id === selected);
     if (!l) return;
     if (sizeBaseRef.current?.id !== l.id) {
       sizeBaseRef.current = { id: l.id, base: { ...l, points: l.points ? [...l.points] : undefined } };
+      setSizeBaseId(l.id);
     }
     const v = Math.max(10, Math.min(400, Math.round(pct)));
     setSizePct(v);
@@ -650,6 +674,7 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
     e.stopPropagation();
     // 손잡이로 끌면 수치 기준을 새로 잡는다 — 끌고 난 크기가 다시 100% 가 된다
     sizeBaseRef.current = null;
+    setSizeBaseId(null);
     setSizePct(100);
     const r = st.getBoundingClientRect();
     scaleRef.current = { id, sx: (e.clientX - r.left) / r.width, sy: (e.clientY - r.top) / r.height, start: { ...l, points: l.points ? [...l.points] : undefined } };
@@ -928,6 +953,8 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
   const [tplNaming, setTplNaming] = useState(false);
   /** A안(이미지 2분할)의 우측 이미지 URL */
   const [rightImg, setRightImg] = useState('');
+  /** 우측 이미지 원본 비율 (w/h) — 슬롯 안에서 보여줄 부분을 옮기려면 이게 있어야 한다 */
+  const [rightAspect, setRightAspect] = useState<number | undefined>(undefined);
   /** 모바일 A안 하단 처리 — 그늘형(Luxe, 사진 위 그라데이션) / 밴드형(Modju, 단색 블록) */
   const [mobStyle, setMobStyle] = useState<'scrim' | 'band'>('scrim');
   const [tplName, setTplName] = useState('');
@@ -1447,6 +1474,26 @@ export default function DesignStudio({ cuts, initial, sourceId, fonts = [], refs
                        style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--text)' }} />
                 <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>%</span>
                 <button className="chip px-2" title="선택 시점 크기로" onClick={() => applySizePct(100)}>되돌리기</button>
+                {/*
+                  * 이미지 슬롯은 자리·크기를 고정한 채 "원본의 어느 부분이 보일지"만 옮긴다.
+                  * 우측 이미지처럼 꽉 채워 자르는 슬롯에서 인물이 잘리는 걸 여기서 맞춘다.
+                  */}
+                {sel.kind === 'image' && sel.cover && (
+                  <span data-focal-controls className="flex items-center gap-1.5">
+                    <span className="mx-0.5" style={{ color: 'var(--line-strong)' }}>|</span>
+                    <span className="text-[10.5px] shrink-0" style={{ color: 'var(--text-dim)' }}>보이는 부분</span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-mute)' }}>좌우</span>
+                    <input type="range" min={0} max={1} step={0.02} value={sel.srcFx ?? 0.5} style={{ width: 72 }}
+                           title="원본의 왼쪽·오른쪽 중 어디를 보여줄지"
+                           onChange={(e) => { patch(sel.id, { srcFx: Number(e.target.value) }); setResult(null); }} />
+                    <span className="text-[10px]" style={{ color: 'var(--text-mute)' }}>상하</span>
+                    <input type="range" min={0} max={1} step={0.02} value={sel.srcFy ?? 0.5} style={{ width: 72 }}
+                           title="원본의 위·아래 중 어디를 보여줄지"
+                           onChange={(e) => { patch(sel.id, { srcFy: Number(e.target.value) }); setResult(null); }} />
+                    <button className="chip px-2" title="가운데로"
+                            onClick={() => { patch(sel.id, { srcFx: 0.5, srcFy: 0.5 }); setResult(null); }}>가운데</button>
+                  </span>
+                )}
               </div>
             )}
             {/*
