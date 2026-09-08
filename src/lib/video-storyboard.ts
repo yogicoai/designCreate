@@ -17,9 +17,18 @@ export interface Shot {
   scene: string;
   /** 카메라 움직임 */
   camera: string;
-  /** 이 컷의 시작 프레임 — 여기서 생성했거나 보관함에서 고른 스틸 */
+  /** 이 컷에서 일어나는 동작 — 시작에서 끝으로 무엇이 바뀌는가. 끝 프레임 생성 지시가 된다. */
+  action?: string;
+  /** 나레이션·대사 — 영상 생성에는 넣지 않는다(엔진이 한국어 대사를 못 만든다). 편집용 지시. */
+  narration?: string;
+  /** 효과음 — 마찬가지로 편집용 */
+  sfx?: string;
+  /** 시작 프레임 (START FRAME) */
   image?: string;
   imageTitle?: string;
+  /** 끝 프레임 (END FRAME) — 시작에서 파생해 만든다. 두 장 사이를 엔진이 채운다. */
+  endImage?: string;
+  endImageTitle?: string;
   /**
    * 앞 컷의 스틸을 배경 레퍼런스로 물려서 만든다.
    * 켜면 방·조명·컬러 그레이드가 이어져 컷 사이 톤이 흔들리지 않는다
@@ -94,6 +103,32 @@ export function draftShots(i: StoryboardInput): Shot[] {
   ];
 }
 
+/** 컷의 시작 시각 — 앞 컷들의 길이를 더해서 구한다 */
+export function timeLabel(shots: Shot[], i: number): string {
+  const mmss = (sec: number) => {
+    const t = Math.max(0, Math.round(sec));
+    return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+  };
+  const from = shots.slice(0, i).reduce((a, x) => a + (Number(x.seconds) || 0), 0);
+  return `${mmss(from)}-${mmss(from + (Number(shots[i]?.seconds) || 0))}`;
+}
+
+/**
+ * 끝 프레임을 만들 때의 지시.
+ *
+ * 시작 프레임을 base 레퍼런스로 넣고 부르면 프롬프트 작성기가
+ * "베이스를 그대로 재현하고 아래 지정한 것만 바꿔라"로 조립한다. 그래서 여기엔
+ * '무엇이 바뀌는가'만 적는다 — 인물·방·옷·앵글은 건드리지 말라고 못박는다.
+ */
+export function endDirection(s: Shot): string {
+  return [
+    `같은 인물, 같은 공간, 같은 옷, 같은 카메라 각도 그대로입니다. 몇 초 뒤의 순간만 담습니다.`,
+    `바뀌는 것: ${s.action?.trim() || s.scene}`,
+    '얼굴·머리·의상·가구 배치·조명은 시작 프레임과 완전히 같아야 합니다. 동작과 시선만 달라집니다.',
+    '화면에 글자·자막·로고 오버레이는 넣지 마세요.',
+  ].join('\n');
+}
+
 /**
  * 컷 하나의 스틸을 만들 때 /api/generate 에 넘길 한글 연출 지시.
  *
@@ -117,8 +152,12 @@ export function sceneDirection(s: Shot, aspect: string): string {
 export function shotPrompt(s: Shot, i: StoryboardInput, aspect: string): string {
   const cam = CAMERA_EN[s.camera] ?? s.camera;
   return [
-    `Start from the supplied still and animate it as a ${s.seconds}s ${aspect} product video shot.`,
+    s.endImage
+      // 두 장을 주면 엔진은 그 사이만 채운다 — 말로 설명하는 것보다 훨씬 정확하다
+      ? `Animate from the supplied START frame to the supplied END frame as one continuous ${s.seconds}s ${aspect} shot. Interpolate the motion naturally between them; do not invent action beyond what the two frames imply.`
+      : `Start from the supplied still and animate it as a ${s.seconds}s ${aspect} product video shot.`,
     `SCENE: ${s.scene}`,
+    s.action?.trim() ? `ACTION: ${s.action.trim()}` : '',
     `CAMERA: ${cam}.`,
     i.productLabel ? `PRODUCT: Yogibo ${i.productLabel} — keep its exact shape, colour and proportions; it must not deform, wobble unnaturally or change colour.` : '',
     i.modelLabel ? `PERSON: keep the same person throughout — same face, hair and outfit as the still; natural, unexaggerated movement.` : 'No people appear in this shot.',

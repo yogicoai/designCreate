@@ -8,6 +8,8 @@ import { getDb } from '@/lib/db';
  * 스틸을 여러 장 생성해 가며 짜는 작업이라, 화면을 닫아도 남아야 한다.
  * (영상 대기열은 '완성된 요청서'고, 이건 '짜는 중인 작업물'이다.)
  *
+ * 상태는 작성중 → 검증중 → 영상완료 로 흐른다 (게시판에서 눈으로 따라간다).
+ *
  * GET          내 스토리보드 목록
  * GET ?id=     한 건 불러오기
  * POST         새로 저장 / { id } 가 오면 덮어쓰기
@@ -18,6 +20,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const COL = 'storyboards';
+
+/** 게시판에서 따라가는 진행 상태 */
+export const STATUSES: string[] = ['작성중', '검증중', '영상완료'];
 
 export async function GET(req: Request) {
   try {
@@ -35,7 +40,14 @@ export async function GET(req: Request) {
       boards: rows.map((r) => ({
         id: String(r._id),
         title: r.title ?? '무제',
+        status: r.status ?? '작성중',
+        aspect: r.aspect ?? '9:16',
+        total: r.total ?? 0,
         shotCount: Array.isArray(r.shots) ? r.shots.length : 0,
+        // 스틸이 몇 칸 채워졌는지 — 게시판에서 진척이 보이게
+        filled: Array.isArray(r.shots)
+          ? r.shots.filter((x: { image?: string }) => x.image).length
+          : 0,
         // 목록에서 알아보기 쉽게 첫 컷 스틸을 썸네일로
         thumb: (Array.isArray(r.shots) ? r.shots.find((s: { image?: string }) => s.image)?.image : '') ?? '',
         updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : null,
@@ -60,6 +72,7 @@ export async function POST(req: Request) {
       colorKey: b.colorKey ?? '',
       model: b.model ?? '',
       note: String(b.note ?? '').slice(0, 1000),
+      status: STATUSES.includes(String(b.status)) ? String(b.status) : '작성중',
       shots: Array.isArray(b.shots) ? b.shots : [],
       updatedAt: now,
     };
