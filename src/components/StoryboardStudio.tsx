@@ -38,6 +38,9 @@ interface BoardRow {
 }
 
 const STATUSES = ['작성중', '검증중', '영상완료'];
+
+/** 콘티표 컬럼 — xl 이상에서만 표처럼 눕고, 좁아지면 컷마다 세로로 접힌다 */
+const GRID_XL = 'xl:grid-cols-[100px_minmax(0,auto)_minmax(220px,1fr)_150px_minmax(0,auto)_28px]';
 const STATUS_COLOR: Record<string, string> = {
   작성중: 'var(--text-mute)', 검증중: 'var(--warn)', 영상완료: 'var(--ok)',
 };
@@ -67,6 +70,9 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
   const [model, setModel] = useState('');
   const [note, setNote] = useState('');
   const [shots, setShots] = useState<Shot[]>([]);
+  // 컷을 다 이어붙인 최종 영상 — 콘티 맨 아래에 붙는다
+  const [finalClip, setFinalClip] = useState('');
+  const [finalNote, setFinalNote] = useState('');
 
   const [gen, setGen] = useState<Gen>(null);
   const [busy, setBusy] = useState(false);
@@ -104,7 +110,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
   function reset() {
     setBoardId(''); setTitle(''); setStatus('작성중'); setPurpose('product');
     setTotal(15); setAspect('9:16'); setLine(''); setColorKey(''); setModel('');
-    setNote(''); setShots([]); setErr(''); setSaved('');
+    setNote(''); setShots([]); setFinalClip(''); setFinalNote(''); setErr(''); setSaved('');
   }
 
   async function open(id: string) {
@@ -117,6 +123,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
       setPurpose(b.purpose ?? 'product'); setTotal(b.total ?? 15); setAspect(b.aspect ?? '9:16');
       setLine(b.line ?? ''); setColorKey(b.colorKey ?? ''); setModel(b.model ?? '');
       setNote(b.note ?? ''); setShots(Array.isArray(b.shots) ? b.shots : []);
+      setFinalClip(b.finalClip ?? ''); setFinalNote(b.finalNote ?? '');
       setSaved(''); setView('edit');
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
@@ -129,6 +136,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
         body: JSON.stringify({
           id: boardId || undefined, title, status: nextStatus ?? status,
           purpose, total: sumSec || total, aspect, line, colorKey, model, note, shots,
+          finalClip, finalNote,
         }),
       })).json();
       if (!j.ok) throw new Error(j.error || '저장 실패');
@@ -169,6 +177,36 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
       [n[i], n[j]] = [n[j], n[i]];
       return n.map((s, k) => ({ ...s, no: k + 1 }));
     });
+  }
+
+  /**
+   * 클립 주소를 재생 주소로. cafe24 에는 .jpg 로 위장 저장돼 있어서
+   * /api/video 프록시를 태워야 video/mp4 로 나온다.
+   */
+  function videoSrc(raw: string): string {
+    if (!raw) return '';
+    if (raw.startsWith('/api/video/')) return raw;
+    // 힉스필드 CDN 처럼 남의 서버에 있는 mp4 는 그대로 재생된다 — 프록시를 태우면 오히려 깨진다
+    try {
+      const u = new URL(raw);
+      const ours = u.hostname.endsWith('cafe24.com') || u.hostname.endsWith('yogibo.kr');
+      if (!ours) return raw;
+      if (/\.mp4($|\?)/i.test(u.pathname)) return raw;
+      return `/api/video/${u.pathname.replace(/^\/+/, '')}`;
+    } catch {
+      return `/api/video/${raw.replace(/^\/+/, '')}`;
+    }
+  }
+
+  /** 완성 클립 붙이기 — 제작은 대화에서 돌고, 나온 주소를 여기 달아 콘티에 반영한다 */
+  function attachClip(i: number) {
+    const cur = shots[i]?.clip ?? '';
+    const v = prompt(
+      `컷 ${shots[i]?.no} 의 완성 영상 주소를 붙여넣어 주세요. (비우고 확인하면 등록이 해제됩니다)`,
+      cur,
+    );
+    if (v === null) return;
+    patch(i, { clip: v.trim() });
   }
 
   /** 앞 컷의 끝 프레임을 이 컷의 시작으로 — 이음새가 물리적으로 사라진다 */
@@ -257,7 +295,8 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
   const pool = pickSrc === 'cuts' ? cuts : refs;
   const shown = pool.slice(page * PER, (page + 1) * PER);
   const ratio = aspect.replace(':', '/');
-  const cellW = aspect === '16:9' ? 150 : 86;
+  // 프레임 폭 — 좁은 화면에서도 두 장이 나란히 들어가도록 줄어든다
+  const frameW = aspect === '16:9' ? 'w-[124px] sm:w-[150px]' : 'w-[76px] sm:w-[92px]';
 
   // ── 게시판 ─────────────────────────────────────────────────────
   if (view === 'board') {
@@ -299,7 +338,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
                       </div>
                     </td>
                     <td className="px-2.5 py-2">
-                      <button className="text-left font-bold" style={{ color: 'var(--accent)' }}
+                      <button className="text-left font-bold hover:underline" style={{ color: 'var(--accent)' }}
                               onClick={() => open(b.id)}>{b.title}</button>
                     </td>
                     <td className="px-2.5 py-2 tabular-nums whitespace-nowrap">{b.shotCount}컷</td>
@@ -425,112 +464,183 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
           </div>
         </div>
       ) : (
-        <div className="card overflow-x-auto">
-          <table className="text-[12px]" style={{ borderCollapse: 'collapse', minWidth: 1080 }}>
-            <thead>
-              <tr style={{ background: 'var(--surface-2)' }}>
-                {['SHOT / TIME', 'START FRAME', 'END FRAME', 'CAMERA', 'ACTION / DIRECTION', '나레이션·대사', 'SFX'].map((h) => (
-                  <th key={h} className="label px-2 py-2 text-center whitespace-nowrap"
-                      style={{ borderBottom: '1px solid var(--line-strong)' }}>{h}</th>
-                ))}
-                <th style={{ borderBottom: '1px solid var(--line-strong)' }} />
-              </tr>
-            </thead>
-            <tbody>
-              {shots.map((s, i) => {
-                const gs = gen?.i === i && gen.kind === 'start';
-                const ge = gen?.i === i && gen.kind === 'end';
-                const cell = (kind: 'start' | 'end') => {
-                  const url = kind === 'start' ? s.image : s.endImage;
-                  const working = kind === 'start' ? gs : ge;
-                  return (
-                    <td className="px-2 py-2.5 align-top" style={{ borderBottom: '1px solid var(--line)' }}>
-                      <div className="flex flex-col items-center gap-1" style={{ width: cellW }}>
-                        <div className="rounded border overflow-hidden w-full flex items-center justify-center"
-                             style={{
-                               aspectRatio: ratio,
-                               borderColor: working ? 'var(--accent)' : url ? 'var(--line-strong)' : 'var(--line)',
-                               borderStyle: url ? 'solid' : 'dashed',
-                               background: url ? '#000' : 'var(--surface-2)',
-                             }}>
-                          {url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={thumbUrl(url, 256)} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="text-[10px] text-center px-1"
-                                  style={{ color: working ? 'var(--accent)' : 'var(--text-mute)' }}>
-                              {working ? '만드는 중…' : '비어 있음'}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex gap-1 w-full">
-                          <button className="chip flex-1" style={{ padding: '1px 4px', fontSize: 10 }}
-                                  onClick={() => generate(i, kind)} disabled={gen !== null}>
-                            {url ? '다시' : '만들기'}
-                          </button>
-                          <button className="chip" style={{ padding: '1px 4px', fontSize: 10 }}
-                                  onClick={() => { setPickFor({ i, kind }); setPage(0); }}>고르기</button>
-                        </div>
-                        {kind === 'start' && i > 0 && (
-                          <button className="chip w-full" style={{ padding: '1px 4px', fontSize: 10, color: 'var(--accent)' }}
-                                  title="앞 컷의 끝 프레임을 그대로 이 컷의 시작으로 — 이음새가 사라집니다"
-                                  onClick={() => inheritPrevEnd(i)}>
-                            ↑ 앞 컷 끝에서
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  );
-                };
-                return (
-                  <tr key={i}>
-                    <td className="px-2 py-2.5 align-top whitespace-nowrap" style={{ borderBottom: '1px solid var(--line)' }}>
-                      <div className="font-extrabold text-[13px]">CUT{s.no}</div>
-                      <div className="text-[10px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
-                        {timeLabel(shots, i)}
-                      </div>
-                      <input className="input mt-1 w-[58px] text-right" type="number" min={1} max={30} step={0.5}
-                             value={s.seconds} onChange={(e) => patch(i, { seconds: Number(e.target.value) || 0 })} />
-                    </td>
-                    {cell('start')}
-                    {cell('end')}
-                    <td className="px-2 py-2.5 align-top" style={{ borderBottom: '1px solid var(--line)', minWidth: 150 }}>
-                      <select className="input w-full" value={s.camera}
-                              onChange={(e) => patch(i, { camera: e.target.value })}>
-                        {CAMERA_MOVES.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-2 py-2.5 align-top" style={{ borderBottom: '1px solid var(--line)', minWidth: 230 }}>
-                      <textarea className="input w-full" rows={2} value={s.scene}
-                                placeholder="장면 — 시작 프레임에 무엇이 보이나"
-                                onChange={(e) => patch(i, { scene: e.target.value })} />
-                      <textarea className="input w-full mt-1" rows={2} value={s.action ?? ''}
-                                placeholder="동작 — 시작에서 끝으로 무엇이 바뀌나 (예: 눈을 감고 있다 → 고개 살짝 듦)"
-                                onChange={(e) => patch(i, { action: e.target.value })} />
-                    </td>
-                    <td className="px-2 py-2.5 align-top" style={{ borderBottom: '1px solid var(--line)', minWidth: 130 }}>
-                      <textarea className="input w-full" rows={2} value={s.narration ?? ''} placeholder="&quot;음… 잘 잤다&quot;"
-                                onChange={(e) => patch(i, { narration: e.target.value })} />
-                    </td>
-                    <td className="px-2 py-2.5 align-top" style={{ borderBottom: '1px solid var(--line)', minWidth: 120 }}>
-                      <textarea className="input w-full" rows={2} value={s.sfx ?? ''} placeholder="새소리 · 이불 부스럭"
-                                onChange={(e) => patch(i, { sfx: e.target.value })} />
-                    </td>
-                    <td className="px-1.5 py-2.5 align-top whitespace-nowrap" style={{ borderBottom: '1px solid var(--line)' }}>
-                      <div className="flex flex-col gap-0.5">
-                        <button className="text-[10px]" style={{ color: 'var(--text-mute)' }}
-                                onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
-                        <button className="text-[10px]" style={{ color: 'var(--text-mute)' }}
-                                onClick={() => move(i, 1)} disabled={i === shots.length - 1}>↓</button>
-                        <button className="text-[10px]" style={{ color: 'var(--danger)' }}
-                                onClick={() => removeShot(i)}>×</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="card p-2 sm:p-3">
+          {/* 표 머리 — 넓은 화면에서만. 좁아지면 컷마다 카드처럼 접힌다 */}
+          <div className={`hidden xl:grid ${GRID_XL} gap-2 px-2 pb-2 mb-1`}
+               style={{ borderBottom: '1px solid var(--line-strong)' }}>
+            {['SHOT / TIME', 'START · END FRAME', 'CAMERA · ACTION / DIRECTION', '나레이션 · SFX', 'CLIP · 완성 영상', ''].map((h, n) => (
+              <div key={n} className="label">{h}</div>
+            ))}
+          </div>
+
+          {shots.map((s, i) => {
+            const gs = gen?.i === i && gen.kind === 'start';
+            const ge = gen?.i === i && gen.kind === 'end';
+
+            const cell = (kind: 'start' | 'end') => {
+              const url = kind === 'start' ? s.image : s.endImage;
+              const working = kind === 'start' ? gs : ge;
+              return (
+                <div className={`flex flex-col gap-1 ${frameW}`}>
+                  <div className="label text-center" style={{ fontSize: 9.5 }}>
+                    {kind === 'start' ? 'START' : 'END'}
+                  </div>
+                  <div className="rounded border overflow-hidden w-full flex items-center justify-center"
+                       style={{
+                         aspectRatio: ratio,
+                         borderColor: working ? 'var(--accent)' : url ? 'var(--line-strong)' : 'var(--line)',
+                         borderStyle: url ? 'solid' : 'dashed',
+                         background: url ? '#000' : 'var(--surface-2)',
+                       }}>
+                    {url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={thumbUrl(url, 256)} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-[10px] text-center px-1"
+                            style={{ color: working ? 'var(--accent)' : 'var(--text-mute)' }}>
+                        {working ? '만드는 중…' : '비어 있음'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-1 w-full">
+                    <button className="chip flex-1" style={{ padding: '1px 4px', fontSize: 10 }}
+                            onClick={() => generate(i, kind)} disabled={gen !== null}>
+                      {url ? '다시' : '만들기'}
+                    </button>
+                    <button className="chip" style={{ padding: '1px 4px', fontSize: 10 }}
+                            onClick={() => { setPickFor({ i, kind }); setPage(0); }}>고르기</button>
+                  </div>
+                  {kind === 'start' && i > 0 && (
+                    <button className="chip w-full" style={{ padding: '1px 4px', fontSize: 10, color: 'var(--accent)' }}
+                            title="앞 컷의 끝 프레임을 그대로 이 컷의 시작으로 — 이음새가 사라집니다"
+                            onClick={() => inheritPrevEnd(i)}>
+                      ↑ 앞 컷 끝에서
+                    </button>
+                  )}
+                </div>
+              );
+            };
+
+            const tools = (
+              <>
+                <button className="text-[11px]" style={{ color: 'var(--text-mute)' }}
+                        onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
+                <button className="text-[11px]" style={{ color: 'var(--text-mute)' }}
+                        onClick={() => move(i, 1)} disabled={i === shots.length - 1}>↓</button>
+                <button className="text-[11px]" style={{ color: 'var(--danger)' }}
+                        onClick={() => removeShot(i)}>×</button>
+              </>
+            );
+
+            return (
+              <div key={i} className={`grid grid-cols-1 ${GRID_XL} gap-2 px-2 py-3`}
+                   style={{ borderTop: i ? '1px solid var(--line)' : undefined }}>
+                {/* 컷 번호·시간·길이 — 좁을 땐 한 줄로 눕고 도구가 오른쪽에 붙는다 */}
+                <div className="flex xl:block items-center gap-2 flex-wrap">
+                  <div className="font-extrabold text-[13px]">CUT{s.no}</div>
+                  <div className="text-[10.5px] tabular-nums" style={{ color: 'var(--text-mute)' }}>
+                    {timeLabel(shots, i)}
+                  </div>
+                  <div className="flex items-center gap-1 xl:mt-1.5">
+                    <input className="input w-[56px] text-right" type="number" min={1} max={30} step={0.5}
+                           value={s.seconds} onChange={(e) => patch(i, { seconds: Number(e.target.value) || 0 })} />
+                    <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>초</span>
+                  </div>
+                  <div className="flex-1 xl:hidden" />
+                  <div className="flex items-center gap-2 xl:hidden">{tools}</div>
+                </div>
+
+                <div className="flex gap-2">
+                  {cell('start')}
+                  {cell('end')}
+                </div>
+
+                <div className="min-w-0">
+                  <select className="input w-full" value={s.camera}
+                          onChange={(e) => patch(i, { camera: e.target.value })}>
+                    {CAMERA_MOVES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <textarea className="input w-full mt-1" rows={2} value={s.scene}
+                            placeholder="장면 — 시작 프레임에 무엇이 보이나"
+                            onChange={(e) => patch(i, { scene: e.target.value })} />
+                  <textarea className="input w-full mt-1" rows={2} value={s.action ?? ''}
+                            placeholder="동작 — 시작에서 끝으로 무엇이 바뀌나 (예: 눈을 감고 있다 → 고개 살짝 듦)"
+                            onChange={(e) => patch(i, { action: e.target.value })} />
+                </div>
+
+                {/* 나레이션·SFX — 좁을 땐 나란히 두 칸, 넓을 땐 위아래 */}
+                <div className="grid grid-cols-2 xl:grid-cols-1 gap-2 min-w-0">
+                  <textarea className="input w-full" rows={2} value={s.narration ?? ''}
+                            placeholder="나레이션·대사" onChange={(e) => patch(i, { narration: e.target.value })} />
+                  <textarea className="input w-full" rows={2} value={s.sfx ?? ''}
+                            placeholder="SFX" onChange={(e) => patch(i, { sfx: e.target.value })} />
+                </div>
+
+                {/* 이 컷의 완성 영상 — 제작은 대화에서 돌고, 결과 주소를 여기 달아 콘티에 붙인다 */}
+                <div className={`flex flex-col gap-1 ${frameW}`}>
+                  <div className="label text-center" style={{ fontSize: 9.5 }}>CLIP</div>
+                  <div className="rounded border overflow-hidden w-full flex items-center justify-center"
+                       style={{
+                         aspectRatio: ratio,
+                         borderColor: s.clip ? 'var(--ok)' : 'var(--line)',
+                         borderStyle: s.clip ? 'solid' : 'dashed',
+                         background: s.clip ? '#000' : 'var(--surface-2)',
+                       }}>
+                    {s.clip ? (
+                      <video src={videoSrc(s.clip)} controls loop playsInline preload="metadata"
+                             className="w-full h-full" style={{ objectFit: 'cover' }} />
+                    ) : (
+                      <span className="text-[9.5px] text-center px-1 leading-tight" style={{ color: 'var(--text-mute)' }}>
+                        아직<br />없음
+                      </span>
+                    )}
+                  </div>
+                  <button className="chip w-full" style={{ padding: '1px 4px', fontSize: 10 }}
+                          onClick={() => attachClip(i)}>
+                    {s.clip ? '영상 교체' : '영상 등록'}
+                  </button>
+                </div>
+
+                <div className="hidden xl:flex flex-col items-center gap-1">{tools}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 완성본 — 컷을 다 이어붙인 최종 영상. 사람들이 콘티와 결과를 한 화면에서 본다 */}
+      {shots.length > 0 && (
+        <div className="card p-3 mt-3">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <div className="label">완성 영상 — 위 컷들을 이어붙인 최종본</div>
+            <div className="flex-1" />
+            <button className="chip" style={{ color: 'var(--accent)' }}
+                    onClick={() => {
+                      const v = prompt('완성 영상 주소를 붙여넣어 주세요. (비우고 확인하면 해제됩니다)', finalClip);
+                      if (v !== null) setFinalClip(v.trim());
+                    }}>
+              {finalClip ? '완성본 교체' : '완성본 등록'}
+            </button>
+          </div>
+          {finalClip ? (
+            <div className="flex gap-3 items-start flex-wrap">
+              <video src={videoSrc(finalClip)} controls loop playsInline preload="metadata"
+                     className="rounded-lg" style={{ width: 260, aspectRatio: ratio, background: '#000' }} />
+              <div className="flex-1 min-w-[200px]">
+                <input className="input w-full" value={finalNote} placeholder="완성본 메모 (예: 20초 · 자막 B안)"
+                       onChange={(e) => setFinalNote(e.target.value)} />
+                <div className="text-[11px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-dim)' }}>
+                  컷별 클립은 각 행의 <b>CLIP</b> 칸에, 이어붙인 최종본은 여기에 답니다.
+                  콘티와 결과물을 한 화면에서 같이 보여줄 수 있습니다.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed p-5 text-center text-[11.5px]"
+                 style={{ borderColor: 'var(--line-strong)', color: 'var(--text-mute)' }}>
+              아직 완성본이 없습니다 — 컷별 클립이 다 나오면 이어붙여 여기 답니다.
+            </div>
+          )}
         </div>
       )}
 

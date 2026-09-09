@@ -48,6 +48,11 @@ export async function GET(req: Request) {
         filled: Array.isArray(r.shots)
           ? r.shots.filter((x: { image?: string }) => x.image).length
           : 0,
+        // 컷별 완성 클립이 몇 개 붙었는지 — 제작 진척
+        clips: Array.isArray(r.shots)
+          ? r.shots.filter((x: { clip?: string }) => x.clip).length
+          : 0,
+        hasFinal: !!r.finalClip,
         // 목록에서 알아보기 쉽게 첫 컷 스틸을 썸네일로
         thumb: (Array.isArray(r.shots) ? r.shots.find((s: { image?: string }) => s.image)?.image : '') ?? '',
         updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : null,
@@ -73,6 +78,8 @@ export async function POST(req: Request) {
       model: b.model ?? '',
       note: String(b.note ?? '').slice(0, 1000),
       status: STATUSES.includes(String(b.status)) ? String(b.status) : '작성중',
+      finalClip: String(b.finalClip ?? '').slice(0, 500),
+      finalNote: String(b.finalNote ?? '').slice(0, 200),
       shots: Array.isArray(b.shots) ? b.shots : [],
       updatedAt: now,
     };

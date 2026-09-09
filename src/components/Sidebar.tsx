@@ -59,8 +59,13 @@ const NAV = [
     // 만드는 화면과 완성본이 쌓이는 화면으로 나눈다 — 디자인 무리와 같은 결.
     group: '영상 제작',
     items: [
-      { href: '/video', label: '영상 스토리 시트', icon: '🎬' },
-      { href: '/video/gallery', label: '영상 갤러리', icon: '▶' },
+      { href: '/video', label: '영상 스토리보드', icon: '🎬' },
+      /*
+       * 영상 갤러리 — 사용자 요청으로 메뉴에서 잠시 숨김 (2026-09-09).
+       * 화면(/video/gallery)과 등록된 9편은 그대로 살아 있어서 주소로는 들어가진다.
+       * 다시 열 때는 아래 줄의 주석만 풀면 된다.
+       */
+      // { href: '/video/gallery', label: '영상 갤러리', icon: '▶' },
     ],
   },
   {

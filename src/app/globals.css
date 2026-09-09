@@ -83,6 +83,19 @@ body {
 *::-webkit-scrollbar-track { background: transparent; }
 
 @layer components {
+  /*
+   * 누를 수 있는 것에는 손가락 커서. .btn 만 갖고 있어서 클래스 없는 버튼
+   * (게시판 제목, 표 안의 ↑↓× 같은 것들)이 글자처럼 보였다.
+   * 못 누르는 상태는 그대로 not-allowed 로 남긴다.
+   */
+  button:not(:disabled),
+  summary,
+  [role='button']:not([aria-disabled='true']),
+  label:has(> input[type='file']) {
+    cursor: pointer;
+  }
+  button:disabled { cursor: not-allowed; }
+
   .card {
     background: var(--surface);
     border: 1px solid var(--line);
