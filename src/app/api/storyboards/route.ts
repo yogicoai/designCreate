@@ -81,6 +81,7 @@ export async function POST(req: Request) {
       scenario: String(b.scenario ?? '').slice(0, 4000),
       // 전체 컷을 한 장에 담은 콘티 시트 (승인·보고용)
       sheet: String(b.sheet ?? '').slice(0, 500),
+      endSheet: String(b.endSheet ?? '').slice(0, 500),
       status: STATUSES.includes(String(b.status)) ? String(b.status) : '작성중',
       finalClip: String(b.finalClip ?? '').slice(0, 500),
       finalNote: String(b.finalNote ?? '').slice(0, 200),

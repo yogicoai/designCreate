@@ -75,6 +75,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
   const [splitting, setSplitting] = useState(false);
   /** 전체 컷을 한 장에 담은 콘티 시트 — 승인·보고용 */
   const [sheet, setSheet] = useState('');
+  const [endSheet, setEndSheet] = useState('');
   const [sheeting, setSheeting] = useState(false);
   // 컷을 다 이어붙인 최종 영상 — 콘티 맨 아래에 붙는다
   const [finalClip, setFinalClip] = useState('');
@@ -116,7 +117,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
   function reset() {
     setBoardId(''); setTitle(''); setStatus('작성중'); setPurpose('product');
     setTotal(15); setAspect('9:16'); setLine(''); setColorKey(''); setModel('');
-    setNote(''); setScenario(''); setSheet(''); setShots([]); setFinalClip(''); setFinalNote(''); setErr(''); setSaved('');
+    setNote(''); setScenario(''); setSheet(''); setEndSheet(''); setShots([]); setFinalClip(''); setFinalNote(''); setErr(''); setSaved('');
   }
 
   async function open(id: string) {
@@ -129,7 +130,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
       setPurpose(b.purpose ?? 'product'); setTotal(b.total ?? 15); setAspect(b.aspect ?? '9:16');
       setLine(b.line ?? ''); setColorKey(b.colorKey ?? ''); setModel(b.model ?? '');
       setNote(b.note ?? ''); setScenario(b.scenario ?? ''); setShots(Array.isArray(b.shots) ? b.shots : []);
-      setFinalClip(b.finalClip ?? ''); setFinalNote(b.finalNote ?? ''); setSheet(b.sheet ?? '');
+      setFinalClip(b.finalClip ?? ''); setFinalNote(b.finalNote ?? ''); setSheet(b.sheet ?? ''); setEndSheet(b.endSheet ?? '');
       setSaved(''); setView('edit');
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
@@ -141,7 +142,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: boardId || undefined, title, status: nextStatus ?? status,
-          purpose, total: sumSec || total, aspect, line, colorKey, model, note, scenario, sheet, shots,
+          purpose, total: sumSec || total, aspect, line, colorKey, model, note, scenario, sheet, endSheet, shots,
           finalClip, finalNote,
         }),
       })).json();
@@ -194,10 +195,16 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
       })).json();
       if (!j.ok) throw new Error(j.error || '시트 생성 실패');
       setSheet(j.sheetUrl);
-      // 잘린 칸을 각 컷의 시작 프레임으로 넣는다 (확인용 — 승인 뒤 크게 다시 뽑는다)
+      setEndSheet(j.endSheetUrl ?? '');
+      // 잘린 칸을 각 컷의 시작·끝 프레임으로 넣는다 (확인용 — 승인 뒤 크게 다시 뽑는다)
       const urls = (j.panels ?? []) as string[];
-      setShots((cur) => cur.map((s2, i) => (urls[i] ? { ...s2, image: urls[i], imageTitle: `콘티 칸 ${i + 1}` } : s2)));
-      setSaved(`콘티 시트를 만들고 ${urls.length}컷에 붙였습니다.${j.note ? ` ${j.note}` : ''} 확인용 크기라, 확정되면 컷별로 크게 다시 뽑으세요.`);
+      const ends = (j.endPanels ?? []) as string[];
+      setShots((cur) => cur.map((s2, i) => ({
+        ...s2,
+        ...(urls[i] ? { image: urls[i], imageTitle: `콘티 시작 ${i + 1}` } : {}),
+        ...(ends[i] ? { endImage: ends[i], endImageTitle: `콘티 끝 ${i + 1}` } : {}),
+      })));
+      setSaved(`콘티 시트(시작·끝) 두 장을 만들어 ${urls.length}컷의 앞뒤에 붙였습니다.${j.note ? ` ${j.note}` : ''} 확인용 크기라, 확정되면 컷별로 크게 다시 뽑으세요.`);
     } catch (e) { setErr((e as Error).message); } finally { setSheeting(false); }
   }
 
@@ -538,12 +545,22 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="label">콘티 시트 — 전체 컷을 한 장에</span>
             <div className="flex-1" />
-            <a href={sheet} target="_blank" rel="noreferrer" className="chip">크게 보기</a>
-            <button className="chip" onClick={() => setSheet('')}>닫기</button>
+            <a href={sheet} target="_blank" rel="noreferrer" className="chip">시작 크게</a>
+            {endSheet && <a href={endSheet} target="_blank" rel="noreferrer" className="chip">끝 크게</a>}
+            <button className="chip" onClick={() => { setSheet(''); setEndSheet(''); }}>닫기</button>
           </div>
+          <div className="label mb-1" style={{ fontSize: 10 }}>시작 프레임</div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={sheet} alt="콘티 시트" className="w-full rounded-lg border"
+          <img src={sheet} alt="콘티 시트 · 시작" className="w-full rounded-lg border"
                style={{ borderColor: 'var(--line-strong)' }} />
+          {endSheet && (
+            <>
+              <div className="label mt-2 mb-1" style={{ fontSize: 10 }}>끝 프레임 — 각 컷이 끝나는 순간</div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={endSheet} alt="콘티 시트 · 끝" className="w-full rounded-lg border"
+                   style={{ borderColor: 'var(--line-strong)' }} />
+            </>
+          )}
           <div className="text-[11px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
             한 장에 같이 그려서 방·조명·인물이 맞습니다. <b>확인용 크기</b>라 각 칸은 작습니다 —
             확정되면 컷별 [만들기] 로 크게 다시 뽑으세요.

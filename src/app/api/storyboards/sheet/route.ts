@@ -54,13 +54,24 @@ export async function POST(req: Request) {
     const product = String(b.productLabel ?? '').trim();
     const model = String(b.modelLabel ?? '').trim();
 
-    const panelLines = shots.map((s, i) => {
-      const cam = CAMERA_EN[s.camera] ?? CAMERA_MOVES[0];
-      return `PANEL ${i + 1} (${s.seconds}s) — ${s.scene}${s.action ? ` / 이 컷에서 일어나는 일: ${s.action}` : ''} · ${cam}`;
-    });
-
-    const prompt = [
+    /*
+     * 시트를 두 장 만든다 — 컷의 '시작' 한 장, '끝' 한 장.
+     * 콘티표가 START/END 두 프레임을 요구하는데 한 장만 뽑으면 끝 칸이 계속 빈다.
+     * 두 장을 따로 뽑아도 같은 시나리오·같은 지시라 톤이 이어진다.
+     */
+    const sheetPrompt = (phase: 'start' | 'end') => {
+      const panelLines = shots.map((s, i) => {
+        const cam = CAMERA_EN[s.camera] ?? CAMERA_MOVES[0];
+        const moment = phase === 'start'
+          ? s.scene
+          : `${s.scene} — 다만 이 컷이 끝나는 순간이다: ${s.action || '앞의 상태에서 조금 더 진행된 모습'}`;
+        return `PANEL ${i + 1} (${s.seconds}s) — ${moment} · ${cam}`;
+      });
+      return [
       `STORYBOARD SHEET — ${n} panels side by side in ONE image, evenly divided, separated by thin white gutters.`,
+      phase === 'start'
+        ? 'Each panel shows the FIRST frame of its shot — the moment the shot begins.'
+        : 'Each panel shows the LAST frame of its shot — the moment the shot ends, after the described action has happened. Same camera position as the shot began; only the subject has moved.',
       `Each panel is one shot of the same short film, in order left to right. Vertical ${b.aspect ?? '9:16'} framing inside each panel.`,
       '',
       'PANELS (in Korean, translate faithfully into the image):',
@@ -78,7 +89,8 @@ export async function POST(req: Request) {
       '',
       'ABSOLUTELY NO TEXT: no panel numbers, no captions, no timecodes, no logos, no watermarks anywhere in the image.',
       'Leave clean white gutters between panels so the sheet can be cut apart afterwards.',
-    ].join('\n');
+      ].join('\n');
+    };
 
     // 스타일 레퍼런스가 있으면 톤을 그쪽에 맞춘다 (실촬영 베이스가 품질이 제일 좋다)
     const references = [];
@@ -87,33 +99,42 @@ export async function POST(req: Request) {
       if (img) references.push(img);
     }
 
-    const gen = await generateImage({
-      prompt,
-      references,
-      // 가로로 긴 시트라야 칸이 세로로 선다
-      aspect: '21:9',
-      size: '4K',
-    });
+    /*
+     * 2K 로 뽑는다. 이 시트는 흐름을 확인하는 용도고, 확정되면 컷별로 다시 크게 뽑는다 —
+     * 확인용에 4K 를 쓰면 두 배 값을 내고 두 배 오래 기다리면서 결과는 어차피 버린다.
+     * 2K 21:9 면 칸당 800px 안팎이라 구도·인물·제품 형태를 판단하기에 충분하다.
+     */
+    const [genStart, genEnd] = await Promise.all([
+      generateImage({ prompt: sheetPrompt('start'), references, aspect: '21:9', size: '2K' }),
+      generateImage({ prompt: sheetPrompt('end'), references, aspect: '21:9', size: '2K' }),
+    ]);
 
     const iso = new Date().toISOString();
     const stamp = iso.replace(/[-:T]/g, '').slice(0, 14);
     const rand = Math.random().toString(36).slice(2, 7);
     const sub = dailySubpath(iso);
 
-    const sheetUrl = await uploadBuffer(sub, `sheet_${stamp}_${rand}.jpg`, gen.buffer);
+    const sheetUrl = await uploadBuffer(sub, `sheet_${stamp}_${rand}_s.jpg`, genStart.buffer);
+    const endSheetUrl = await uploadBuffer(sub, `sheet_${stamp}_${rand}_e.jpg`, genEnd.buffer);
 
-    // 칸별로 잘라 각 컷의 시작 프레임 후보로 올린다
-    const panels = await sliceSheet(gen.buffer, n);
+    // 칸별로 잘라 각 컷의 시작·끝 프레임 후보로 올린다
+    const [pStart, pEnd] = await Promise.all([sliceSheet(genStart.buffer, n), sliceSheet(genEnd.buffer, n)]);
     const panelUrls: string[] = [];
-    for (let i = 0; i < panels.length; i++) {
-      panelUrls.push(await uploadBuffer(sub, `sheet_${stamp}_${rand}_p${i + 1}.jpg`, panels[i].buffer));
+    const endPanelUrls: string[] = [];
+    for (let i = 0; i < pStart.length; i++) {
+      panelUrls.push(await uploadBuffer(sub, `sheet_${stamp}_${rand}_s${i + 1}.jpg`, pStart[i].buffer));
+    }
+    for (let i = 0; i < pEnd.length; i++) {
+      endPanelUrls.push(await uploadBuffer(sub, `sheet_${stamp}_${rand}_e${i + 1}.jpg`, pEnd[i].buffer));
     }
 
     return NextResponse.json({
       ok: true,
       sheetUrl,
+      endSheetUrl,
       panels: panelUrls,
-      panelCount: panels.length,
+      endPanels: endPanelUrls,
+      panelCount: pStart.length,
       dropped,
       note: dropped > 0
         ? `칸이 좁아지지 않게 앞 ${n}컷만 시트에 담았습니다 (나머지 ${dropped}컷은 따로 뽑아주세요).`
