@@ -20,6 +20,8 @@ interface Props {
   pool: RefItem[];
   /** 전속 모델 전체 — kid(아동)는 랜덤 배정에서 빠지고 카드에서 직접 고를 때만 쓴다 */
   models: { code: string; label: string; kid?: boolean }[];
+  /** 제품컷용 — 배경 사진에 얹을 우리 제품 목록 */
+  products: { line: string; colors: { key: string; name: string }[] }[];
 }
 
 interface Row {
@@ -31,11 +33,16 @@ interface Row {
   error?: string;
   /** 👍 선정 — 다시 뽑기에서 이 후보는 유지된다 */
   locked?: boolean;
+  /**
+   * 제품컷 — 인물 없이 배경 사진에 우리 빈백만 얹는다.
+   * 인물컷(제미나이)과 엔진이 다르다: 제품컷은 GPT 로 간다.
+   */
+  product?: { line: string; colorKey: string; colorName: string };
 }
 
 // 금액 표시는 화면에서 뺐다 (사용자 지시: 장수만) — 나노바나나 실측 단가는 ₩230~314/장
 
-export default function SnsAutomation({ pool, models }: Props) {
+export default function SnsAutomation({ pool, models, products }: Props) {
   const [n, setN] = useState(5);
   const [rows, setRows] = useState<Row[]>([]);
   const [running, setRunning] = useState(false);
@@ -67,6 +74,29 @@ export default function SnsAutomation({ pool, models }: Props) {
     const shuffled = [...adults].sort(() => Math.random() - 0.5);
     return shuffled.slice(0, Math.min(3, k)).map((m) => m.code);
   };
+
+  /** 제품컷용 랜덤 제품·컬러 — 배경만 있는 사진에 얹을 빈백을 매번 다르게 고른다 */
+  const randProduct = () => {
+    const withColor = products.filter((p) => p.colors.length);
+    if (!withColor.length) return null;
+    const p = withColor[Math.floor(Math.random() * withColor.length)];
+    const c = p.colors[Math.floor(Math.random() * p.colors.length)];
+    return { line: p.line, colorKey: c.key, colorName: c.name };
+  };
+
+  /** 카드를 제품컷으로 — 모델을 빼고 랜덤 제품을 얹는다 (다시 누르면 제품만 재추첨) */
+  function toggleProduct(i: number) {
+    setRows((cur) => cur.map((r, j) => {
+      if (j !== i) return r;
+      if (r.product) return { ...r, product: randProduct() ?? undefined, status: "ready" as const, resultUrl: undefined };
+      return { ...r, codes: [], product: randProduct() ?? undefined, status: "ready" as const, resultUrl: undefined };
+    }));
+  }
+
+  /** 인물컷으로 되돌리기 */
+  function clearProduct(i: number) {
+    setRows((cur) => cur.map((r, j) => (j === i ? { ...r, product: undefined, status: "ready" as const, resultUrl: undefined } : r)));
+  }
 
   /**
    * 뽑기 — 👍 선정한 후보와 이미 완성된 컷은 자리에 남고,
@@ -153,6 +183,39 @@ export default function SnsAutomation({ pool, models }: Props) {
       });
       if (skip) continue;
       const row = rows[i];
+      // 제품컷 — 인물 없이 배경 사진에 우리 빈백을 얹는다. 엔진은 GPT (배경 합성이 자연스럽다)
+      if (row.product) {
+        try {
+          const res = await fetch("/api/generate", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              engine: "gpt",
+              origin: "sns-auto",
+              sizeValue: "1080x1350",
+              mode: "thumbnail",
+              samples: 1,
+              line: row.product.line,
+              colorKey: row.product.colorKey,
+              // 배경 역할 = 공간·조명만 가져오고 제품은 우리 자산으로 채운다 (인물 없음)
+              uploadedRefs: [{ url: row.ref.url, title: row.ref.title || "SNS 배경", role: "background" }],
+            }),
+          });
+          const j2 = await res.json();
+          const p0 = j2.results?.[0];
+          if (j2.ok && p0?.ok && p0.url) {
+            setRows((cur) => cur.map((r, k) => (k === i ? { ...r, status: "done", resultUrl: p0.url } : r)));
+            setUsedUrls((prev) => new Set(prev).add(row.ref.url));
+          } else {
+            const msg = p0?.error || j2.error || "실패";
+            setRows((cur) => cur.map((r, k) => (k === i ? { ...r, status: "fail", error: msg } : r)));
+          }
+        } catch (e) {
+          const msg = (e as Error).message;
+          setRows((cur) => cur.map((r, k) => (k === i ? { ...r, status: "fail", error: msg } : r)));
+        }
+        continue;
+      }
       // 인원 0 = 모델 미사용 — 생성·과금 없이 원본을 그대로 채택 처리한다
       if (row.codes.length === 0) {
         setRows((cur) => cur.map((r, k) => (k === i ? { ...r, status: 'done', resultUrl: r.ref.url } : r)));
@@ -194,7 +257,9 @@ export default function SnsAutomation({ pool, models }: Props) {
   const doneCount = rows.filter((r) => r.status === 'done').length;
   const todo = rows.filter((r) => r.status !== 'done').length;
   // 생성은 모델을 배정한 컷만 — 인원 0(원본 채택)은 생성 없이 통과
-  const paidTodo = rows.filter((r) => r.status !== 'done' && r.codes.length > 0).length;
+  // 생성이 도는 컷 = 모델 배정분(제미나이) + 제품컷(GPT). 인원 0(원본 채택)만 무과금
+  const paidTodo = rows.filter((r) => r.status !== 'done' && (r.codes.length > 0 || r.product)).length;
+  const productTodo = rows.filter((r) => r.status !== 'done' && r.product).length;
   const modelLabel = (code: string) => models.find((m) => m.code === code)?.label ?? code;
   const modelLabels = (codes: string[]) => codes.map(modelLabel).join(" + ");
 
@@ -207,6 +272,10 @@ export default function SnsAutomation({ pool, models }: Props) {
         마음에 드는 후보는 <b>👍 선정</b>하면 다시 뽑아도 자리에 남고, <b>확정·완료된 컷은 이후 랜덤에서 다시 나오지 않습니다</b>.
         인원은 원본 속 사람 수에 맞춰 주세요 — 지정 인원보다 사람이 많으면 나머지는 지워지고,
         <b> 제품 단독 컷은 인원 0</b>으로 두면 생성 없이 원본이 그대로 채택됩니다.
+        <br />
+        <b style={{ color: 'var(--accent)' }}>📦 제품</b> 을 누르면 <b>인물 없이 그 배경에 우리 빈백만</b> 얹습니다 —
+        인물컷은 제미나이, 제품컷은 GPT 로 나갑니다 (배경 합성은 GPT 가 자연스럽습니다).
+        다만 GPT 는 제품 형태를 바꿔 놓는 일이 있으니 <b>결과의 제품 모양을 꼭 확인</b>해 주세요.
         자동 스케줄은 아직 미적용 — 확정되면 이 실행을 그대로 예약으로 옮깁니다.
       </div>
 
@@ -237,7 +306,7 @@ export default function SnsAutomation({ pool, models }: Props) {
                   title="나노바나나로 순차 생성합니다. 완료된 컷은 갤러리에 자동 등록됩니다.">
             {running ? `생성 중… (${doneCount}/${rows.length})`
               : !todo ? '전부 완료됨'
-              : paidTodo ? `▶ ${todo}장 실행 — 생성 ${paidTodo}장${todo - paidTodo ? ` + 원본채택 ${todo - paidTodo}장` : ''}`
+              : paidTodo ? `▶ ${todo}장 실행 — 인물 ${paidTodo - productTodo}장${productTodo ? ` + 제품 ${productTodo}장` : ''}${todo - paidTodo ? ` + 원본채택 ${todo - paidTodo}장` : ''}`
               : `▶ 원본 채택 ${todo}장 처리`}
           </button>
         )}
@@ -264,7 +333,7 @@ export default function SnsAutomation({ pool, models }: Props) {
                      }} />
                 <span className="absolute top-1 left-1 text-[9px] px-1.5 py-0.5 rounded"
                       style={{ background: 'rgba(0,0,0,.62)', color: r.locked ? '#ffd34d' : '#fff' }}>
-                  {r.status === 'done' ? (r.codes.length === 0 ? '✓ 원본 채택' : '✓ 완료') : r.status === 'running' ? '생성 중…' : r.status === 'fail' ? '실패' : r.locked ? '👍 선정' : '후보'}
+                  {r.status === 'done' ? (r.product ? '✓ 제품컷' : r.codes.length === 0 ? '✓ 원본 채택' : '✓ 완료') : r.status === 'running' ? '생성 중…' : r.status === 'fail' ? '실패' : r.locked ? '👍 선정' : '후보'}
                 </span>
                 <span className="absolute top-1 right-1 text-[8.5px] px-1 py-0.5 rounded"
                       style={{ background: 'rgba(0,0,0,.55)', color: '#9fd1ff' }}>
@@ -275,7 +344,7 @@ export default function SnsAutomation({ pool, models }: Props) {
                         disabled={running}
                         onClick={() => setPickerAt(pickerAt === i ? null : i)}
                         style={{ background: 'rgba(0,0,0,.62)', color: r.codes.length ? '#ffd34d' : '#b9c3cf', border: pickerAt === i ? '1px solid #ffd34d' : 'none', cursor: 'pointer' }}>
-                  {r.codes.length ? modelLabels(r.codes) : '모델 없음 · 원본 그대로'} ▾
+                  {r.product ? `📦 ${r.product.line} ${r.product.colorName}` : r.codes.length ? modelLabels(r.codes) : '모델 없음 · 원본 그대로'} ▾
                 </button>
               </div>
               <div className="text-[10px] truncate mt-1" style={{ color: 'var(--text-mute)' }}>{r.ref.title || '(제목 없음)'}</div>
@@ -303,11 +372,23 @@ export default function SnsAutomation({ pool, models }: Props) {
                   <button key={k} className="chip px-1.5 py-0"
                           title={k === 0 ? '모델 미사용 — 생성 없이 원본을 그대로 채택합니다 (제품 단독 컷용)' : `모델 ${k}명 배정 (서로 다른 모델 랜덤)`}
                           disabled={running}
-                          onClick={() => setCount(i, k)}
+                          onClick={() => { clearProduct(i); setCount(i, k); }}
                           style={r.codes.length === k ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
                     {k}
                   </button>
                 ))}
+                <span className="mx-0.5" style={{ color: 'var(--line-strong)' }}>|</span>
+                <button className="chip px-1.5 py-0"
+                        title="제품컷 — 인물 없이 이 배경에 우리 빈백을 얹습니다 (GPT). 다시 누르면 제품만 재추첨"
+                        disabled={running}
+                        onClick={() => toggleProduct(i)}
+                        style={r.product ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                  📦 제품
+                </button>
+                {r.product && (
+                  <button className="chip px-1.5 py-0" title="인물컷으로 되돌리기" disabled={running}
+                          onClick={() => clearProduct(i)}>✕</button>
+                )}
               </div>
               <div className="flex gap-1 mt-1">
                 <button className="chip flex-1 justify-center"

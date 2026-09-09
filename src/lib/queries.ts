@@ -188,6 +188,29 @@ export async function getReferences(limit = 300): Promise<ReferenceDoc[]> {
   }));
 }
 
+/**
+ * 전속 모델별 레퍼런스 요약 — { '여성B': { total, thumbs[] } }.
+ *
+ * 모델컷이 1,200장이 넘어서 전부 페이지에 실으면 안 된다. 화면에는 개수와
+ * 맛보기 몇 장만 필요하므로 DB 에서 집계해 그만큼만 가져온다.
+ */
+export async function getModelRefSummary(
+  perModel = 6,
+): Promise<Record<string, { total: number; thumbs: string[] }>> {
+  const col = await collection<{ sub?: string; url: string }>('references');
+  const rows = await col
+    .aggregate<{ _id: string; total: number; thumbs: string[] }>([
+      { $match: { active: { $ne: false }, category: 'model', sub: { $nin: [null, ''] } } },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$sub', total: { $sum: 1 }, thumbs: { $push: '$url' } } },
+      { $project: { total: 1, thumbs: { $slice: ['$thumbs', perModel] } } },
+    ])
+    .toArray();
+  const out: Record<string, { total: number; thumbs: string[] }> = {};
+  for (const r of rows) out[r._id] = { total: r.total, thumbs: r.thumbs ?? [] };
+  return out;
+}
+
 /** 대시보드 집계 — 한 번에 필요한 숫자를 모아온다 */
 export async function getOverview() {
   const [products, talents, poses, cutsCol] = await Promise.all([

@@ -29,7 +29,7 @@ function ownedPrefix(): string {
 }
 
 /**
- * GET /api/references?skip=&limit=
+ * GET /api/references?skip=&limit=&category=&sub=
  *
  * 보관함이 수천 장이라 한 번에 다 내려보내면 화면이 뜨는 데만 오래 걸린다.
  * 그래서 자산관리 화면은 첫 묶음만 서버에서 받아 바로 그리고, 나머지는 이 라우트로
@@ -40,9 +40,14 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const skip = Math.max(0, Number(url.searchParams.get('skip') ?? 0) || 0);
     const limit = Math.max(1, Math.min(3000, Number(url.searchParams.get('limit') ?? 300) || 300));
+    // 분류·하위분류 필터 — 모델 레퍼런스 화면이 "이 모델 것만" 받아갈 때 쓴다
+    const category = url.searchParams.get('category');
+    const sub = url.searchParams.get('sub');
     const db = await getDb();
     const col = db.collection('references');
-    const q = { active: { $ne: false } };
+    const q: Record<string, unknown> = { active: { $ne: false } };
+    if (category) q.category = category;
+    if (sub) q.sub = sub;
     const [docs, total] = await Promise.all([
       col.find(q)
         .project({ url: 1, title: 1, width: 1, height: 1, category: 1, sub: 1, source: 1, createdAt: 1 })

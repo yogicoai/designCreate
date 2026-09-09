@@ -81,6 +81,7 @@ const NAV = [
     // 자산을 재료로 콘텐츠를 양산하는 화면들 — 지금은 수동 실행, 확정되면 예약이 붙는다
     group: '자동화',
     items: [
+      { href: '/automation/guide', label: 'SNS 자동화 설명서', icon: '📘' },
       { href: '/automation/sns', label: 'SNS 이미지 생성', icon: '⚡' },
       { href: '/automation/gallery', label: '자동화 생성이미지', icon: '▦' },
     ],

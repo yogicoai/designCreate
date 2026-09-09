@@ -7,7 +7,8 @@ import { normalizeRefCategory } from '@/lib/queries';
 /**
  * POST /api/upload — MD 가 올린 레퍼런스 이미지를 cafe24 FTP 로 올리고 공개 URL 을 돌려준다.
  *
- * multipart/form-data: file, (선택) title, (선택) register='0' 이면 레퍼런스 보관함에 안 넣는다
+ * multipart/form-data: file, (선택) title, (선택) category, (선택) sub(모델명),
+ *                       (선택) register='0' 이면 레퍼런스 보관함에 안 넣는다
  * 저장 위치: /web/design/update/
  *
  * ⚠️ Vercel 은 요청 본문을 4.5MB 로 제한한다. 클라이언트에서 미리 줄여 보내지만,
@@ -64,6 +65,11 @@ export async function POST(req: Request) {
     const title = String(form?.get('title') || file.name || '레퍼런스').slice(0, 120);
     // 분류 — 내용 기준 3종(shoot/banner/sns)으로 정규화. 구 값이 와도 흡수한다.
     const category = normalizeRefCategory(String(form?.get('category') || ''));
+    /*
+     * 하위 분류. 모델 레퍼런스면 전속 모델 이름('여성B')이 들어간다 —
+     * 전속 모델 화면에서 바로 올릴 때 여기까지 붙여야 다시 태깅할 일이 없다.
+     */
+    const sub = String(form?.get('sub') || '').slice(0, 40);
     // replaceUrl 이 오면 "이미지 교체" — 기존 보관함 항목을 유지한 채 파일만 갈아끼운다
     const replaceUrl = String(form?.get('replaceUrl') || '');
 
@@ -95,7 +101,7 @@ export async function POST(req: Request) {
         // register=0 은 배너 배경처럼 '스타일 참고'가 아닌 것 — 보관함에 섞이면 안 된다.
         await db.collection('references').updateOne(
           { url },
-          { $set: { url, title, category, source: 'upload', width: meta.width ?? 0, height: meta.height ?? 0, bytes: buf.length, active: true },
+          { $set: { url, title, category, ...(sub ? { sub } : {}), source: 'upload', width: meta.width ?? 0, height: meta.height ?? 0, bytes: buf.length, active: true },
             $setOnInsert: { createdAt: new Date() } },
           { upsert: true },
         );
