@@ -1,6 +1,7 @@
 import PageHeader from '@/components/PageHeader';
 import ModelRefsManager from '@/components/ModelRefsManager';
 import { getTalents, getModelRefSummary } from '@/lib/queries';
+import { parseSize } from '@/lib/model-profile';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,9 @@ export default async function ModelRefsPage() {
 
   const rows = talents.map((t) => {
     const label = `${t.category}${t.slot ?? ''}`;
+    const x = t as unknown as { age?: string; heightCm?: number; bodyType?: string; fitPct?: number };
+    // 예전에 손으로 적어둔 값도 화면에 채워지도록 문장에서 되읽는다
+    const guessed = parseSize(t.size ?? '', t.category === '아동' ? 'kid' : '20e');
     return {
       code: String(t.code),
       label,
@@ -23,7 +27,10 @@ export default async function ModelRefsPage() {
       rep: t.rep ?? '',
       size: t.size ?? '',
       sizeEn: t.sizeEn ?? '',
-      fitPct: (t as { fitPct?: number }).fitPct ?? 80,
+      fitPct: x.fitPct ?? 80,
+      age: x.age ?? guessed.age,
+      heightCm: x.heightCm ?? guessed.heightCm,
+      bodyType: x.bodyType ?? guessed.bodyType,
       refCount: summary[label]?.total ?? 0,
     };
   });
