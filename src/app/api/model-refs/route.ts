@@ -13,6 +13,10 @@ import { composeSize } from '@/lib/model-profile';
  * 사이즈 문장(size/sizeEn)은 서버가 조립한다 — 손으로 적으면 "Max 170 기준" 같은
  * 기준선을 빼먹어 인물 크기가 흔들린다.
  *
+ * 등록이 끝나면 오너가 힉스필드로 그 느낌의 <b>정면샷</b> 한 장을 뽑아 카드 옆에 붙인다.
+ * 앱 키에는 힉스필드 크레딧이 없어서 생성은 대화 쪽에서 돌고, 여기는 '요청됨 → 완료'
+ * 상태와 결과 주소만 들고 있는다.
+ *
  * GET          등록된 목록
  * POST         등록 / { id } 가 오면 수정
  * DELETE ?id=  목록에서 제거
@@ -40,6 +44,9 @@ export async function GET() {
         bodyType: r.bodyType ?? 'slim',
         fitPct: r.fitPct ?? 80,
         note: r.note ?? '',
+        // AI 생성컷 — 이 느낌으로 다시 뽑은 정면샷 (힉스필드, 적합도 반영)
+        aiCut: r.aiCut ?? '',
+        aiStatus: r.aiStatus ?? '',
         size: r.size ?? '',
         sizeEn: r.sizeEn ?? '',
         refs: Array.isArray(r.refs) ? r.refs : [],
@@ -69,6 +76,9 @@ export async function POST(req: Request) {
       ...profile,
       fitPct: Math.max(50, Math.min(95, Math.round(Number(b.fitPct) || 80))),
       note: clean(b.note, 500),
+      aiCut: clean(b.aiCut, 500),
+      // '' 미요청 | 'requested' 생성 대기 | 'done' 완료
+      aiStatus: ['requested', 'done'].includes(clean(b.aiStatus, 20)) ? clean(b.aiStatus, 20) : '',
       ...composed,
       refs: Array.isArray(b.refs)
         ? (b.refs as { url?: string; title?: string }[])

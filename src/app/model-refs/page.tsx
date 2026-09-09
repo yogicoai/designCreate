@@ -27,6 +27,8 @@ export default async function ModelRefsPage() {
     size: (r.size as string) ?? '',
     sizeEn: (r.sizeEn as string) ?? '',
     refs: Array.isArray(r.refs) ? (r.refs as { url: string; title: string }[]) : [],
+    aiCut: (r.aiCut as string) ?? '',
+    aiStatus: (r.aiStatus as string) ?? '',
   }));
 
   return (

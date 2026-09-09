@@ -27,6 +27,10 @@ export interface ModelRef {
   size: string;
   sizeEn: string;
   refs: { url: string; title: string }[];
+  /** AI 생성컷 — 등록한 느낌으로 다시 뽑은 정면샷 (힉스필드) */
+  aiCut: string;
+  /** '' 미요청 | 'requested' 생성 대기 | 'done' 완료 */
+  aiStatus: string;
 }
 
 /** 우리 모델로 얼마나 강하게 끌어올지 — 엔진에 들어가는 건 숫자가 아니라 이 문장이다 */
@@ -39,6 +43,7 @@ export const FIT_LEVELS = [
 
 const BLANK: Omit<ModelRef, 'id' | 'size' | 'sizeEn'> = {
   name: '', rep: '', age: '20e', heightCm: 170, bodyType: 'slim', fitPct: 80, note: '', refs: [],
+  aiCut: '', aiStatus: '',
 };
 
 export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
@@ -48,6 +53,10 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
+  /** 펼친 카드 id — 상세(모델 정보 + AI 생성 이미지)를 연다 */
+  const [detail, setDetail] = useState('');
+  /** 카드마다 '등록 사진 / AI 생성 이미지' 중 무엇을 보여줄지 */
+  const [viewAi, setViewAi] = useState<Record<string, boolean>>({});
 
   const ageKr = (v: string) => AGE_BANDS.find((a) => a.v === v)?.kr ?? '';
   const bodyKr = (v: string) => BODY_TYPES.find((b) => b.v === v)?.kr ?? '';
@@ -61,6 +70,7 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
     setForm({
       name: m.name, rep: m.rep, age: m.age, heightCm: m.heightCm,
       bodyType: m.bodyType, fitPct: m.fitPct, note: m.note, refs: m.refs,
+      aiCut: m.aiCut, aiStatus: m.aiStatus,
     });
     setNote(''); setErr('');
   }
@@ -101,6 +111,40 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
       if (fresh.ok) setModels(fresh.models);
       setEditing(null);
       setNote('등록했습니다.');
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+
+  /**
+   * AI 생성컷 요청 — 앱 키에는 힉스필드 크레딧이 없어 여기서 바로 못 뽑는다.
+   * 대기로 표시해 두면 대화에서 "모델 AI컷 뽑아줘" 로 한꺼번에 처리한다.
+   */
+  async function requestAi(m: ModelRef) {
+    setBusy(true); setErr('');
+    try {
+      const j = await (await fetch('/api/model-refs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...m, id: m.id, aiStatus: m.aiStatus === 'requested' ? '' : 'requested' }),
+      })).json();
+      if (!j.ok) throw new Error(j.error || '요청 실패');
+      setModels((c) => c.map((x) => (x.id === m.id
+        ? { ...x, aiStatus: x.aiStatus === 'requested' ? '' : 'requested' } : x)));
+      setNote(m.aiStatus === 'requested' ? '요청을 취소했습니다.' : 'AI 생성 대기로 넣었습니다 — 제작 후 옆에 붙습니다.');
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+
+  /** 완성된 AI컷 주소를 직접 붙이기 */
+  async function attachAi(m: ModelRef) {
+    const v = prompt(`"${m.name}" 의 AI 생성컷 주소를 붙여넣어 주세요. (비우면 해제)`, m.aiCut);
+    if (v === null) return;
+    setBusy(true); setErr('');
+    try {
+      const url = v.trim();
+      const j = await (await fetch('/api/model-refs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...m, id: m.id, aiCut: url, aiStatus: url ? 'done' : '' }),
+      })).json();
+      if (!j.ok) throw new Error(j.error || '저장 실패');
+      setModels((c) => c.map((x) => (x.id === m.id ? { ...x, aiCut: url, aiStatus: url ? 'done' : '' } : x)));
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
 
@@ -240,7 +284,7 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
         </div>
       )}
 
-      {/* 등록된 목록 — 사진 위, 설명 아래 */}
+      {/* 등록된 목록 — 사진 위, 설명 아래. 카드를 누르면 상세가 열린다 */}
       {models.length === 0 ? (
         <div className="card p-8 text-center">
           <div className="text-[13px] font-bold mb-1.5">아직 등록된 모델 레퍼런스가 없습니다</div>
@@ -249,44 +293,130 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
           </div>
         </div>
       ) : (
-        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
-          {models.map((m) => (
-            <div key={m.id} className="card p-2">
-              <div className="rounded-lg overflow-hidden border w-full"
-                   style={{ aspectRatio: '3/4', borderColor: 'var(--line-strong)', background: 'var(--surface-2)' }}>
-                {m.rep ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={thumbUrl(m.rep, 256)} alt={m.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-[11px]"
-                       style={{ color: 'var(--text-mute)' }}>사진 없음</div>
-                )}
-              </div>
-              <div className="mt-1.5">
-                <div className="text-[12.5px] font-bold leading-snug">{m.name}</div>
-                <div className="text-[10.5px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-dim)' }}>
-                  {[ageKr(m.age), m.heightCm ? `${m.heightCm}cm` : '', bodyKr(m.bodyType)].filter(Boolean).join(' · ')}
-                </div>
-                {m.note && (
-                  <div className="text-[10px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>{m.note}</div>
-                )}
-                <div className="flex items-center gap-1 mt-1 flex-wrap">
-                  <span className="chip" style={{ padding: '1px 6px', fontSize: 10, color: 'var(--accent)' }}>
-                    적합도 {m.fitPct}%
-                  </span>
-                  {m.refs.length > 0 && (
-                    <span className="text-[10px]" style={{ color: 'var(--text-mute)' }}>사진 {m.refs.length}</span>
+        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
+          {models.map((m) => {
+            const showAi = !!m.aiCut && !!viewAi[m.id];
+            const shown = showAi ? m.aiCut : m.rep;
+            const isOpen = detail === m.id;
+            return (
+              <div key={m.id} className="card p-2"
+                   style={isOpen ? { borderColor: 'var(--accent)' } : {}}>
+                <button onClick={() => setDetail(isOpen ? '' : m.id)} className="block w-full text-left"
+                        style={{ padding: 0 }}>
+                  <div className="rounded-lg overflow-hidden border w-full relative"
+                       style={{ aspectRatio: '3/4', borderColor: 'var(--line-strong)', background: 'var(--surface-2)' }}>
+                    {shown ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={thumbUrl(shown, 256)} alt={m.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[11px]"
+                           style={{ color: 'var(--text-mute)' }}>사진 없음</div>
+                    )}
+                    {showAi && (
+                      <span className="absolute top-1 left-1 text-[9px] px-1.5 py-0.5 rounded"
+                            style={{ background: 'var(--ok)', color: '#04210f' }}>AI</span>
+                    )}
+                  </div>
+                </button>
+
+                <div className="mt-1.5">
+                  <div className="text-[12.5px] font-bold leading-snug">{m.name}</div>
+                  <div className="text-[10.5px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-dim)' }}>
+                    {[ageKr(m.age), m.heightCm ? `${m.heightCm}cm` : '', bodyKr(m.bodyType)].filter(Boolean).join(' · ')}
+                  </div>
+                  <div className="flex items-center gap-1 mt-1 flex-wrap">
+                    <span className="chip" style={{ padding: '1px 6px', fontSize: 10, color: 'var(--accent)' }}>
+                      적합도 {m.fitPct}%
+                    </span>
+                  </div>
+                  {/* 적합도 아래 — AI 생성 상태 */}
+                  <div className="mt-1">
+                    {m.aiCut ? (
+                      <span className="chip" style={{ padding: '1px 6px', fontSize: 10, color: 'var(--ok)', borderColor: 'var(--ok)' }}>
+                        ✓ AI생성 완료
+                      </span>
+                    ) : m.aiStatus === 'requested' ? (
+                      <span className="chip" style={{ padding: '1px 6px', fontSize: 10, color: 'var(--warn)' }}>
+                        생성 대기 중
+                      </span>
+                    ) : (
+                      <button className="chip" style={{ padding: '1px 6px', fontSize: 10 }}
+                              disabled={busy} onClick={() => requestAi(m)}>
+                        AI 생성 요청
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 보기 전환 — 등록 사진 ↔ AI 생성 이미지 */}
+                  {m.aiCut && (
+                    <button className="chip w-full justify-center mt-1.5" style={{ fontSize: 10 }}
+                            onClick={() => setViewAi((c) => ({ ...c, [m.id]: !c[m.id] }))}>
+                      {showAi ? '↩ 등록 사진으로 보기' : 'AI 생성된 이미지로 보기'}
+                    </button>
                   )}
                 </div>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <button className="text-[10.5px]" style={{ color: 'var(--text-dim)' }}
-                          onClick={() => startEdit(m)}>수정</button>
-                  <button className="text-[10.5px]" style={{ color: 'var(--danger)' }}
-                          onClick={() => remove(m)}>빼기</button>
-                </div>
+
+                {/* 상세 — 모델 정보와 AI 생성 이미지 */}
+                {isOpen && (
+                  <div className="mt-2 pt-2 border-t" style={{ borderColor: 'var(--line)' }}>
+                    <div className="text-[10.5px] leading-relaxed" style={{ color: 'var(--text-dim)' }}>
+                      <div><b>나이대</b> {ageKr(m.age)}</div>
+                      <div><b>키</b> {m.heightCm}cm</div>
+                      <div><b>체형</b> {bodyKr(m.bodyType)}</div>
+                      <div><b>적합도</b> {m.fitPct}%</div>
+                      {m.note && <div className="mt-1">{m.note}</div>}
+                    </div>
+                    <div className="mt-1.5 p-1.5 rounded text-[9.5px] font-mono leading-relaxed"
+                         style={{ background: 'var(--surface-2)', color: 'var(--text-mute)' }}>
+                      {m.sizeEn}
+                    </div>
+
+                    <div className="label mt-2 mb-1">AI 생성 이미지</div>
+                    {m.aiCut ? (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={thumbUrl(m.aiCut, 384)} alt="AI 생성컷"
+                             className="w-full rounded-lg border object-cover"
+                             style={{ borderColor: 'var(--ok)' }} />
+                        <div className="flex items-center gap-2 mt-1">
+                          <a href={m.aiCut} target="_blank" rel="noreferrer" className="text-[10px]"
+                             style={{ color: 'var(--text-mute)' }}>원본 보기</a>
+                          <button className="text-[10px]" style={{ color: 'var(--text-mute)' }}
+                                  onClick={() => attachAi(m)}>주소 바꾸기</button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-lg border border-dashed p-3 text-center text-[10.5px]"
+                           style={{ borderColor: 'var(--line-strong)', color: 'var(--text-mute)' }}>
+                        아직 없습니다 — 힉스필드로 이 느낌의 얼굴 시트를 뽑아 여기 붙입니다.
+                      </div>
+                    )}
+
+                    {m.refs.length > 0 && (
+                      <>
+                        <div className="label mt-2 mb-1">참고 사진 {m.refs.length}</div>
+                        <div className="flex gap-1 flex-wrap">
+                          {m.refs.slice(0, 8).map((r) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img key={r.url} src={thumbUrl(r.url, 128)} alt="" loading="lazy"
+                                 className="rounded border object-cover"
+                                 style={{ width: 40, aspectRatio: '3/4', borderColor: 'var(--line)' }} />
+                          ))}
+                        </div>
+                      </>
+                    )}
+
+                    <div className="flex items-center gap-2 mt-2">
+                      <button className="text-[10.5px]" style={{ color: 'var(--text-dim)' }}
+                              onClick={() => startEdit(m)}>수정</button>
+                      <button className="text-[10.5px]" style={{ color: 'var(--danger)' }}
+                              onClick={() => remove(m)}>빼기</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
