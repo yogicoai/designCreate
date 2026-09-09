@@ -79,6 +79,8 @@ export async function POST(req: Request) {
       note: String(b.note ?? '').slice(0, 1000),
       // 컷을 나눈 근거 — 다시 열었을 때 무엇을 요청했는지 보여야 한다
       scenario: String(b.scenario ?? '').slice(0, 4000),
+      // 전체 컷을 한 장에 담은 콘티 시트 (승인·보고용)
+      sheet: String(b.sheet ?? '').slice(0, 500),
       status: STATUSES.includes(String(b.status)) ? String(b.status) : '작성중',
       finalClip: String(b.finalClip ?? '').slice(0, 500),
       finalNote: String(b.finalNote ?? '').slice(0, 200),

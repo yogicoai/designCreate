@@ -73,6 +73,9 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
   /** 사람이 쓴 시나리오 — 이걸 읽고 컷을 나눈다 */
   const [scenario, setScenario] = useState('');
   const [splitting, setSplitting] = useState(false);
+  /** 전체 컷을 한 장에 담은 콘티 시트 — 승인·보고용 */
+  const [sheet, setSheet] = useState('');
+  const [sheeting, setSheeting] = useState(false);
   // 컷을 다 이어붙인 최종 영상 — 콘티 맨 아래에 붙는다
   const [finalClip, setFinalClip] = useState('');
   const [finalNote, setFinalNote] = useState('');
@@ -113,7 +116,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
   function reset() {
     setBoardId(''); setTitle(''); setStatus('작성중'); setPurpose('product');
     setTotal(15); setAspect('9:16'); setLine(''); setColorKey(''); setModel('');
-    setNote(''); setScenario(''); setShots([]); setFinalClip(''); setFinalNote(''); setErr(''); setSaved('');
+    setNote(''); setScenario(''); setSheet(''); setShots([]); setFinalClip(''); setFinalNote(''); setErr(''); setSaved('');
   }
 
   async function open(id: string) {
@@ -126,7 +129,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
       setPurpose(b.purpose ?? 'product'); setTotal(b.total ?? 15); setAspect(b.aspect ?? '9:16');
       setLine(b.line ?? ''); setColorKey(b.colorKey ?? ''); setModel(b.model ?? '');
       setNote(b.note ?? ''); setScenario(b.scenario ?? ''); setShots(Array.isArray(b.shots) ? b.shots : []);
-      setFinalClip(b.finalClip ?? ''); setFinalNote(b.finalNote ?? '');
+      setFinalClip(b.finalClip ?? ''); setFinalNote(b.finalNote ?? ''); setSheet(b.sheet ?? '');
       setSaved(''); setView('edit');
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
@@ -138,7 +141,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: boardId || undefined, title, status: nextStatus ?? status,
-          purpose, total: sumSec || total, aspect, line, colorKey, model, note, scenario, shots,
+          purpose, total: sumSec || total, aspect, line, colorKey, model, note, scenario, sheet, shots,
           finalClip, finalNote,
         }),
       })).json();
@@ -174,6 +177,28 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
       if (j.intent) setNote((c) => c || String(j.intent));
       setSaved(`${(j.shots as Shot[]).length}컷으로 나눴습니다 — 컷마다 장면·동작을 고친 뒤 이미지를 만드세요.`);
     } catch (e) { setErr((e as Error).message); } finally { setSplitting(false); }
+  }
+
+  /**
+   * 콘티 시트 한 장 만들기 — 컷을 한 화면에 늘어놓고 칸별로 잘라 각 컷에 붙인다.
+   * 한 장 안에 같이 그리게 하면 방·조명·인물이 저절로 맞는다. 컷을 따로 뽑으면
+   * 서로 다른 사람이 되기 쉽다.
+   */
+  async function makeSheet() {
+    if (!shots.length) { setErr('먼저 컷을 나눠주세요.'); return; }
+    setSheeting(true); setErr(''); setSaved('');
+    try {
+      const j = await (await fetch('/api/storyboards/sheet', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shots, aspect, productLabel, modelLabel }),
+      })).json();
+      if (!j.ok) throw new Error(j.error || '시트 생성 실패');
+      setSheet(j.sheetUrl);
+      // 잘린 칸을 각 컷의 시작 프레임으로 넣는다 (확인용 — 승인 뒤 크게 다시 뽑는다)
+      const urls = (j.panels ?? []) as string[];
+      setShots((cur) => cur.map((s2, i) => (urls[i] ? { ...s2, image: urls[i], imageTitle: `콘티 칸 ${i + 1}` } : s2)));
+      setSaved(`콘티 시트를 만들고 ${urls.length}컷에 붙였습니다.${j.note ? ` ${j.note}` : ''} 확인용 크기라, 확정되면 컷별로 크게 다시 뽑으세요.`);
+    } catch (e) { setErr((e as Error).message); } finally { setSheeting(false); }
   }
 
   function makeDraft() {
@@ -489,6 +514,12 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
             {shots.length ? '기본 구성으로 다시' : '기본 구성으로 시작'}
           </button>
           {shots.length > 0 && (
+            <button className="btn" onClick={makeSheet} disabled={sheeting || !!busy}
+                    title="전체 컷을 한 장에 그려서 칸별로 잘라 붙입니다 — 방·조명·인물이 저절로 맞습니다">
+              {sheeting ? '콘티 시트 만드는 중…' : '🎞 콘티 시트 한 장으로'}
+            </button>
+          )}
+          {shots.length > 0 && (
             <>
               <button className="btn" onClick={addShot}>+ 컷 추가</button>
               <span className="text-[12px] tabular-nums" style={{ color: 'var(--text-dim)' }}>
@@ -500,6 +531,25 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
           )}
         </div>
       </div>
+
+      {/* 콘티 시트 — 전체 흐름을 한 장으로. 승인·보고용이라 크게 보여준다 */}
+      {sheet && (
+        <div className="card p-3 mb-3">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <span className="label">콘티 시트 — 전체 컷을 한 장에</span>
+            <div className="flex-1" />
+            <a href={sheet} target="_blank" rel="noreferrer" className="chip">크게 보기</a>
+            <button className="chip" onClick={() => setSheet('')}>닫기</button>
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={sheet} alt="콘티 시트" className="w-full rounded-lg border"
+               style={{ borderColor: 'var(--line-strong)' }} />
+          <div className="text-[11px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+            한 장에 같이 그려서 방·조명·인물이 맞습니다. <b>확인용 크기</b>라 각 칸은 작습니다 —
+            확정되면 컷별 [만들기] 로 크게 다시 뽑으세요.
+          </div>
+        </div>
+      )}
 
       {shots.length === 0 ? (
         <div className="card p-8 text-center">
