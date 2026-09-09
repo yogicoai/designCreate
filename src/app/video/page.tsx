@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import StoryboardStudio from '@/components/StoryboardStudio';
 import { getCuts, getReferences, getProducts, getTalents } from '@/lib/queries';
@@ -23,6 +24,11 @@ export default async function VideoPage() {
       <PageHeader
         title="영상 스토리보드"
         desc="컷마다 장면을 적고 이미지를 만들면 그 자리에 스토리보드가 그려집니다. 컷은 서로 이어받아 방·조명·색이 유지되고, 완성되면 그대로 영상 대기열로 넘어갑니다."
+        right={
+          <Link href="/video/proposal" className="btn btn-ghost">
+            영상 스토리보드 제안 →
+          </Link>
+        }
       />
       <StoryboardStudio
         cuts={cuts.map((c) => ({
