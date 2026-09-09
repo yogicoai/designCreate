@@ -2,8 +2,9 @@
 import '@/lib/fonts';
 import { NextResponse } from 'next/server';
 import sharp from 'sharp';
+import { ObjectId } from 'mongodb';
 import { getDb, COLLECTIONS } from '@/lib/db';
-import { uploadBuffer, dailySubpath, ftpConfigured } from '@/lib/ftp';
+import { uploadBuffer, dailySubpath, ftpConfigured, deleteRemote } from '@/lib/ftp';
 import { renderLayersToSvg, textEm, type DesignDoc, type DesignLayer } from '@/lib/design-render';
 import { shapeOf, findSize, type BannerShape } from '@/lib/banner-sizes';
 import { fitToSize, applyPatches, type FitSpec } from '@/lib/design-fit';
@@ -405,6 +406,12 @@ export async function GET() {
 async function saveRendered(
   out: Buffer, design: DesignDoc, W: number, H: number, title: string,
   extra: Record<string, unknown> = {},
+  /**
+   * 이 id 가 오면 새 글을 만들지 않고 그 배너를 덮어쓴다.
+   * 수정할 때마다 새 글이 쌓이면 같은 배너가 목록에 여러 벌로 남는다
+   * (사용자 지시: "수정본이 아니라 수정이 된 거라고 생각하고 덮어쓰기").
+   */
+  overwriteId?: string,
 ) {
   const iso = new Date().toISOString();
   const stamp = iso.replace(/[-:T]/g, '').slice(0, 14);
@@ -413,7 +420,7 @@ async function saveRendered(
 
   const db = await getDb();
   const now = new Date(iso);
-  const ins = await db.collection(COLLECTIONS.cuts).insertOne({
+  const doc = {
     line: '', colorKey: '', colorName: '', hex: '',
     url, title: title.slice(0, 120),
     spec: `배너 · ${design.size?.id ?? '원본 크기'} · ${W}×${H}`,
@@ -430,8 +437,30 @@ async function saveRendered(
     design,                                   // 그대로 다시 열어 편집할 수 있게 통째로 남긴다
     hidden: false, createdAt: now, updatedAt: now,
     ...extra,
-  });
-  return { url, id: String(ins.insertedId) };
+  };
+
+  if (overwriteId) {
+    const prev = await db.collection(COLLECTIONS.cuts).findOne({ _id: new ObjectId(overwriteId) });
+    if (prev) {
+      // 만든 날짜는 처음 것을 지킨다 — 고쳤다고 목록 맨 위로 올라오면 순서가 흔들린다
+      const rest = { ...doc } as Record<string, unknown>;
+      delete rest.createdAt;   // 만든 날짜는 처음 것을 지킨다
+      await db.collection(COLLECTIONS.cuts).updateOne(
+        { _id: new ObjectId(overwriteId) },
+        { $set: { ...rest, updatedAt: now } },
+      );
+      // 갈아끼운 뒤 예전 이미지 파일은 지운다 — 안 지우면 FTP 에 쓰레기가 쌓인다
+      const old = String(prev.url ?? '');
+      if (old && old !== url) {
+        const m = /\/([^/]+)\/([^/]+\.(?:jpg|jpeg|png|webp))$/i.exec(old);
+        if (m) await deleteRemote(m[1], m[2]).catch(() => { /* 이미 없으면 넘어간다 */ });
+      }
+      return { url, id: overwriteId, overwritten: true };
+    }
+  }
+
+  const ins = await db.collection(COLLECTIONS.cuts).insertOne(doc);
+  return { url, id: String(ins.insertedId), overwritten: false };
 }
 
 export async function POST(req: Request) {
@@ -581,11 +610,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'FTP 설정이 없습니다 (.env.local).' }, { status: 500 });
     }
     const title = String(body.title || design.layers.find((l) => l.text)?.text || '디자인');
+    /*
+     * 수정으로 연 배너면 그 글을 덮어쓴다 — 새 글로 쌓지 않는다.
+     * 목록에 같은 배너가 '수정본' 으로 여러 벌 남는 걸 없앤 것.
+     */
     const saved = await saveRendered(out, design, W, H, title, {
-      // 수정으로 연 배너면 원본 id 를 계보로 남긴다 — 게시판에서 판(버전)을 묶어 보여준다
-      ...(body.sourceId ? { revisedFrom: body.sourceId } : {}),
       ...(body.pairId ? { pairId: body.pairId } : {}),
-    });
+    }, body.sourceId);
 
     return NextResponse.json({ ok: true, ...saved, width: W, height: H });
   } catch (e) {

@@ -42,6 +42,7 @@ export interface ModelRef {
 
 /** 우리 모델로 얼마나 강하게 끌어올지 — 엔진에 들어가는 건 숫자가 아니라 이 문장이다 */
 export const FIT_LEVELS = [
+  { v: 50, label: '50%', desc: '원본 사람에 가깝게 — 살짝만 다듬는다' },
   { v: 60, label: '60%', desc: '원본 인물의 느낌을 많이 남긴다' },
   { v: 70, label: '70%', desc: '반반 — 모델 인상이 분명히 보인다' },
   { v: 80, label: '80%', desc: '권장 — 모델 기준, 분위기만 이어감' },
@@ -65,6 +66,8 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
   const [detail, setDetail] = useState('');
   /** 카드마다 '등록 사진 / AI 생성 이미지' 중 무엇을 보여줄지 */
   const [viewAi, setViewAi] = useState<Record<string, boolean>>({});
+  /** 크게 볼 이미지 — 얼굴은 작게 보면 판단이 안 된다 */
+  const [zoom, setZoom] = useState('');
 
   const ageKr = (v: string) => AGE_BANDS.find((a) => a.v === v)?.kr ?? '';
   const bodyKr = (v: string) => BODY_TYPES.find((b) => b.v === v)?.kr ?? '';
@@ -344,7 +347,7 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
             const shown = showAi ? (m.aiFront || m.aiCut) : m.rep;
             const isOpen = detail === m.id;
             return (
-              <div key={m.id} className="card p-2"
+              <div key={m.id} className="card p-2 overflow-hidden min-w-0"
                    style={isOpen ? { borderColor: 'var(--accent)' } : {}}>
                 <button onClick={() => setDetail(isOpen ? '' : m.id)} className="block w-full text-left"
                         style={{ padding: 0 }}>
@@ -446,20 +449,27 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
                     <div className="label mt-2 mb-1">AI 생성 이미지</div>
                     {m.aiCut ? (
                       <>
-                        {/* 시트 전체 — 다섯 각도가 한 장에 */}
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={thumbUrl(m.aiCut, 384)} alt="AI 얼굴 시트"
-                             className="w-full rounded-lg border"
-                             style={{ borderColor: 'var(--ok)' }} />
+                        {/* 시트 전체 — 다섯 각도가 한 장에. 누르면 크게 본다 */}
+                        <button onClick={() => setZoom(m.aiCut)} className="block w-full" style={{ padding: 0 }}
+                                title="크게 보기">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={thumbUrl(m.aiCut, 384)} alt="AI 얼굴 시트"
+                               className="w-full rounded-lg border"
+                               style={{ borderColor: 'var(--ok)' }} />
+                        </button>
                         {/* 칸별로 자른 것 — 정면이 맨 앞 */}
+                        {/* 5칸을 격자로 — flex 로 두면 이미지 원본 폭 아래로 안 줄어들어 카드를 넘친다 */}
                         {m.aiPanels.length > 0 && (
-                          <div className="flex gap-1 mt-1">
+                          <div className="grid grid-cols-5 gap-1 mt-1">
                             {m.aiPanels.map((u, n) => (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img key={u} src={thumbUrl(u, 128)} alt={`각도 ${n + 1}`} loading="lazy"
-                                   className="flex-1 rounded border object-cover"
-                                   title={['정면', '3/4 좌', '좌측면', '3/4 우', '우측면'][n] ?? ''}
-                                   style={{ aspectRatio: '3/4', borderColor: n === 0 ? 'var(--ok)' : 'var(--line)' }} />
+                              <button key={u} onClick={() => setZoom(u)} className="min-w-0 block"
+                                      style={{ padding: 0 }}
+                                      title={`크게 보기 — ${['정면', '3/4 좌', '좌측면', '3/4 우', '우측면'][n] ?? ''}`}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={thumbUrl(u, 128)} alt={`각도 ${n + 1}`} loading="lazy"
+                                     className="w-full rounded border object-cover"
+                                     style={{ aspectRatio: '3/4', borderColor: n === 0 ? 'var(--ok)' : 'var(--line)' }} />
+                              </button>
                             ))}
                           </div>
                         )}
@@ -507,6 +517,18 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
 
       {note && <div className="text-[11.5px] mt-3" style={{ color: 'var(--ok)' }}>{note}</div>}
       {err && <div className="text-[11.5px] mt-3" style={{ color: 'var(--danger)' }}>{err}</div>}
+
+      {/* 크게 보기 — 얼굴은 작게 보면 판단이 안 된다 */}
+      {zoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style={{ background: 'rgba(0,0,0,.82)' }} onClick={() => setZoom('')}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={zoom} alt="크게 보기" onClick={(e) => e.stopPropagation()}
+               style={{ maxWidth: '96vw', maxHeight: '92vh', objectFit: 'contain', borderRadius: 10 }} />
+          <button onClick={() => setZoom('')} className="absolute top-3 right-4 text-[22px]"
+                  style={{ color: '#fff' }} aria-label="닫기">×</button>
+        </div>
+      )}
     </div>
   );
 }
