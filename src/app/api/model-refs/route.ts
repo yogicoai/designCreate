@@ -48,6 +48,9 @@ export async function GET() {
         aiCut: r.aiCut ?? '',
         aiStatus: r.aiStatus ?? '',
         // 얼굴 시트를 칸별로 잘라둔 것 — 카드에는 정면(aiFront)만 쓴다
+        // 헤어는 말로 고르는 것보다 사진 한 장이 정확하다
+        hairRef: r.hairRef ?? '',
+        hairNote: r.hairNote ?? '',
         aiFront: r.aiFront ?? '',
         aiPanels: Array.isArray(r.aiPanels) ? r.aiPanels : [],
         size: r.size ?? '',
@@ -79,6 +82,9 @@ export async function POST(req: Request) {
       ...profile,
       fitPct: Math.max(50, Math.min(95, Math.round(Number(b.fitPct) || 80))),
       note: clean(b.note, 500),
+      // 헤어 레퍼런스 — 시트를 뽑을 때 이 사진을 함께 넣어 머리 모양을 맞춘다
+      hairRef: clean(b.hairRef, 500),
+      hairNote: clean(b.hairNote, 120),
       aiCut: clean(b.aiCut, 500),
       aiFront: clean(b.aiFront, 500),
       aiPanels: Array.isArray(b.aiPanels) ? (b.aiPanels as string[]).slice(0, 8).map((u) => String(u)) : [],

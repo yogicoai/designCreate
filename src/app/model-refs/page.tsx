@@ -29,6 +29,8 @@ export default async function ModelRefsPage() {
     refs: Array.isArray(r.refs) ? (r.refs as { url: string; title: string }[]) : [],
     aiCut: (r.aiCut as string) ?? '',
     aiStatus: (r.aiStatus as string) ?? '',
+    hairRef: (r.hairRef as string) ?? '',
+    hairNote: (r.hairNote as string) ?? '',
     aiFront: (r.aiFront as string) ?? '',
     aiPanels: Array.isArray(r.aiPanels) ? (r.aiPanels as string[]) : [],
   }));

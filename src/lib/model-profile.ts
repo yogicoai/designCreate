@@ -42,7 +42,6 @@ export interface ModelProfile {
 
 const ageOf = (v: string) => AGE_BANDS.find((a) => a.v === v);
 const bodyOf = (v: string) => BODY_TYPES.find((b) => b.v === v);
-
 /** 아동인가 — 아동은 Max 와의 키 비교가 의미 없으므로 '아동 비례' 로 적는다 */
 function isChild(age: string) {
   return age === 'kid-young' || age === 'kid' || age === 'tween';

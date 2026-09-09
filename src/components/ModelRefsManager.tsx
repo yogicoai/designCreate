@@ -31,6 +31,9 @@ export interface ModelRef {
   aiCut: string;
   /** '' 미요청 | 'requested' 생성 대기 | 'done' 완료 */
   aiStatus: string;
+  /** 헤어 레퍼런스 사진 — 원하는 머리 모양을 말보다 사진으로 지정한다 */
+  hairRef: string;
+  hairNote: string;
   /** 얼굴 시트의 정면 칸 — 카드 썸네일은 시트 전체가 아니라 이걸 쓴다 */
   aiFront: string;
   /** 시트를 칸별로 자른 것 (정면·3/4·측면 좌우) */
@@ -47,6 +50,7 @@ export const FIT_LEVELS = [
 
 const BLANK: Omit<ModelRef, 'id' | 'size' | 'sizeEn'> = {
   name: '', rep: '', age: '20e', heightCm: 170, bodyType: 'slim', fitPct: 80, note: '', refs: [],
+  hairRef: '', hairNote: '',
   aiCut: '', aiStatus: '', aiFront: '', aiPanels: [],
 };
 
@@ -74,18 +78,20 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
     setForm({
       name: m.name, rep: m.rep, age: m.age, heightCm: m.heightCm,
       bodyType: m.bodyType, fitPct: m.fitPct, note: m.note, refs: m.refs,
+      hairRef: m.hairRef, hairNote: m.hairNote,
       aiCut: m.aiCut, aiStatus: m.aiStatus, aiFront: m.aiFront, aiPanels: m.aiPanels,
     });
     setNote(''); setErr('');
   }
 
   /** 사진 올리기 — 대표 한 장(asRep) 또는 레퍼런스 여러 장 */
-  async function upload(files: FileList | null, asRep = false) {
+  async function upload(files: FileList | null, slot: 'rep' | 'hair' | 'refs' = 'refs') {
     if (!files?.length) return;
     setBusy(true); setErr('');
     try {
       const added: { url: string; title: string }[] = [];
-      for (const f of Array.from(files).slice(0, asRep ? 1 : 12)) {
+      const one = slot !== 'refs';
+      for (const f of Array.from(files).slice(0, one ? 1 : 12)) {
         const fd = new FormData();
         fd.append('file', f);
         fd.append('title', `${form.name || '모델'} · ${f.name}`);
@@ -95,10 +101,14 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
         if (!j.ok) throw new Error(j.error || '업로드 실패');
         added.push({ url: j.url, title: j.title ?? f.name });
       }
-      setForm((c) => (asRep
-        ? { ...c, rep: added[0].url }
-        : { ...c, refs: [...added, ...c.refs].slice(0, 60), rep: c.rep || added[0].url }));
-      setNote(asRep ? '대표 사진을 넣었습니다.' : `${added.length}장을 넣었습니다.`);
+      setForm((c) => {
+        if (slot === 'rep') return { ...c, rep: added[0].url };
+        if (slot === 'hair') return { ...c, hairRef: added[0].url };
+        return { ...c, refs: [...added, ...c.refs].slice(0, 60), rep: c.rep || added[0].url };
+      });
+      setNote(slot === 'rep' ? '대표 사진을 넣었습니다.'
+        : slot === 'hair' ? '헤어 레퍼런스를 넣었습니다.'
+        : `${added.length}장을 넣었습니다.`);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
 
@@ -196,7 +206,7 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
                 <label className="chip cursor-pointer" style={{ color: 'var(--accent)' }}>
                   사진 올리기
                   <input type="file" accept="image/*" className="hidden" disabled={busy}
-                         onChange={(e) => { upload(e.target.files, true); e.target.value = ''; }} />
+                         onChange={(e) => { upload(e.target.files, 'rep'); e.target.value = ''; }} />
                 </label>
               </div>
             </div>
@@ -229,6 +239,37 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <div className="label mb-1">
+                헤어 레퍼런스 <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>— 원하는 머리 사진</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="rounded-lg overflow-hidden border shrink-0"
+                     style={{ width: 74, aspectRatio: '1/1', borderColor: 'var(--line-strong)', background: 'var(--surface-2)' }}>
+                  {form.hairRef ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={thumbUrl(form.hairRef, 256)} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-[10px]"
+                         style={{ color: 'var(--text-mute)' }}>없음</div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="chip cursor-pointer" style={{ color: 'var(--accent)' }}>
+                    사진 올리기
+                    <input type="file" accept="image/*" className="hidden" disabled={busy}
+                           onChange={(e) => { upload(e.target.files, 'hair'); e.target.value = ''; }} />
+                  </label>
+                  {form.hairRef && (
+                    <button className="chip" style={{ fontSize: 10 }}
+                            onClick={() => setForm((c) => ({ ...c, hairRef: '' }))}>빼기</button>
+                  )}
+                </div>
+              </div>
+              <input className="input w-full mt-2" value={form.hairNote} placeholder="헤어 메모 (예: 가운데 가르마)"
+                     onChange={(e) => setForm((c) => ({ ...c, hairNote: e.target.value }))} />
             </div>
 
             <div>
@@ -328,6 +369,19 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
                   <div className="text-[10.5px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-dim)' }}>
                     {[ageKr(m.age), m.heightCm ? `${m.heightCm}cm` : '', bodyKr(m.bodyType)].filter(Boolean).join(' · ')}
                   </div>
+                  {(m.hairRef || m.hairNote) && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {m.hairRef && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={thumbUrl(m.hairRef, 128)} alt="헤어" title="헤어 레퍼런스"
+                             className="rounded border object-cover"
+                             style={{ width: 18, height: 18, borderColor: 'var(--line)' }} />
+                      )}
+                      <span className="text-[10px] truncate" style={{ color: 'var(--text-mute)' }}>
+                        ✂ {m.hairNote || '헤어 지정됨'}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-1 mt-1 flex-wrap">
                     <span className="chip" style={{ padding: '1px 6px', fontSize: 10, color: 'var(--accent)' }}>
                       적합도 {m.fitPct}%
@@ -367,6 +421,7 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
                       <div><b>나이대</b> {ageKr(m.age)}</div>
                       <div><b>키</b> {m.heightCm}cm</div>
                       <div><b>체형</b> {bodyKr(m.bodyType)}</div>
+
                       <div><b>적합도</b> {m.fitPct}%</div>
                       {m.note && <div className="mt-1">{m.note}</div>}
                     </div>
@@ -374,6 +429,19 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
                          style={{ background: 'var(--surface-2)', color: 'var(--text-mute)' }}>
                       {m.sizeEn}
                     </div>
+
+                    {m.hairRef && (
+                      <>
+                        <div className="label mt-2 mb-1">헤어 레퍼런스</div>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={thumbUrl(m.hairRef, 256)} alt="헤어 레퍼런스"
+                             className="rounded-lg border object-cover"
+                             style={{ width: 96, borderColor: 'var(--line-strong)' }} />
+                        {m.hairNote && (
+                          <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-mute)' }}>{m.hairNote}</div>
+                        )}
+                      </>
+                    )}
 
                     <div className="label mt-2 mb-1">AI 생성 이미지</div>
                     {m.aiCut ? (
