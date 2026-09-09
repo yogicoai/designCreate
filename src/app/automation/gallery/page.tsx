@@ -78,7 +78,7 @@ export default async function AutomationGalleryPage() {
                          style={{ color: 'var(--text-mute)', textDecoration: 'underline' }}>원본</a>
                     ))}
                   </div>
-                  <CutActions id={c.id} source={c.source} />
+                  <CutActions id={c.id} source={c.source} url={c.url} title={c.title || c.spec || 'yogibo'} />
                 </div>
               ))}
             </div>

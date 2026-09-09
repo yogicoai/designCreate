@@ -175,7 +175,7 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
                       )}
                     </div>
                   )}
-                  <CutActions id={c.id} source={c.source} />
+                  <CutActions id={c.id} source={c.source} url={c.url} title={c.title || c.spec || 'yogibo'} />
                 </div>
               ))}
             </div>

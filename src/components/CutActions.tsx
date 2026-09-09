@@ -4,12 +4,19 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 /**
- * 갤러리 컷 아래의 관리 버튼 — 숨김 / 삭제.
+ * 갤러리 컷 아래의 관리 버튼 — 내려받기 / 숨김 / 삭제.
  * 삭제는 이 앱이 생성한 컷만 (이관 컷은 youtube 자산이라 숨김만).
+ *
+ * 내려받기는 형식을 골라서 받는다: 웹 게시는 webp(가장 작다), 편집·인쇄 전달은 png,
+ * 그대로면 jpg. 크기·화질은 안 건드린다 — 인쇄용(A1·A3)이 줄어들면 안 된다.
  */
-export default function CutActions({ id, source }: { id: string; source: string }) {
+export default function CutActions(
+  { id, source, url, title }: { id: string; source: string; url?: string; title?: string },
+) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  /** 내려받기 형식 고르기 열림 */
+  const [open, setOpen] = useState(false);
 
   async function call(payload: Record<string, unknown>) {
     const res = await fetch('/api/cuts', {
@@ -48,6 +55,19 @@ export default function CutActions({ id, source }: { id: string; source: string 
     }
   }
 
+  /** 형식만 바꿔 내려받기 — 링크를 만들어 눌러야 파일로 저장된다 */
+  function download(format: 'jpg' | 'webp' | 'png') {
+    if (!url) return;
+    const q = new URLSearchParams({ url, format, name: (title || 'yogibo').slice(0, 60) });
+    const a = document.createElement('a');
+    a.href = `/api/download?${q.toString()}`;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setOpen(false);
+  }
+
   const btn = (label: string, onClick: () => void, color: string) => (
     <button
       onClick={onClick}
@@ -60,9 +80,25 @@ export default function CutActions({ id, source }: { id: string; source: string 
   );
 
   return (
-    <div className="flex items-center gap-2 mt-0.5">
+    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+      {url && btn(open ? '닫기' : '↓ 저장', () => setOpen((c) => !c), 'var(--accent)')}
       {btn('숨김', hide, 'var(--text-mute)')}
       {source === 'imgcreate' && btn('삭제', remove, 'var(--danger)')}
+      {open && url && (
+        <div className="flex items-center gap-1.5 w-full mt-0.5">
+          {(['jpg', 'webp', 'png'] as const).map((f) => (
+            <button key={f} onClick={() => download(f)} className="text-[9.5px]"
+                    title={f === 'webp' ? '웹 게시용 — 가장 작습니다'
+                      : f === 'png' ? '편집·인쇄 전달용 — 손실 없음' : '저장된 그대로'}
+                    style={{
+                      color: 'var(--text-dim)', background: 'var(--surface-2)',
+                      border: '1px solid var(--line)', borderRadius: 6, padding: '1px 6px', cursor: 'pointer',
+                    }}>
+              {f.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
