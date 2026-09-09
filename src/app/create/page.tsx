@@ -18,6 +18,27 @@ export default async function CreatePage() {
     getReferences(4000),
   ]);
 
+  /*
+   * 완성한 배너도 생성 소재로 쓸 수 있게 보관함에 합친다.
+   * "이 배너 느낌으로", "이 배너 배경 위에" 같은 요청이 실제로 들어와서,
+   * 배너를 다시 찾아 올리는 수고를 없앤다. 분류는 기존 '배너' 안에,
+   * 하위 칩 '내가 만든 배너' 로 갈라 두어 업로드한 배너 레퍼와 섞이지 않게 한다.
+   */
+  const madeBanners = await getCuts({ source: 'imgcreate', provider: 'design', limit: 120 });
+  const bannerRefs = madeBanners
+    .filter((c) => c.url)
+    .map((c) => ({
+      url: c.url,
+      title: c.title || '배너',
+      width: c.width ?? 0,
+      height: c.height ?? 0,
+      category: 'banner' as const,
+      sub: '내가 만든 배너',
+      tags: [] as string[],
+      source: 'design',
+      createdAt: c.createdAt ? String(c.createdAt) : null,
+    }));
+
   // 베이스로 쓸 수 있는 컷만 (라인이 있는 것) — 클라이언트로 넘기는 양을 줄인다
   const baseCuts = recentCuts
     .filter((c) => c.line && c.url)
@@ -50,7 +71,7 @@ export default async function CreatePage() {
       preservations={preservations}
       expressions={expressions}
       baseCuts={baseCuts}
-      references={references}
+      references={[...bannerRefs, ...references]}
       promptMode={(process.env.PROMPT_MODE || 'opus') === 'opus' && process.env.ANTHROPIC_API_KEY ? 'opus' : 'local'}
       /* 넘기기 버튼은 로컬 전용 — MD 화면에 나올 기능이 아니다 */
       gptEnabled={Boolean(process.env.OPENAI_API_KEY)}

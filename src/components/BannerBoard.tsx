@@ -44,6 +44,21 @@ export default function BannerBoard({ rows }: { rows: BannerRow[] }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState('');
   const [zoom, setZoom] = useState<BannerRow | null>(null);
+  /** 내려받을 확장자 — 웹 게시는 webp, 편집·인쇄 전달은 png, 그대로면 jpg */
+  const [fmt, setFmt] = useState<'webp' | 'png' | 'jpg'>('jpg');
+
+  /** 형식만 바꿔서 내려받는다 — 크기·화질은 그대로다 */
+  function dl(row: BannerRow) {
+    const name = `${row.title.replace(/\s+/g, '_')}_${row.width}x${row.height}`;
+    const q = new URLSearchParams({ url: row.url, format: fmt, name });
+    // location 대입은 '바깥 값 수정' 으로 잡힌다 — 링크를 만들어 누르는 방식으로 내려받는다
+    const a = document.createElement('a');
+    a.href = `/api/download?${q.toString()}`;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
 
   /*
    * 웹·모바일을 한 번에 저장한 것은 한 게시글로 묶는다 — 목록에 같은 배너가
@@ -110,6 +125,21 @@ export default function BannerBoard({ rows }: { rows: BannerRow[] }) {
   return (
     <>
       {err && <div className="card p-2.5 mb-3 text-[11.5px]" style={{ color: 'var(--danger)' }}>{err}</div>}
+
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <span className="label">내려받기 형식</span>
+        {([['jpg', 'JPG'], ['webp', 'WEBP'], ['png', 'PNG']] as const).map(([v, label]) => (
+          <button key={v} className="chip" onClick={() => setFmt(v)}
+                  title={v === 'webp' ? '웹 게시용 — 같은 화질에 파일이 가장 작습니다'
+                    : v === 'png' ? '편집·인쇄 전달용 — 손실이 없습니다' : '서버에 저장된 그대로'}
+                  style={fmt === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+            {label}
+          </button>
+        ))}
+        <span className="text-[11px]" style={{ color: 'var(--text-mute)' }}>
+          형식만 바꿔서 내려받습니다 — 크기·화질은 그대로입니다.
+        </span>
+      </div>
 
       <div className="flex flex-col gap-2">
         {groups.map((g) => {
@@ -178,9 +208,14 @@ export default function BannerBoard({ rows }: { rows: BannerRow[] }) {
                         title="설계도가 없어 다시 열 수 없습니다">수정 불가</span>
                 )}
                 {g.rows.map((r) => (
-                  <a key={r.id} href={r.url} target="_blank" rel="noreferrer" className="btn">
-                    원본{g.rows.length > 1 ? ` (${r.width >= r.height ? '웹' : '모바일'})` : ''}
-                  </a>
+                  <button key={r.id} className="btn" onClick={() => dl(r)}
+                          title={`${fmt.toUpperCase()} 로 내려받기 — ${r.width}×${r.height}`}>
+                    ↓ {fmt.toUpperCase()}{g.rows.length > 1 ? ` (${r.width >= r.height ? '웹' : '모바일'})` : ''}
+                  </button>
+                ))}
+                {g.rows.map((r) => (
+                  <a key={`v${r.id}`} href={r.url} target="_blank" rel="noreferrer" className="btn btn-ghost"
+                     title="새 창에서 원본 보기">보기</a>
                 ))}
                 {/* 삭제는 묶음 통째로 — 한쪽만 남으면 짝이 깨진다 */}
                 <button className="btn" onClick={() => removeGroup(g.rows)} disabled={busyHere}

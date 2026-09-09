@@ -135,6 +135,8 @@ interface SizeDocLike {
   cropAxis: 'vertical' | 'horizontal' | 'none';
   label: string;
   value: string;
+  /** 프리셋 묶음 — '인쇄' 면 A 규격(150ppi) 이라 생성 화질을 올린다 */
+  group?: string;
 }
 
 export async function POST(req: Request) {
@@ -165,6 +167,15 @@ export async function POST(req: Request) {
 
     // ── 2) 자산 로딩 ──────────────────────────────────────────────
     const talentPicks = (body.talents ?? []).slice(0, 4);
+
+    /*
+     * ── 2.4) 인쇄 규격은 4K 로 강제 ──
+     * A1(3508×4967) 같은 인쇄용은 2K(2048) 로 뽑으면 cropToSize 가 2.4배로 늘려서
+     * 인쇄에서 흐려진다. 150ppi 를 맞추려고 만든 규격이므로 화질을 아끼면 의미가 없다.
+     * 4K(4096) 로 뽑아도 A1 은 1.2배 확대가 남지만 그 정도는 인쇄에서 견딘다.
+     */
+    const isPrint = size.group === '인쇄' || Math.max(size.width, size.height) >= 2500;
+    if (isPrint && body.engine !== 'gpt') body.imageSize = '4K';
 
     /*
      * ── 2.5) 얼굴 보호 강제 상향 — 전속 모델이 들어간 컷(모델 변경 포함)은 서버가 해상도를 올려버린다 ──
