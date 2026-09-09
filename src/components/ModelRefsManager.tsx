@@ -31,6 +31,10 @@ export interface ModelRef {
   aiCut: string;
   /** '' 미요청 | 'requested' 생성 대기 | 'done' 완료 */
   aiStatus: string;
+  /** 얼굴 시트의 정면 칸 — 카드 썸네일은 시트 전체가 아니라 이걸 쓴다 */
+  aiFront: string;
+  /** 시트를 칸별로 자른 것 (정면·3/4·측면 좌우) */
+  aiPanels: string[];
 }
 
 /** 우리 모델로 얼마나 강하게 끌어올지 — 엔진에 들어가는 건 숫자가 아니라 이 문장이다 */
@@ -43,7 +47,7 @@ export const FIT_LEVELS = [
 
 const BLANK: Omit<ModelRef, 'id' | 'size' | 'sizeEn'> = {
   name: '', rep: '', age: '20e', heightCm: 170, bodyType: 'slim', fitPct: 80, note: '', refs: [],
-  aiCut: '', aiStatus: '',
+  aiCut: '', aiStatus: '', aiFront: '', aiPanels: [],
 };
 
 export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
@@ -70,7 +74,7 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
     setForm({
       name: m.name, rep: m.rep, age: m.age, heightCm: m.heightCm,
       bodyType: m.bodyType, fitPct: m.fitPct, note: m.note, refs: m.refs,
-      aiCut: m.aiCut, aiStatus: m.aiStatus,
+      aiCut: m.aiCut, aiStatus: m.aiStatus, aiFront: m.aiFront, aiPanels: m.aiPanels,
     });
     setNote(''); setErr('');
   }
@@ -296,7 +300,7 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
           {models.map((m) => {
             const showAi = !!m.aiCut && !!viewAi[m.id];
-            const shown = showAi ? m.aiCut : m.rep;
+            const shown = showAi ? (m.aiFront || m.aiCut) : m.rep;
             const isOpen = detail === m.id;
             return (
               <div key={m.id} className="card p-2"
@@ -374,10 +378,23 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
                     <div className="label mt-2 mb-1">AI 생성 이미지</div>
                     {m.aiCut ? (
                       <>
+                        {/* 시트 전체 — 다섯 각도가 한 장에 */}
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={thumbUrl(m.aiCut, 384)} alt="AI 생성컷"
-                             className="w-full rounded-lg border object-cover"
+                        <img src={thumbUrl(m.aiCut, 384)} alt="AI 얼굴 시트"
+                             className="w-full rounded-lg border"
                              style={{ borderColor: 'var(--ok)' }} />
+                        {/* 칸별로 자른 것 — 정면이 맨 앞 */}
+                        {m.aiPanels.length > 0 && (
+                          <div className="flex gap-1 mt-1">
+                            {m.aiPanels.map((u, n) => (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img key={u} src={thumbUrl(u, 128)} alt={`각도 ${n + 1}`} loading="lazy"
+                                   className="flex-1 rounded border object-cover"
+                                   title={['정면', '3/4 좌', '좌측면', '3/4 우', '우측면'][n] ?? ''}
+                                   style={{ aspectRatio: '3/4', borderColor: n === 0 ? 'var(--ok)' : 'var(--line)' }} />
+                            ))}
+                          </div>
+                        )}
                         <div className="flex items-center gap-2 mt-1">
                           <a href={m.aiCut} target="_blank" rel="noreferrer" className="text-[10px]"
                              style={{ color: 'var(--text-mute)' }}>원본 보기</a>

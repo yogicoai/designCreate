@@ -47,6 +47,9 @@ export async function GET() {
         // AI 생성컷 — 이 느낌으로 다시 뽑은 정면샷 (힉스필드, 적합도 반영)
         aiCut: r.aiCut ?? '',
         aiStatus: r.aiStatus ?? '',
+        // 얼굴 시트를 칸별로 잘라둔 것 — 카드에는 정면(aiFront)만 쓴다
+        aiFront: r.aiFront ?? '',
+        aiPanels: Array.isArray(r.aiPanels) ? r.aiPanels : [],
         size: r.size ?? '',
         sizeEn: r.sizeEn ?? '',
         refs: Array.isArray(r.refs) ? r.refs : [],
@@ -77,6 +80,8 @@ export async function POST(req: Request) {
       fitPct: Math.max(50, Math.min(95, Math.round(Number(b.fitPct) || 80))),
       note: clean(b.note, 500),
       aiCut: clean(b.aiCut, 500),
+      aiFront: clean(b.aiFront, 500),
+      aiPanels: Array.isArray(b.aiPanels) ? (b.aiPanels as string[]).slice(0, 8).map((u) => String(u)) : [],
       // '' 미요청 | 'requested' 생성 대기 | 'done' 완료
       aiStatus: ['requested', 'done'].includes(clean(b.aiStatus, 20)) ? clean(b.aiStatus, 20) : '',
       ...composed,
