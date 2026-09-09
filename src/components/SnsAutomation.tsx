@@ -15,13 +15,21 @@
 import { useMemo, useState } from 'react';
 import { thumbUrl } from '@/lib/thumb';
 
-interface RefItem { url: string; title: string; cat: 'instagram' | 'shoot' }
+type RefCat = 'sns-person' | 'sns-scene' | 'instagram' | 'shoot' | 'interior';
+interface RefItem { url: string; title: string; cat: RefCat }
 interface Props {
   pool: RefItem[];
   /** 전속 모델 전체 — kid(아동)는 랜덤 배정에서 빠지고 카드에서 직접 고를 때만 쓴다 */
   models: { code: string; label: string; kid?: boolean }[];
   /** 제품컷용 — 배경 사진에 얹을 우리 제품 목록 */
   products: { line: string; colors: { key: string; name: string }[] }[];
+  /**
+   * 이 화면이 만드는 것.
+   *   person  — 사진 속 사람을 우리 전속 모델로 교체 (제미나이)
+   *   product — 사람 없는 공간에 우리 빈백을 배치 (GPT)
+   * 한 화면에서 둘을 섞으면 담당자가 헷갈린다 — 화면 자체를 나눈다.
+   */
+  mode: 'person' | 'product';
 }
 
 interface Row {
@@ -42,13 +50,14 @@ interface Row {
 
 // 금액 표시는 화면에서 뺐다 (사용자 지시: 장수만) — 나노바나나 실측 단가는 ₩230~314/장
 
-export default function SnsAutomation({ pool, models, products }: Props) {
+export default function SnsAutomation({ pool, models, products, mode }: Props) {
+  const isProduct = mode === 'product';
   const [n, setN] = useState(5);
   const [rows, setRows] = useState<Row[]>([]);
   const [running, setRunning] = useState(false);
   const [note, setNote] = useState('');
   /** 후보 소스 — 인스타 + 촬영 합산이 기본 (둘 다 켬) */
-  const [srcOn, setSrcOn] = useState<{ instagram: boolean; shoot: boolean }>({ instagram: true, shoot: true });
+  const [srcOn, setSrcOn] = useState<Record<RefCat, boolean>>({ 'sns-person': true, 'sns-scene': true, instagram: true, shoot: true, interior: true });
   /** 확정(👍)·완료된 컷의 URL — 이후 랜덤 뽑기에서 영구 제외 (같은 컷이 또 나오지 않게) */
   const [usedUrls, setUsedUrls] = useState<Set<string>>(new Set());
 
@@ -113,7 +122,9 @@ export default function SnsAutomation({ pool, models, products }: Props) {
         const ref = randRef(used);
         if (!ref) break;
         used.add(ref.url);
-        out.push({ ref, codes: [randModel()], status: 'ready' });
+        out.push(isProduct
+          ? { ref, codes: [], product: randProduct() ?? undefined, status: 'ready' }
+          : { ref, codes: [randModel()], status: 'ready' });
       }
       return out;
     });
@@ -143,7 +154,7 @@ export default function SnsAutomation({ pool, models, products }: Props) {
     });
   }
   function swapModel(i: number) {
-    setRows((cur) => cur.map((r, j) => (j === i ? { ...r, codes: randModels(r.codes.length), status: 'ready', resultUrl: undefined } : r)));
+    setRows((cur) => cur.map((r, j) => (j === i ? { ...r, codes: isProduct ? [] : randModels(r.codes.length), status: 'ready', resultUrl: undefined } : r)));
   }
   /** 모델 직접 선택 패널이 열린 카드 — 아동 모델은 랜덤엔 안 섞이고 여기서만 고른다 */
   const [pickerAt, setPickerAt] = useState<number | null>(null);
@@ -268,20 +279,31 @@ export default function SnsAutomation({ pool, models, products }: Props) {
       {/* 아직 스케줄은 안 건다 — 확정(다음 주) 전까지는 사람이 버튼을 누르는 수동 파일럿 */}
       <div className="px-3 py-2 rounded-[10px] text-[11.5px] leading-relaxed mb-3"
            style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--text-dim)' }}>
-        인스타+촬영 자산 <b>{pool.length.toLocaleString()}장</b>에서 랜덤 후보를 뽑고, 전속 모델을 랜덤 배정해 SNS(4:5) 컷을 만듭니다.
+        후보 <b>{pool.length.toLocaleString()}장</b>에서 랜덤으로 뽑아 {isProduct ? '우리 제품을 배치해' : '전속 모델을 배정해'} SNS(4:5) 컷을 만듭니다.
         마음에 드는 후보는 <b>👍 선정</b>하면 다시 뽑아도 자리에 남고, <b>확정·완료된 컷은 이후 랜덤에서 다시 나오지 않습니다</b>.
-        인원은 원본 속 사람 수에 맞춰 주세요 — 지정 인원보다 사람이 많으면 나머지는 지워지고,
-        <b> 제품 단독 컷은 인원 0</b>으로 두면 생성 없이 원본이 그대로 채택됩니다.
-        <br />
-        <b style={{ color: 'var(--accent)' }}>📦 제품</b> 을 누르면 <b>인물 없이 그 배경에 우리 빈백만</b> 얹습니다 —
-        인물컷은 제미나이, 제품컷은 GPT 로 나갑니다 (배경 합성은 GPT 가 자연스럽습니다).
-        다만 GPT 는 제품 형태를 바꿔 놓는 일이 있으니 <b>결과의 제품 모양을 꼭 확인</b>해 주세요.
-        자동 스케줄은 아직 미적용 — 확정되면 이 실행을 그대로 예약으로 옮깁니다.
+        {isProduct ? (
+          <>
+            <b style={{ color: 'var(--accent)' }}>사람이 없는 공간 컷</b>에 우리 빈백을 얹습니다 —
+            제품과 컬러는 카드마다 <b>랜덤</b>으로 정해지고, 📦 를 다시 누르면 제품만 다시 뽑습니다.
+            <br />엔진은 <b>GPT</b> 입니다 (배경 합성이 자연스럽습니다). 다만 제품 형태를 바꿔 놓는 일이 있으니
+            <b> 결과의 제품 모양을 꼭 확인</b>해 주세요.
+            <br />후보는 <b>자산관리 &gt; 레퍼런스</b> 의 <b>SNS 배경자동화</b> 폴더에서 옵니다 — 거기에 사진을 넣어두시면 됩니다.
+          </>
+        ) : (
+          <>
+            인원은 원본 속 사람 수에 맞춰 주세요 — 지정 인원보다 사람이 많으면 나머지는 지워지고,
+            적으면 없던 사람이 새로 그려집니다. <b>인원 0</b> 이면 생성 없이 원본이 그대로 채택됩니다.
+            <br />후보는 <b>자산관리 &gt; 레퍼런스</b> 의 <b>SNS 인물자동화</b> 폴더에서 옵니다.
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <span className="label">후보 소스</span>
-        {([['instagram', '인스타그램'], ['shoot', '촬영']] as const).map(([k, label]) => {
+        {(isProduct
+          ? ([['sns-scene', 'SNS 배경자동화'], ['interior', '인테리어']] as const)
+          : ([['sns-person', 'SNS 인물자동화'], ['instagram', '인스타그램'], ['shoot', '촬영']] as const)
+        ).map(([k, label]) => {
           const cnt = pool.filter((r) => r.cat === k).length;
           return (
             <button key={k} className="chip"
@@ -339,13 +361,19 @@ export default function SnsAutomation({ pool, models, products }: Props) {
                       style={{ background: 'rgba(0,0,0,.55)', color: '#9fd1ff' }}>
                   {r.ref.cat === 'shoot' ? '촬영' : '인스타'}
                 </span>
-                <button className="absolute bottom-1 left-1 text-[9.5px] px-1.5 py-0.5 rounded"
+                {!isProduct && (<button className="absolute bottom-1 left-1 text-[9.5px] px-1.5 py-0.5 rounded"
                         title="클릭 = 모델 직접 선택 (키즈 모델 포함)"
                         disabled={running}
                         onClick={() => setPickerAt(pickerAt === i ? null : i)}
                         style={{ background: 'rgba(0,0,0,.62)', color: r.codes.length ? '#ffd34d' : '#b9c3cf', border: pickerAt === i ? '1px solid #ffd34d' : 'none', cursor: 'pointer' }}>
                   {r.product ? `📦 ${r.product.line} ${r.product.colorName}` : r.codes.length ? modelLabels(r.codes) : '모델 없음 · 원본 그대로'} ▾
-                </button>
+                </button>)}
+                {isProduct && (
+                  <span className="absolute bottom-1 left-1 text-[9.5px] px-1.5 py-0.5 rounded"
+                        style={{ background: 'rgba(0,0,0,.62)', color: '#ffd34d' }}>
+                    {r.product ? `📦 ${r.product.line} ${r.product.colorName}` : '제품 없음'}
+                  </span>
+                )}
               </div>
               <div className="text-[10px] truncate mt-1" style={{ color: 'var(--text-mute)' }}>{r.ref.title || '(제목 없음)'}</div>
               {r.error && <div className="text-[9.5px] mt-0.5" style={{ color: 'var(--danger)' }}>{r.error}</div>}
@@ -366,7 +394,7 @@ export default function SnsAutomation({ pool, models, products }: Props) {
                 </div>
               )}
               {/* 인원 — 베이스 사진 속 사람 수에 맞춘다 (1명만 보내면 나머지 사람은 지워짐, 0=원본 그대로) */}
-              <div className="flex gap-1 mt-1 items-center">
+              {!isProduct && (<div className="flex gap-1 mt-1 items-center">
                 <span className="text-[9px]" style={{ color: 'var(--text-mute)' }}>인원</span>
                 {[0, 1, 2, 3].map((k) => (
                   <button key={k} className="chip px-1.5 py-0"
@@ -389,7 +417,7 @@ export default function SnsAutomation({ pool, models, products }: Props) {
                   <button className="chip px-1.5 py-0" title="인물컷으로 되돌리기" disabled={running}
                           onClick={() => clearProduct(i)}>✕</button>
                 )}
-              </div>
+              </div>)}
               <div className="flex gap-1 mt-1">
                 <button className="chip flex-1 justify-center"
                         title={r.locked ? '선정 해제' : '👍 선정 — 다시 뽑기에서 이 후보는 유지됩니다'}

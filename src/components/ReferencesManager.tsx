@@ -44,6 +44,8 @@ const CATEGORY_OPTIONS: { value: string; label: string; desc: string }[] = [
   { value: 'interior', label: '인테리어', desc: '빈 공간·인테리어 컷 — 생성 시 「배경으로 사용」 소스' },
   { value: 'instagram', label: '인스타그램', desc: '인스타 게시물 (자동 백필 — 새 게시물은 스크립트 재실행)' },
   { value: 'model', label: '모델컷', desc: '전속 모델 인물 컷 — 포즈·표정·연출 레퍼런스' },
+  { value: 'sns-person', label: 'SNS 인물자동화', desc: 'SNS 자동화 — 사람이 있는 컷. 그 사람을 우리 전속 모델로 바꾼다' },
+  { value: 'sns-scene', label: 'SNS 배경자동화', desc: 'SNS 자동화 — 사람 없는 공간 컷. 그 공간에 우리 빈백을 얹는다' },
 ];
 
 export default function ReferencesManager(

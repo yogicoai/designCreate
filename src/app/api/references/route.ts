@@ -10,6 +10,7 @@ import { normalizeRefCategory } from '@/lib/queries';
  * 레퍼런스 갤러리에서 가져온 항목도 함께 산다 (source: 'eventtemp').
  *
  * GET    최근 레퍼런스 목록
+ * POST   { url, title, category, sub } — 이미 있는 이미지를 보관함에 등록 (업로드 없이)
  * PATCH  { url, title } — 이름 변경
  * DELETE { url }                          — 보관함에서 숨김 (파일 유지)
  * DELETE { url, hard: true[, force] }     — 완전 삭제.
@@ -76,6 +77,44 @@ export async function GET(req: Request) {
       // 같은 묶음을 연달아 부를 때(탭 이동·뒤로가기)는 브라우저 캐시에서 바로 — 개인 데이터라 private
       headers: { 'Cache-Control': 'private, max-age=60, stale-while-revalidate=300' },
     });
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });
+  }
+}
+
+/**
+ * POST — 이미 서버에 있는 이미지를 보관함에 등록한다 (업로드 없이 주소만).
+ *
+ * 생성 결과를 그대로 레퍼런스로 쌓을 때 쓴다. 예: 사진 속 인물을 전속 모델로
+ * 바꿔 만든 컷을 그 모델의 레퍼런스로 넣는 경우.
+ */
+export async function POST(req: Request) {
+  try {
+    const body = (await req.json()) as {
+      url?: string; title?: string; category?: string | null; sub?: string | null;
+      width?: number; height?: number; source?: string;
+    };
+    const url = String(body.url ?? '').trim();
+    if (!url) return NextResponse.json({ ok: false, error: 'url 이 필요합니다.' }, { status: 400 });
+    const db = await getDb();
+    await db.collection('references').updateOne(
+      { url },
+      {
+        $set: {
+          url,
+          title: String(body.title ?? '').slice(0, 120),
+          category: normalizeRefCategory(body.category),
+          ...(body.sub ? { sub: String(body.sub).slice(0, 40) } : {}),
+          width: Number(body.width) || 0,
+          height: Number(body.height) || 0,
+          source: String(body.source ?? 'generated').slice(0, 30),
+          active: true,
+        },
+        $setOnInsert: { createdAt: new Date() },
+      },
+      { upsert: true },
+    );
+    return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });
   }

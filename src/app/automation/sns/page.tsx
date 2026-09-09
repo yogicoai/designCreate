@@ -13,14 +13,21 @@ export const dynamic = 'force-dynamic';
  */
 export default async function SnsAutomationPage() {
   const [references, talents, products] = await Promise.all([getReferences(5000), getTalents(), getProducts()]);
-  // 후보 풀 = 인스타 + 촬영(2022 실촬영 포함) — 실촬영 베이스가 품질이 제일 좋다
+  /*
+   * 후보 풀 — 폴더가 곧 만드는 방식이다.
+   *   SNS 인물자동화(sns-person) : 사람이 있는 컷 → 그 사람을 우리 모델로 교체 (제미나이)
+   *   SNS 배경자동화(sns-scene)  : 사람 없는 공간 컷 → 그 공간에 우리 빈백 배치 (GPT)
+   * 기존에 쌓인 인스타그램·촬영 분류도 그대로 후보로 쓸 수 있게 남긴다 (4,500장이 이미 있다).
+   */
+  const KINDS = ['sns-person', 'instagram', 'shoot'] as const;
   const pool = references
-    .filter((r) => r.category === 'instagram' || r.category === 'shoot')
+    .filter((r) => (KINDS as readonly string[]).includes(r.category ?? ''))
     .map((r) => ({
       url: r.url,
       title: (r.title || '').slice(0, 40),
-      cat: (r.category === 'shoot' ? 'shoot' : 'instagram') as 'shoot' | 'instagram',
+      cat: r.category as (typeof KINDS)[number],
     }));
+
   // 전체 모델을 내려보내되 아동은 표시해둔다 — 랜덤 배정은 성인만, 아동은 카드에서 직접 선택할 때만
   const models = talents.map((t) => ({
     code: String(t.code),
@@ -37,10 +44,10 @@ export default async function SnsAutomationPage() {
   return (
     <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">
       <PageHeader
-        title="SNS 이미지 생성"
+        title="SNS 인물 자동화"
         desc={`인스타+촬영 자산 ${pool.length.toLocaleString()}장 × 전속 모델 랜덤 배정 — 매일 5장 파일럿 (수동 실행)`}
       />
-      <SnsAutomation pool={pool} models={models} products={productOpts} />
+      <SnsAutomation pool={pool} models={models} products={productOpts} mode="person" />
     </div>
   );
 }

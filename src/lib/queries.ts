@@ -169,6 +169,9 @@ export function normalizeRefCategory(cat: string | null | undefined): string | n
   if (cat === 'interior') return 'interior'; // 빈 공간·인테리어 컷 — '배경으로 사용' 소스
   if (cat === 'instagram') return 'instagram'; // 인스타그램 게시물 백필 (scripts/import-instagram-feed.mjs)
   if (cat === 'model') return 'model'; // 모델컷 — 전속 모델 인물 레퍼런스 폴더
+  // SNS 자동화 소스 — 인물 교체용(사람 있는 컷)과 제품 배치용(사람 없는 공간)을 폴더로 나눈다
+  if (cat === 'sns-person') return 'sns-person';
+  if (cat === 'sns-scene') return 'sns-scene';
   return null;
 }
 

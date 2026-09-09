@@ -75,6 +75,7 @@ const NAV = [
       { href: '/products', label: '제품 · 컬러', icon: '▤' },
       { href: '/talents', label: '전속 모델', icon: '☺' },
       { href: '/poses', label: '포즈 레퍼런스', icon: '▥' },
+      { href: '/model-refs', label: '모델 레퍼런스', icon: '☻' },
     ],
   },
   {
@@ -82,7 +83,8 @@ const NAV = [
     group: '자동화',
     items: [
       { href: '/automation/guide', label: 'SNS 자동화 설명서', icon: '📘' },
-      { href: '/automation/sns', label: 'SNS 이미지 생성', icon: '⚡' },
+      { href: '/automation/sns', label: 'SNS 인물 자동화', icon: '⚡' },
+      { href: '/automation/sns-product', label: 'SNS 제품 자동화', icon: '📦' },
       { href: '/automation/gallery', label: '자동화 생성이미지', icon: '▦' },
     ],
   },
