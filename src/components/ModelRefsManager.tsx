@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { thumbUrl } from '@/lib/thumb';
+import { shrinkForUpload, formatBytes } from '@/lib/client-image';
 import { AGE_BANDS, BODY_TYPES, composeSize } from '@/lib/model-profile';
 
 /**
@@ -95,12 +96,22 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
       const added: { url: string; title: string }[] = [];
       const one = slot !== 'refs';
       for (const f of Array.from(files).slice(0, one ? 1 : 12)) {
+        /*
+         * 브라우저에서 먼저 줄인다. 요즘 폰 사진은 한 장이 5~10MB 라 그대로 보내면
+         * 업로드 한도(4MB)에 걸려 조용히 실패한다 — 레퍼런스 화면이 이미 쓰는 방식이다.
+         */
+        const shrunk = await shrinkForUpload(f);
+        if (shrunk.bytes !== shrunk.originalBytes) {
+          setNote(`${f.name}: ${formatBytes(shrunk.originalBytes)} → ${formatBytes(shrunk.bytes)} 로 줄여서 올립니다`);
+        }
         const fd = new FormData();
-        fd.append('file', f);
+        fd.append('file', shrunk.file);
         fd.append('title', `${form.name || '모델'} · ${f.name}`);
         // 이 화면의 사진은 여기서만 관리한다 — 레퍼런스 보관함에는 섞지 않는다
         fd.append('register', '0');
-        const j = await (await fetch('/api/upload', { method: 'POST', body: fd })).json();
+        const res = await fetch('/api/upload', { method: 'POST', body: fd });
+        // 한도 초과는 JSON 이 아닌 응답이 올 수 있다 — 파싱 오류로 뭉개지면 원인을 못 찾는다
+        const j = await res.json().catch(() => ({ ok: false, error: `업로드 실패 (HTTP ${res.status})` }));
         if (!j.ok) throw new Error(j.error || '업로드 실패');
         added.push({ url: j.url, title: j.title ?? f.name });
       }
