@@ -77,6 +77,8 @@ export async function POST(req: Request) {
       colorKey: b.colorKey ?? '',
       model: b.model ?? '',
       note: String(b.note ?? '').slice(0, 1000),
+      // 컷을 나눈 근거 — 다시 열었을 때 무엇을 요청했는지 보여야 한다
+      scenario: String(b.scenario ?? '').slice(0, 4000),
       status: STATUSES.includes(String(b.status)) ? String(b.status) : '작성중',
       finalClip: String(b.finalClip ?? '').slice(0, 500),
       finalNote: String(b.finalNote ?? '').slice(0, 200),

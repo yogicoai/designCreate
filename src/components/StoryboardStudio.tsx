@@ -70,6 +70,9 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
   const [model, setModel] = useState('');
   const [note, setNote] = useState('');
   const [shots, setShots] = useState<Shot[]>([]);
+  /** 사람이 쓴 시나리오 — 이걸 읽고 컷을 나눈다 */
+  const [scenario, setScenario] = useState('');
+  const [splitting, setSplitting] = useState(false);
   // 컷을 다 이어붙인 최종 영상 — 콘티 맨 아래에 붙는다
   const [finalClip, setFinalClip] = useState('');
   const [finalNote, setFinalNote] = useState('');
@@ -110,7 +113,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
   function reset() {
     setBoardId(''); setTitle(''); setStatus('작성중'); setPurpose('product');
     setTotal(15); setAspect('9:16'); setLine(''); setColorKey(''); setModel('');
-    setNote(''); setShots([]); setFinalClip(''); setFinalNote(''); setErr(''); setSaved('');
+    setNote(''); setScenario(''); setShots([]); setFinalClip(''); setFinalNote(''); setErr(''); setSaved('');
   }
 
   async function open(id: string) {
@@ -122,7 +125,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
       setBoardId(b.id); setTitle(b.title ?? ''); setStatus(b.status ?? '작성중');
       setPurpose(b.purpose ?? 'product'); setTotal(b.total ?? 15); setAspect(b.aspect ?? '9:16');
       setLine(b.line ?? ''); setColorKey(b.colorKey ?? ''); setModel(b.model ?? '');
-      setNote(b.note ?? ''); setShots(Array.isArray(b.shots) ? b.shots : []);
+      setNote(b.note ?? ''); setScenario(b.scenario ?? ''); setShots(Array.isArray(b.shots) ? b.shots : []);
       setFinalClip(b.finalClip ?? ''); setFinalNote(b.finalNote ?? '');
       setSaved(''); setView('edit');
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -135,7 +138,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: boardId || undefined, title, status: nextStatus ?? status,
-          purpose, total: sumSec || total, aspect, line, colorKey, model, note, shots,
+          purpose, total: sumSec || total, aspect, line, colorKey, model, note, scenario, shots,
           finalClip, finalNote,
         }),
       })).json();
@@ -151,6 +154,26 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
     if (!confirm(`"${b.title}" 을 지울까요?`)) return;
     await fetch(`/api/storyboards?id=${encodeURIComponent(b.id)}`, { method: 'DELETE' });
     await loadBoards();
+  }
+
+  /**
+   * 시나리오를 컷으로 나눈다.
+   * 용도 뼈대(makeDraft)와 달리 사람이 쓴 글을 읽어야 해서 모델 판단이 들어간다 —
+   * 시나리오 하나당 한 번 호출된다.
+   */
+  async function splitFromScenario() {
+    if (scenario.trim().length < 10) { setErr('시나리오를 조금 더 적어주세요.'); return; }
+    setSplitting(true); setErr(''); setSaved('');
+    try {
+      const j = await (await fetch('/api/storyboards/split', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenario, total, aspect, productLabel, modelLabel }),
+      })).json();
+      if (!j.ok) throw new Error(j.error || '컷 나누기 실패');
+      setShots(j.shots as Shot[]);
+      if (j.intent) setNote((c) => c || String(j.intent));
+      setSaved(`${(j.shots as Shot[]).length}컷으로 나눴습니다 — 컷마다 장면·동작을 고친 뒤 이미지를 만드세요.`);
+    } catch (e) { setErr((e as Error).message); } finally { setSplitting(false); }
   }
 
   function makeDraft() {
@@ -438,9 +461,32 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
           </div>
         </div>
 
+        {/* 시나리오 → 컷 분할. 글로 쓰면 연출부가 끊어주듯 컷이 나온다 */}
+        <div className="mt-3 p-3 rounded-lg" style={{ background: 'var(--surface-2)', border: '1px solid var(--line)' }}>
+          <div className="label mb-1">
+            시나리오{' '}
+            <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
+              — 어떤 영상인지 편하게 적어주세요. 읽고 컷을 나눠 드립니다.
+            </span>
+          </div>
+          <textarea
+            className="input w-full" rows={3} value={scenario}
+            placeholder="예: 직장인 여성이 퇴근하고 집에 와서 빈백에 몸을 던지고 편안하게 쉬는 20초 CF. 저녁 무드, 따뜻한 조명. 마지막은 로고로 마무리."
+            onChange={(e) => setScenario(e.target.value)}
+          />
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <button className="btn btn-primary" onClick={splitFromScenario} disabled={splitting || !!busy}>
+              {splitting ? '컷 나누는 중…' : '✂ 시나리오로 컷 나누기'}
+            </button>
+            <span className="text-[11px]" style={{ color: 'var(--text-mute)' }}>
+              위에서 고른 <b>길이 · 비율 · 제품 · 모델</b>을 반영합니다. 컷은 나눈 뒤에도 고칠 수 있습니다.
+            </span>
+          </div>
+        </div>
+
         <div className="flex items-center gap-2 mt-3 flex-wrap">
-          <button className="btn btn-primary" onClick={makeDraft}>
-            {shots.length ? '컷 다시 짜기' : '컷 짜기 시작'}
+          <button className="btn" onClick={makeDraft} title="시나리오 없이 용도별 기본 컷 구성으로 시작합니다">
+            {shots.length ? '기본 구성으로 다시' : '기본 구성으로 시작'}
           </button>
           {shots.length > 0 && (
             <>
