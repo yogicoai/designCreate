@@ -1,47 +1,41 @@
 import PageHeader from '@/components/PageHeader';
-import ModelRefsManager from '@/components/ModelRefsManager';
-import { getTalents, getModelRefSummary } from '@/lib/queries';
-import { parseSize } from '@/lib/model-profile';
+import ModelRefsManager, { type ModelRef } from '@/components/ModelRefsManager';
+import { getDb } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * 자산관리 > 모델 레퍼런스.
+ * 자산관리 > 모델 레퍼런스 등록.
  *
- * 전속 모델별로 인물 레퍼런스를 모아두고, 신체 사이즈를 직접 고치는 곳.
- * 사진 1,200장을 페이지에 다 실으면 안 되므로 개수만 집계해 내려보내고,
- * 실제 목록은 화면이 모델을 고를 때 /api/references 로 나눠 받는다.
+ * 전속 모델(얼굴 시트를 가진 고정 모델)과는 별개 자산이다.
+ * "이런 느낌의 사람" 을 사진 + 나이대·키·체형·AI 적합도로 등록해 두고 관리한다.
  */
 export default async function ModelRefsPage() {
-  const [talents, summary] = await Promise.all([getTalents(), getModelRefSummary(0)]);
+  const db = await getDb();
+  const rows = await db.collection('model_refs')
+    .find({ hidden: { $ne: true } }).sort({ createdAt: -1 }).limit(200).toArray();
 
-  const rows = talents.map((t) => {
-    const label = `${t.category}${t.slot ?? ''}`;
-    const x = t as unknown as { age?: string; heightCm?: number; bodyType?: string; fitPct?: number };
-    // 예전에 손으로 적어둔 값도 화면에 채워지도록 문장에서 되읽는다
-    const guessed = parseSize(t.size ?? '', t.category === '아동' ? 'kid' : '20e');
-    return {
-      code: String(t.code),
-      label,
-      name: t.name ?? '',
-      rep: t.rep ?? '',
-      size: t.size ?? '',
-      sizeEn: t.sizeEn ?? '',
-      fitPct: x.fitPct ?? 80,
-      age: x.age ?? guessed.age,
-      heightCm: x.heightCm ?? guessed.heightCm,
-      bodyType: x.bodyType ?? guessed.bodyType,
-      refCount: summary[label]?.total ?? 0,
-    };
-  });
+  const models: ModelRef[] = rows.map((r) => ({
+    id: String(r._id),
+    name: (r.name as string) ?? '',
+    rep: (r.rep as string) ?? '',
+    age: (r.age as string) ?? '20e',
+    heightCm: (r.heightCm as number) ?? 170,
+    bodyType: (r.bodyType as string) ?? 'slim',
+    fitPct: (r.fitPct as number) ?? 80,
+    note: (r.note as string) ?? '',
+    size: (r.size as string) ?? '',
+    sizeEn: (r.sizeEn as string) ?? '',
+    refs: Array.isArray(r.refs) ? (r.refs as { url: string; title: string }[]) : [],
+  }));
 
   return (
     <div className="p-4 sm:p-6 2xl:p-8 max-w-[1400px]">
       <PageHeader
-        title="모델 레퍼런스"
-        desc="전속 모델별 인물 레퍼런스를 모으고 신체 사이즈를 지정합니다. 여기 올린 사진은 이미지 생성 화면의 보관함에서 그 모델 것만 골라 쓸 수 있습니다."
+        title="모델 레퍼런스 등록"
+        desc="원하는 모델의 느낌을 사진과 조건으로 등록해 둡니다. 나이대·키·체형·AI 적합도까지 함께 저장돼, 생성할 때 그 조건이 그대로 쓰입니다."
       />
-      <ModelRefsManager initial={rows} />
+      <ModelRefsManager initial={models} />
     </div>
   );
 }

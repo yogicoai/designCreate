@@ -57,18 +57,22 @@ export function composeSize(p: ModelProfile): { size: string; sizeEn: string } {
   const b = bodyOf(p.bodyType);
   const h = Math.round(Number(p.heightCm) || 0);
 
+  // 한글은 사람이 읽는 줄 — 나이대까지 같이 보여준다
   const krParts = [a?.kr, h ? `키 ${h}cm` : '', b?.kr].filter(Boolean);
-  const enParts = [a?.en, h ? `${h}cm tall` : '', b?.en].filter(Boolean);
+  /*
+   * 영문은 프롬프트의 SCALE 줄이다. 나이는 identityEn 이 이미 영어로 갖고 있으므로
+   * 여기 또 넣지 않는다 — 두 군데서 말하면 서로 어긋날 때 엔진이 헷갈린다.
+   */
+  const enParts = [h ? `${h}cm` : '', b?.en].filter(Boolean);
 
   if (h && !isChild(p.age)) {
-    const d = h - MAX_LENGTH_CM;
-    // 5cm 안쪽 차이는 "비슷" 으로 — 굳이 크다/작다를 강조하면 엔진이 과하게 반응한다
-    const kr = Math.abs(d) <= 5 ? `Max 170 과 비슷한 키` : d > 0 ? `Max 170 기준 살짝 크게` : `Max 170 기준 살짝 작게`;
-    const en = Math.abs(d) <= 5
-      ? `about the same length as the 170cm Max`
-      : d > 0
-        ? `taller than the 170cm Max`
-        : `shorter than the 170cm Max`;
+    const dd = h - MAX_LENGTH_CM;
+    const ad = Math.abs(dd);
+    // 8cm 안쪽이면 '살짝', 그보다 크면 '확실히' — 기존에 손으로 적어둔 표현과 같은 결
+    const kr = dd === 0 ? 'Max 170 과 같은 키' : `Max 170 기준 ${ad <= 8 ? '살짝' : '확실히'} ${dd > 0 ? '크게' : '작게'}`;
+    const en = dd === 0
+      ? 'the same length as the 170cm Max'
+      : `${ad <= 8 ? 'slightly' : 'clearly'} ${dd > 0 ? 'taller' : 'shorter'} than the 170cm Max`;
     krParts.push(`(${kr})`);
     enParts.push(`— ${en}`);
   } else if (h && isChild(p.age)) {
@@ -76,7 +80,10 @@ export function composeSize(p: ModelProfile): { size: string; sizeEn: string } {
     enParts.push('— child proportions');
   }
 
-  return { size: krParts.join(' · '), sizeEn: enParts.join(', ').replace(', —', ' —') };
+  return {
+    size: krParts.join(' · '),
+    sizeEn: enParts.join(', ').replace(', —', ' —'),
+  };
 }
 
 /** 저장된 한글 문장에서 되읽기 — 예전에 손으로 적어둔 값도 화면에 채워지도록 */
