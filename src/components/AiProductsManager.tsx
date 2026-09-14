@@ -89,11 +89,16 @@ export default function AiProductsManager({ initial }: { initial: AiProductSheet
                     </span>
                   </div>
 
-                  {/* 시트 원본 — 칸이 전부 들어 있는 한 장 */}
+                  {/*
+                    * 시트 원본 — 칸이 전부 들어 있는 한 장.
+                    * 썸네일(최대 384px)을 쓰면 카드 폭(500~900px)으로 늘어나 흐려진다.
+                    * 형태를 눈으로 판단하는 화면이라 원본을 그대로 띄운다 — 카드 수가 적어 부담이 없다.
+                    */}
                   {s.sheet && (
                     <button onClick={() => setZoom(s.sheet)} className="block w-full" style={{ padding: 0 }} title="크게 보기">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={thumbUrl(s.sheet, 384)} alt={`${s.line} 시트`} className="w-full rounded-lg border"
+                      <img src={s.sheet} alt={`${s.line} 시트`} loading="lazy" decoding="async"
+                           className="w-full rounded-lg border"
                            style={{ borderColor: approved ? 'var(--ok)' : 'var(--line)' }} />
                     </button>
                   )}
@@ -105,7 +110,8 @@ export default function AiProductsManager({ initial }: { initial: AiProductSheet
                         <button key={p.url} onClick={() => setZoom(p.url)} className="min-w-0 block text-left" style={{ padding: 0 }}
                                 title={`크게 보기 — ${p.label}`}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={thumbUrl(p.url, 256)} alt={p.label} loading="lazy"
+                          {/* 4칸 시트는 칸당 200px 넘게 커진다 — 256 이면 고해상도 화면에서 흐리다 */}
+                          <img src={thumbUrl(p.url, 384)} alt={p.label} loading="lazy"
                                className="w-full rounded border object-contain"
                                style={{ aspectRatio: '1/1', background: '#fff', borderColor: 'var(--line)' }} />
                           <div className="text-[10px] mt-0.5 truncate text-center" style={{ color: 'var(--text-dim)' }}>{p.label}</div>
