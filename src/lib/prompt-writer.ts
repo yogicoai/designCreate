@@ -501,6 +501,19 @@ const ANGLE_EN: Record<string, string> = {
   a315: '315-degree three-quarter view',
 };
 
+/**
+ * AI 생성 제품 칸이 참조로 들어가는 생성인가 (편집 베이스면 칸이 안 붙는다).
+ * 이 경로는 로고·태그 없는 제품이 규칙이다 — AI 생성 제품 시트를 일부러 로고 없이 만들었고(태그를 넣으면
+ * 모든 칸에서 과장됐다), 사용자 법칙이 "로고는 지워져서 나온다" 이다 (2026-09-14 라운저 컷에 태그가 붙어 확인).
+ */
+function usesSheetProducts(spec: GenerationSpec): boolean {
+  return !hasEditBase(spec) && (spec.products ?? []).some((p) => (p.views ?? []).some((v) => v.source === 'sheet'));
+}
+
+const NO_LOGO_RULE =
+  'NO LOGO: every Yogibo product in this image is PLAIN fabric with NO brand tag, NO label, NO sewn patch, NO logo and NO lettering anywhere on it — ' +
+  'exactly as its reference image shows. Do not add a tag even if other photographs of this product usually have one.';
+
 /** 보는 방향이 아니라 제품 자세가 바뀐 칸 */
 const POSTURE_KEYS = new Set(['upright']);
 
@@ -706,6 +719,7 @@ function productBlock(spec: GenerationSpec): string[] {
         ? `  POSTURE: ${ang}, exactly as in its placement reference image.`
         : `  CAMERA ANGLE ON THIS PRODUCT: the ${ang}, exactly as in its placement reference image.`);
     }
+    if (placeRef) L.push('  LOGO: none — plain fabric with no brand tag, label, patch or lettering.');
     if (baseEdit) {
       // 편집 베이스 — 제품 상태는 베이스 사진이 정한다 (사람이 앉아 있을 수도 있다)
     } else if (noPeople) {
@@ -778,7 +792,7 @@ function productBlock(spec: GenerationSpec): string[] {
   if (inScene) {
     L.push(
       'PRODUCT RELIGHT — the product view photographs are flat STUDIO shots on a plain background: take ONLY ' +
-        'each product\'s shape, proportions, colour identity, fabric and tag from them. NEVER copy their studio ' +
+        (usesSheetProducts(spec) ? 'each product\'s shape, proportions, colour identity and fabric from them. NEVER copy their studio ' : 'each product\'s shape, proportions, colour identity, fabric and tag from them. NEVER copy their studio ') +
         'lighting, white balance, saturation or clean studio sharpness into this scene. Re-light every product ' +
         'entirely with THIS scene\'s light — same direction, warmth, softness and shadows as the room around it, ' +
         'with natural colour bounce from nearby surfaces — and mute its colours into the scene\'s palette. ' +
@@ -1237,6 +1251,10 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
       'reconstruct the image beneath it, matching the surrounding texture, colour and lighting. This overrides ' +
       '"stay faithful to the base": the output must carry no inherited overlay text of any kind.',
   );
+  if (usesSheetProducts(spec)) {
+    L.push(NO_LOGO_RULE);
+    return L.join('\n');
+  }
   L.push(
     'BRAND TAGS: if the base image shows a sewn-in fabric tag or brand patch on the product, keep the tag itself — ' +
       'same shape, size, position, fabric and fold. EXACTLY ONE tag per product — if different references show the ' +
@@ -1387,8 +1405,10 @@ export async function writePrompt(spec: GenerationSpec, opts: WriteOptions = {})
       '- Every product keeps its factory shape and true dimensions. The official product views show its resting ' +
         'orientation — in the scene, position it as the pose requires WITHOUT reshaping it: never bend, curl, ' +
         'stretch, inflate or merge the shell to fit a pose or composition.',
-      '- EXACTLY ONE small sewn Yogibo fabric tag per product — never two. Render it clean and legible, or blank; ' +
-        'never garbled lettering.',
+      usesSheetProducts(spec)
+        ? `- ${NO_LOGO_RULE}`
+        : '- EXACTLY ONE small sewn Yogibo fabric tag per product — never two. Render it clean and legible, or blank; ' +
+          'never garbled lettering.',
       '- Any watermark, copyright line, credit or username printed ON a reference photo is NOT part of the scene — ' +
         'remove it and reconstruct the surface beneath. The output carries no inherited overlay text.',
     ];

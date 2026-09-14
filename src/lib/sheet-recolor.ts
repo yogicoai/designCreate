@@ -14,8 +14,8 @@ import { uploadBuffer, publicUrl, ftpConfigured, sanitizeFilename } from './ftp'
  * cafe24 는 7일 캐시라 알고리즘을 바꾸면 VERSION 을 올려 새 이름을 써야 한다.
  */
 
-// rc2 — 실패 시 원본을 올리던 버그 수정 + 밝기를 비율로 옮겨 그림자·명암 보존 (rc1 캐시는 쓰지 않는다)
-const VERSION = 'rc2';
+// rc3 — 실패 시 원본 업로드 버그 수정(rc2) + 섞인 픽셀 unmix 로 흰 테두리 제거·명암 배율 제한 (이전 캐시는 쓰지 않는다)
+const VERSION = 'rc3';
 const SUBPATH = 'ai-products-rc';
 
 /** 같은 프로세스 안에서 같은 요청을 두 번 올리지 않는다 (동시 요청 포함) */
@@ -89,13 +89,18 @@ export async function recolorPanelBuffer(raw: Buffer, hex: string): Promise<Buff
     const alpha = Math.max(0, Math.min(1, ((p[0] - bg[0]) * dir[0] + (p[1] - bg[1]) * dir[1] + (p[2] - bg[2]) * dir[2]) / len2));
     if (alpha < 0.03) continue;
     /*
-     * 밝기 — 천 픽셀은 천 평균 대비 "비율" 로 옮긴다: 주름·음영의 명암비가 목표색에서도 남는다
-     * (예전엔 같은 값을 더해 어두운 네이비 → 밝은 칩에서 그림자가 날아갔다 — 검토 확인).
-     * 섞인 비율이 낮은 픽셀(바닥 그림자·가장자리)은 밝기를 거의 안 건드린다.
+     * 밝기 — 픽셀에서 천 성분만 분리(unmix)해 목표 밝기 쪽으로 옮기고, 배경과 같은 비율로 다시 섞는다.
+     *   · 같은 값을 더하던 rc1: 어두운 네이비 → 밝은 칩에서 주름 그림자가 날아갔다 (검토 확인)
+     *   · 배율을 그대로 곱하던 rc2: 가장자리(천+배경 섞인 픽셀)가 흰 테두리로 번쩍였다 (실측)
+     * 명암 배율은 0.6~1.5 로 묶는다 — 밝게 옮길 때 3배 넘게 키우면 하이라이트가 하얗게 날아간다.
+     * 섞인 비율이 낮은 픽셀(바닥 그림자)은 밝기를 거의 안 건드린다.
      */
-    const ratioL = fab[0] > 1 ? Math.max(0, Math.min(100, p[0] * (target[0] / fab[0]))) : target[0];
-    const wL = Math.max(0, Math.min(1, (alpha - 0.3) / 0.4));
-    const L = p[0] + wL * (ratioL - p[0]);
+    const fabLp = (p[0] - (1 - alpha) * bg[0]) / alpha;
+    const gain = Math.max(0.6, Math.min(1.5, fab[0] > 1 ? target[0] / fab[0] : 1));
+    const newFabL = Math.max(0, Math.min(100, target[0] + (fabLp - fab[0]) * gain));
+    const composedL = (1 - alpha) * bg[0] + alpha * newFabL;
+    const wL = Math.max(0, Math.min(1, (alpha - 0.2) / 0.3));
+    const L = p[0] + wL * (composedL - p[0]);
     const mixA = (1 - alpha) * bg[1] + alpha * fab[1], mixB = (1 - alpha) * bg[2] + alpha * fab[2];
     const A = (1 - alpha) * bg[1] + alpha * target[1] + (p[1] - mixA) * 0.5;
     const B = (1 - alpha) * bg[2] + alpha * target[2] + (p[2] - mixB) * 0.5;
