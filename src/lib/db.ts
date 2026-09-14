@@ -57,4 +57,5 @@ export const COLLECTIONS = {
   trendArchives: 'trend_archives',         // 웨이백에 남은 경쟁사 과거 메인 스냅샷 링크
   designTemplates: 'design_templates',     // 디자인 생성 — 저장한 텍스트 배치 (배경 없이 배치만)
   videos: 'videos',                        // 완성 영상 (cafe24 에 .jpg 로 위장 저장, 프록시로 재생)
+  aiProducts: 'ai_products',               // AI 생성 제품 시트 (힉스필드 한 장 → 칸별로 잘라 형태 기준으로)
 } as const;

@@ -75,6 +75,8 @@ const NAV = [
     items: [
       { href: '/references', label: '레퍼런스', icon: '▦' },
       { href: '/products', label: '제품 · 컬러', icon: '▤' },
+      // 제품 하나를 여러 각도로 한 장에 뽑아 잘라둔 형태 기준 — 공식 사진끼리 모양이 안 맞는 문제의 대책
+      { href: '/ai-products', label: 'AI 생성 제품', icon: '◈' },
       { href: '/talents', label: '전속 모델', icon: '☺' },
       { href: '/poses', label: '포즈 레퍼런스', icon: '▥' },
       { href: '/model-refs', label: '모델 레퍼런스 등록', icon: '☻' },
