@@ -21,7 +21,7 @@ interface Props {
   preservations: WithId<PreservationDoc>[];
   expressions: WithId<ExpressionDoc>[];
   baseCuts: BaseCut[];
-  /** 자산관리 > 레퍼런스 보관함 (생성 중 업로드분도 자동 등록됨) */
+  /** 자산관리 > 레퍼런스 보관함 (레퍼런스 화면에서 등록한 것만 — 생성 중 업로드분은 안 들어간다) */
   references: ReferenceDoc[];
   /** 프롬프트 작성 모드 — local(템플릿·무과금) / opus(라이브, 확인에도 소액 과금) */
   promptMode: 'local' | 'opus';
@@ -603,15 +603,12 @@ export default function CreateStudio(p: Props) {
         const fd = new FormData();
         fd.append('file', shrunk.file);
         fd.append('title', f.name);
+        // 이번 작업에만 쓰는 사진 — 보관함에는 올리지 않는다. 보관함은 자산관리 > 레퍼런스에서만 채운다
+        fd.append('register', '0');
         const res = await fetch('/api/upload', { method: 'POST', body: fd });
         const json = await res.json();
         if (json.ok) {
           setUploads((u) => [...u, { url: json.url, title: json.title, role: 'style' }]);
-          // 보관함(서버에도 자동 등록됨)에 즉시 반영
-          setLibrary((cur) => [
-            { url: json.url, title: json.title, width: json.width, height: json.height, category: null, tags: [], source: 'upload', createdAt: new Date().toISOString() },
-            ...cur.filter((x) => x.url !== json.url),
-          ]);
         } else setErr(json.error || '업로드 실패');
       }
     } finally {
@@ -819,7 +816,7 @@ export default function CreateStudio(p: Props) {
           {/* ② 레퍼런스 — 가장 흔한 시작 행동이라 위로 올렸다 */}
           {flow === 'ref' && (
           <Section n="2" title="레퍼런스 이미지"
-                   hint="새로 올리거나 보관함에서 가져옵니다. 올린 이미지는 자동으로 보관함에 등록돼 다른 썸네일·배너 작업에도 재사용됩니다."
+                   hint="새로 올리거나 보관함에서 가져옵니다. 여기서 올린 이미지는 이번 작업에만 쓰이고 보관함에는 쌓이지 않습니다 — 계속 쓸 사진은 자산관리 > 레퍼런스에서 등록하세요."
                    right={
                      <button className="btn btn-ghost text-[11px]" onClick={() => { setLibOpen(true); setLibCat(''); setLibSub(''); setLibSearch(''); setLibPage(1); }}>
                        보관함 열기 ({library.length})

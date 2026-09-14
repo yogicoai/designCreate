@@ -8,7 +8,10 @@ import { normalizeRefCategory } from '@/lib/queries';
  * POST /api/upload — MD 가 올린 레퍼런스 이미지를 cafe24 FTP 로 올리고 공개 URL 을 돌려준다.
  *
  * multipart/form-data: file, (선택) title, (선택) category, (선택) sub(모델명),
- *                       (선택) register='0' 이면 레퍼런스 보관함에 안 넣는다
+ *                       (선택) register='1' 일 때만 레퍼런스 보관함에 넣는다
+ *
+ * 보관함 등록은 기본이 "안 함"이다. 예전엔 기본 등록이라 이미지 생성 화면에서 한 번 쓰려고
+ * 올린 사진까지 보관함에 쌓였다. 보관함은 자산관리 > 레퍼런스에서 올린 것만 받는다 (2026-09-14).
  * 저장 위치: /web/design/update/
  *
  * ⚠️ Vercel 은 요청 본문을 4.5MB 로 제한한다. 클라이언트에서 미리 줄여 보내지만,
@@ -96,9 +99,8 @@ export async function POST(req: Request) {
           const oldName = replaceUrl.slice(prefix.length);
           if (!usedIn && oldName && !oldName.includes('/')) await deleteRemote(REF_SUBPATH, oldName);
         }
-      } else if (String(form?.get('register') || '1') !== '0') {
-        // 보관함 자동 등록 — 다음 작업에서 재업로드 없이 골라 쓸 수 있게.
-        // register=0 은 배너 배경처럼 '스타일 참고'가 아닌 것 — 보관함에 섞이면 안 된다.
+      } else if (String(form?.get('register') || '') === '1') {
+        // 보관함 등록은 레퍼런스 화면에서 명시적으로 요청할 때만 — 작업용 업로드가 섞이면 안 된다.
         await db.collection('references').updateOne(
           { url },
           { $set: { url, title, category, ...(sub ? { sub } : {}), source: 'upload', width: meta.width ?? 0, height: meta.height ?? 0, bytes: buf.length, active: true },

@@ -170,6 +170,8 @@ export default function ReferencesManager(
     fd.append('title', f.name);
     if (uploadCategory) fd.append('category', uploadCategory);
     if (replaceUrl) fd.append('replaceUrl', replaceUrl);
+    // 보관함에 쌓이는 건 이 화면에서 올린 것뿐이다 — 서버 기본값은 '등록 안 함'
+    fd.append('register', '1');
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
     return res.json();
   }
