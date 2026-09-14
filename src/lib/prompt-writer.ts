@@ -122,6 +122,8 @@ export interface ProductSpec {
     recolored?: boolean;
     /** 칸 이름 (정면·45° 등) — 화면 표시용 */
     label?: string;
+    /** 이 칸만의 영문 각도 문구 — 같은 키가 시트마다 다른 뜻일 때 (팟 side2 = 사선) */
+    angleEn?: string;
   }[];
   /** 화면상 위치 — 'left' | 'centre' | 'right' | 'back' 등. 다중 배치에서 색·형태를 못박는다 */
   placement?: string;
@@ -218,6 +220,12 @@ export interface GenerationSpec {
    * 있으면 제품·인물을 그 톤으로 찍힌 것처럼 맞추라는 블록이 숫자와 함께 들어간다.
    */
   sceneTone?: string;
+
+  /**
+   * 배경 사진 속 가구가 빈백 자리에 걸리면 지우라는 규칙을 넣을지.
+   * 스토리보드 연속 컷은 앞 컷을 배경으로 넘기므로 가구를 지우면 컷끼리 이어지지 않는다 — 거기선 false.
+   */
+  clearBlockingFurniture?: boolean;
 }
 
 /**
@@ -376,7 +384,14 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
        */
       if (v.source === 'sheet') {
         const who = `the Yogibo ${p.line}${p.placement ? ` ${wherePhrase(p.placement)}` : ''}`;
-        const angle = ANGLE_EN[v.angle] ?? v.angle;
+        const angle = v.angleEn ?? ANGLE_EN[v.angle] ?? v.angle;
+        // 자세 칸(세운 모습)은 "~에서 본" 이 아니라 자세다 — "seen from the standing upright…" 비문 방지
+        const seen = POSTURE_KEYS.has(v.angle) ? angle : `seen from the ${angle}`;
+        /*
+         * 포즈 소스(포즈 레퍼·형태 레퍼·연출컷·포즈 컷)가 있으면 카메라·놓임새는 그쪽이 정한다.
+         * 칸까지 "이 각도로 보여라" 라고 하면 참조 셋이 각도를 서로 주장해 형태가 평균난다 (검토 확인 2026-09-14).
+         */
+        const poseControls = hasPoseSource(spec);
         // describeRefs 가 끝에 마침표를 붙이므로 역할 문장은 마침표 없이 끝낸다
         const colourNote = v.recolored
           ? ' It is already shown in the requested colour'
@@ -387,11 +402,14 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
           kind: 'sheet',
           title: `AI 제품 · ${p.line}${p.placement ? `(${p.placement})` : ''} ${v.label || v.angle}${v.primary ? ' · 배치 각도' : ' · 형태 보조'}${v.recolored ? ' · 컬러 보정' : ''}`,
           url: v.url,
-          role: v.primary
-            ? `THE EXACT PRODUCT TO PLACE: an approved reference image of ${who}, seen from the ${angle}. ` +
+          role: v.primary && !poseControls
+            ? `THE EXACT PRODUCT TO PLACE: an approved reference image of ${who}, ${seen}. ` +
               'Reproduce this very product — its three-dimensional shape, proportions, seams, plumpness and fabric — ' +
-              `and show it in the scene from this same viewing angle (the ${angle}), so the camera sees the product the way this image does.` +
+              `and show it in the scene ${POSTURE_KEYS.has(v.angle) ? `in this same posture (${angle})` : `from this same viewing angle (the ${angle})`}, so the camera sees the product the way this image does.` +
               `${colourNote ? `${colourNote}.` : ''} Take nothing else from it: ignore its plain studio background, studio lighting and framing`
+            : v.primary
+              ? `THE EXACT PRODUCT: an approved reference image of ${who}, ${seen} — reproduce this very product's three-dimensional shape, proportions, seams, plumpness and fabric. ` +
+                `Its camera angle and how it sits in the scene come from the pose reference, not from this image.${colourNote ? `${colourNote}.` : ''} Ignore its plain studio background, studio lighting and framing`
             : `another angle of the SAME approved ${p.line} reference (${angle}) — use it ONLY to understand the product's full three-dimensional shape. ` +
               `Do not show the product from this angle and take nothing else from it${colourNote ? `.${colourNote}` : ''}`,
         });
@@ -483,6 +501,19 @@ const ANGLE_EN: Record<string, string> = {
   a315: '315-degree three-quarter view',
 };
 
+/** 보는 방향이 아니라 제품 자세가 바뀐 칸 */
+const POSTURE_KEYS = new Set(['upright']);
+
+/** 카메라·놓임새를 정하는 포즈 소스가 있는가 — 있으면 AI 제품 칸은 형태만 맡는다 */
+function hasPoseSource(spec: GenerationSpec): boolean {
+  return !!spec.poseRef || !!spec.shapeRef || !!spec.usageShot || spec.baseCut?.usage === 'pose';
+}
+
+/** 편집 베이스가 있는가 — 있으면 제품 뷰·AI 제품 칸이 참조로 붙지 않는다 (buildReferences 의 hasBase 와 같은 조건) */
+function hasEditBase(spec: GenerationSpec): boolean {
+  return (!!spec.baseCut && spec.baseCut.usage !== 'pose') || (spec.uploadedRefs ?? []).some((u) => u.role === 'base');
+}
+
 function describeRefs(refs: RefSlot[]): string {
   return refs.map((r, i) => `The ${ORDINALS[i]} image is ${r.role}.`).join('\n');
 }
@@ -537,21 +568,29 @@ function compositionFor(spec: GenerationSpec): string {
    */
   const inScene = hasBaseImg
     || (spec.uploadedRefs ?? []).some((u) => u.role === 'background');
+  /*
+   * 사람이 고른 단일 제품 배치 — 구도 문장의 기본 위치(가운데·오른쪽)보다 우선한다.
+   * 배너는 카피 자리를 제품 반대편으로 옮긴다 (검토 확인: 배치 왼쪽 + "제품은 오른쪽" 이 같이 들어갔다).
+   */
+  const place = (spec.products?.length === 1 ? spec.products[0].placement : '')?.trim().toLowerCase() ?? '';
+  const side = place === 'left' || place === 'right' ? place : place === 'centre' || place === 'center' || place === 'middle' ? 'centre' : '';
+  const copySide = side === 'left' ? 'RIGHT' : 'LEFT';
+  const prodSide = side === 'left' ? 'LEFT' : 'RIGHT';
   if (spec.mode === 'thumbnail') {
     if (inScene) {
       return `INTERIOR SCENE (${width}x${height}). ${SUBJ.charAt(0).toUpperCase() + SUBJ.slice(1)} stand at TRUE physical scale inside the photographed room — modest within the space, with generous floor and room visible around them. Do NOT enlarge the products to fill the frame; the room's furniture sets their size.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
     }
     if (r >= 1.3) {
-      return `WIDE PRODUCT SHOT (${width}x${height}). Centre ${SUBJ}; keep generous even margin on both sides.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
+      return `WIDE PRODUCT SHOT (${width}x${height}). ${side && side !== 'centre' ? `Place ${SUBJ} on the ${side.toUpperCase()} side of the frame as specified` : `Centre ${SUBJ}; keep generous even margin on both sides`}.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
     }
     if (r >= 0.95) return `SQUARE PRODUCT THUMBNAIL (${width}x${height}). ${withPeople ? 'The product and model fill' : 'The product fills'} the frame with even margin — this is a catalogue thumbnail, so the product must read clearly at small size.${NO_PEOPLE}` + FILL_FRAME;
     return `TALL PRODUCT SHOT (${width}x${height}). Vertical framing; the product fills the lower two thirds.${NO_PEOPLE}` + FILL_FRAME;
   }
   if (r >= 2.5) {
-    return `EXTREME WIDE BANNER (${width}x${height}). Place ${SUBJ} in the RIGHT third. The LEFT half must be an empty, uncluttered wall/floor plane. Keep every essential element inside the vertical middle band — the top and bottom will be cropped away.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
+    return `EXTREME WIDE BANNER (${width}x${height}). Place ${SUBJ} in the ${prodSide} third. The ${copySide} half must be an empty, uncluttered wall/floor plane. Keep every essential element inside the vertical middle band — the top and bottom will be cropped away.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
   }
   if (r >= 1.6) {
-    return `WIDE WEB BANNER (${width}x${height}). Split composition: the LEFT 45% stays clean and empty for copy, ${SUBJ.replace('the ', '')} occupies the RIGHT side.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
+    return `WIDE WEB BANNER (${width}x${height}). Split composition: the ${copySide} 45% stays clean and empty for copy, ${SUBJ.replace('the ', '')} occupies the ${prodSide} side.${NO_PEOPLE}` + PRODUCT_HERO + FILL_FRAME;
   }
   if (r >= 0.95) {
     return `SQUARE SNS POST (${width}x${height}). ${withPeople ? 'Subject and product' : 'The product'} sit in the LOWER TWO THIRDS, centred slightly off-axis. The TOP THIRD stays a quiet, evenly lit area for copy.${NO_PEOPLE}` + FILL_FRAME;
@@ -631,6 +670,9 @@ function productBlock(spec: GenerationSpec): string[] {
    * (포즈 소스 컷이 있어도 사람이 없으면 같다 — 포즈 역할도 "눌림 복사 금지" 로 이미 제한돼 있다)
    */
   const noPeople = !(spec.talents?.length);
+  // 편집 베이스면 AI 제품 칸이 참조로 안 붙는다 — 없는 이미지를 가리키는 문장을 쓰지 않는다
+  const baseEdit = hasEditBase(spec);
+  const poseControls = hasPoseSource(spec);
 
   if (multi) {
     L.push(
@@ -657,11 +699,16 @@ function productBlock(spec: GenerationSpec): string[] {
     if (p.color?.hex) L.push(`  COLOUR: ${colorEn} (${p.color.hex}) — exact, must not drift toward a neighbouring hue.`);
     // 단일 제품도 위치를 고를 수 있다 — 다중은 머리(where)에 이미 박혀 있다
     if (!multi && p.placement) L.push(`  PLACEMENT: put the product ${wherePhrase(p.placement)} of the frame.`);
-    const placeRef = (p.views ?? []).find((v) => v.source === 'sheet' && v.primary);
-    if (placeRef) {
-      L.push(`  CAMERA ANGLE ON THIS PRODUCT: the ${ANGLE_EN[placeRef.angle] ?? placeRef.angle}, exactly as in its placement reference image.`);
+    const placeRef = baseEdit ? undefined : (p.views ?? []).find((v) => v.source === 'sheet' && v.primary);
+    if (placeRef && !poseControls) {
+      const ang = placeRef.angleEn ?? ANGLE_EN[placeRef.angle] ?? placeRef.angle;
+      L.push(POSTURE_KEYS.has(placeRef.angle)
+        ? `  POSTURE: ${ang}, exactly as in its placement reference image.`
+        : `  CAMERA ANGLE ON THIS PRODUCT: the ${ang}, exactly as in its placement reference image.`);
     }
-    if (noPeople) {
+    if (baseEdit) {
+      // 편집 베이스 — 제품 상태는 베이스 사진이 정한다 (사람이 앉아 있을 수도 있다)
+    } else if (noPeople) {
       L.push(
         `  STATE: EMPTY — nobody sits, leans or lies on it. It stands in its normal resting position ${placeRef ? 'exactly as in its placement reference image' : 'as in its reference photographs'}, ` +
           'fully inflated and taut: no dents, no seat hollow, no slumped or sagging top, no sitting creases, never tipped over or laid down on its side.',
@@ -677,10 +724,10 @@ function productBlock(spec: GenerationSpec): string[] {
    * 장면 속 놓임새는 포즈가 정하되 껍데기 자체는 못 바꾼다고 못박는다.
    */
   L.push(
-    noPeople
+    noPeople && !baseEdit
       /* 사람이 없으면 놓임새를 바꿀 이유가 없다 — 눕히거나 세우는 순간 형태가 다른 물건이 된다 */
-      ? 'PRODUCT VIEWS show each product in its factory resting orientation, and with nobody in this image each product KEEPS that exact ' +
-        'orientation and stance — do not tip it over, lay it down, stand it up, rotate it onto another face or pose it like furniture in use. ' +
+      ? 'PRODUCT VIEWS show each product in its resting orientation, and with nobody in this image each product KEEPS exactly the orientation and stance ' +
+        'shown in its placement reference — do not tip it over, lay it down, turn it onto another face or pose it like furniture in use. ' +
         'Its shell keeps the exact shape and true dimensions from the views — never bend, curl, stretch, flatten, deflate or merge a product to fit the composition.'
       : 'PRODUCT VIEWS show each product in its factory resting orientation. In the scene, position the product however ' +
         'the pose and staging require, BUT its shell keeps the exact shape and true dimensions from the views — ' +
@@ -713,14 +760,16 @@ function productBlock(spec: GenerationSpec): string[] {
    * 편집 베이스(base)가 아니라 배경(background)으로 쓸 때만 — 베이스는 원본 그대로가 원칙이다.
    * local 템플릿과 Opus 브리프가 이 블록을 같이 쓰므로 여기에 둔다.
    */
-  const onBackground = (!spec.baseCut || spec.baseCut.usage === 'pose') && (spec.uploadedRefs ?? []).some((u) => u.role === 'background')
+  const onBackground = spec.clearBlockingFurniture !== false
+    && (!spec.baseCut || spec.baseCut.usage === 'pose') && (spec.uploadedRefs ?? []).some((u) => u.role === 'background')
     && !(spec.uploadedRefs ?? []).some((u) => u.role === 'base');
   if (onBackground) {
     L.push(
       'CLEAR THE PLACEMENT AREA — the background photograph supplies the room, but its existing furniture and objects are NOT fixed: ' +
-        'if a sofa, chair, table, shelf, rug, plant or any other object stands where the bean bag' + (multi ? 's need' : ' needs') + ' to go, ' +
+        'if a sofa, armchair, coffee table, side table, shelf, plant or any other piece of furniture stands where the bean bag' + (multi ? 's need' : ' needs') + ' to go, ' +
         'or would overlap, block, crowd or hide ' + (multi ? 'them' : 'it') + ', REMOVE that object completely and rebuild the floor, ' +
-        'wall and skirting behind it seamlessly. Keep the room itself unchanged — walls, windows, floor material, ceiling and light. ' +
+        'wall and skirting behind it seamlessly. Furniture that does NOT get in the way stays exactly where it is, and a rug may simply stay under a bean bag. ' +
+        'Keep the room itself unchanged — walls, windows, floor material, ceiling and light. ' +
         'Never shrink, squeeze, tilt or partially hide a bean bag to make it fit around existing furniture.',
     );
   }

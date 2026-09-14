@@ -89,7 +89,7 @@ const BG_ROLE_META: { value: RefRole; label: string; desc: string }[] = [
 ];
 
 const FLOWS: { value: Flow; title: string; desc: string }[] = [
-  { value: 'model', title: '모델과 함께', desc: '제품에 전속·AI 모델을 앉히거나 함께 세웁니다. 포즈·표정·의상을 고릅니다' },
+  { value: 'model', title: '모델과 함께', desc: '제품에 전속 모델을 앉히거나 함께 세웁니다. 레퍼런스 사진 편집·포즈·표정·의상을 고릅니다' },
   { value: 'product', title: '제품만 노출', desc: '승인된 AI 생성 제품을 골라 배경·배치·색상을 입힙니다. 사람은 나오지 않습니다' },
 ];
 
@@ -186,6 +186,8 @@ export default function CreateStudio(p: Props) {
    * 이제 탭이 섹션과 참조 구성을 정한다: 제품만 노출엔 모델·포즈가 없다.
    */
   const [flow, setFlow] = useState<Flow>('model');
+  // 업로드는 몇 초 걸린다 — 도중에 탭을 바꾸면 끝났을 때의 탭 기준으로 역할을 정해야 한다
+  const flowRef = useRef<Flow>('model');
   // 앱의 생성 엔진은 나노바나나 하나다. 힉스필드는 화면에서 뺐다 (백엔드 경로는 살아 있다).
   /*
    * 생성 엔진 — 제미나이(나노바나나) / GPT(gpt-image-1).
@@ -305,22 +307,22 @@ export default function CreateStudio(p: Props) {
   const product = p.products.find((x) => x.line === line);
 
   /**
-   * 컬러 칩 = 그 라인 등록 컬러 + **맥스 슬롯 컬러** (사용자 지시: "맥스 기준으로 다").
-   * 전 라인 합집합으로 했더니 메이트 인형·럭스 변형 같은 제품형 항목까지 칩에 딸려
-   * 나왔다 (실측 스샷) — 기준을 맥스 한 라인으로 고정한다. 같은 이름 중복(다른 키의
-   * 네이비블루 등)은 이름으로 걸러 한 번만 보여준다.
+   * 컬러 칩 = 그 제품에 **실제로 있는 컬러** + 그 제품 **AI 생성 제품 시트의 컬러** 만 (사용자 지시 2026-09-14).
+   * 예전엔 맥스 슬롯 컬러를 전 라인에 붙여 없는 조합(미니 × 맥스 전용색 등)까지 고를 수 있었다.
+   * 시트 컬러가 제품 등록 컬러에 없으면(미디 라이트그레이 등) 시트의 이름·hex 로 칩을 만든다.
    */
-  const maxColors = useMemo(() => {
-    const max = p.products.find((x) => /^max$/i.test(x.line))
-      ?? [...p.products].sort((a, b) => (b.colors?.length ?? 0) - (a.colors?.length ?? 0))[0];
-    return max?.colors ?? [];
-  }, [p.products]);
-  const colorsFor = (pr: { colors: (typeof p.products)[number]['colors'] } | undefined) => {
+  const colorsFor = (pr: { line: string; colors: (typeof p.products)[number]['colors'] } | undefined) => {
     if (!pr) return [];
     const own = pr.colors ?? [];
     const seenKey = new Set(own.map((c) => c.key));
     const seenName = new Set(own.map((c) => c.name));
-    return [...own, ...maxColors.filter((c) => !seenKey.has(c.key) && !seenName.has(c.name))];
+    const fromSheets: typeof own = [];
+    for (const s of p.aiSheets) {
+      if (s.line !== pr.line || !s.colorKey || seenKey.has(s.colorKey) || seenName.has(s.colorName)) continue;
+      seenKey.add(s.colorKey); seenName.add(s.colorName);
+      fromSheets.push({ key: s.colorKey, name: s.colorName, hex: s.hex } as (typeof own)[number]);
+    }
+    return [...own, ...fromSheets];
   };
   const size = sizes.find((s) => s.value === sizeValue);
   const linePoses = p.poses.filter((x) => x.line === line);
@@ -337,7 +339,13 @@ export default function CreateStudio(p: Props) {
   }, [sheetsFor]);
 
   function switchFlow(next: Flow) {
+    if (next === flow) return;
     setFlow(next);
+    flowRef.current = next;
+    // 「이 사진을 편집」은 모델과 함께 전용 — 제품만 노출로 오면 배경으로 바꿔 보이는 그대로 보내지게
+    if (next === 'product') setUploads((cur) => cur.map((u) => (u.role === 'base' ? { ...u, role: 'background' } : u)));
+    // 탭이 바뀌면 참조 구성이 달라진다 — 이전 탭의 프롬프트·참조 목록은 번호가 안 맞는다
+    setDry(null); setPromptText(''); setPromptEdited(false);
   }
   /*
    * 제품을 고르면 무조건 제미나이 (사용자 확정 2026-09-14).
@@ -415,7 +423,7 @@ export default function CreateStudio(p: Props) {
 
   /** 보관함에서 현재 작업으로 가져오기 (중복 제외) */
   function addFromLibrary(r: ReferenceDoc) {
-    setUploads((cur) => (cur.some((u) => u.url === r.url) ? cur : [...cur, { url: r.url, title: r.title, role: flow === 'model' ? 'style' : 'background' }]));
+    setUploads((cur) => (cur.some((u) => u.url === r.url) ? cur : [...cur, { url: r.url, title: r.title, role: flowRef.current === 'model' ? 'style' : 'background' }]));
   }
 
   /** 직접 지정 규격을 '내 규격' 프리셋으로 저장 */
@@ -522,10 +530,10 @@ export default function CreateStudio(p: Props) {
       ...(line
         ? {
             products: [
-              { line, colorKey, placement: mainPlacement, ...(sheetPick ? { sheetPanel: sheetPick } : {}) },
+              { line, colorKey, placement: mainPlacement, ...(sheetPick && !hasBaseUpload ? { sheetPanel: sheetPick } : {}) },
               ...extraProducts
                 .filter((x) => x.line)
-                .map((x) => ({ line: x.line, colorKey: x.colorKey, placement: x.placement, ...(x.sheet ? { sheetPanel: x.sheet } : {}) })),
+                .map((x) => ({ line: x.line, colorKey: x.colorKey, placement: x.placement, ...(x.sheet && !hasBaseUpload ? { sheetPanel: x.sheet } : {}) })),
             ],
           }
         : {}),
@@ -536,7 +544,10 @@ export default function CreateStudio(p: Props) {
       ...(withPeople && baseTab === 'pose' && poseRefKey ? { poseRefKey } : {}),
       ...(withPeople && baseTab === 'pose' && shapeRefKey ? { shapeRefKey } : {}),
       // 제품만 노출 탭에서는 편집 베이스를 보내지 않는다 (모델과 함께에서 base 로 두고 탭을 바꾼 경우)
-      ...(uploadsForFlow.length ? { uploadedRefs: uploadsForFlow, preservation } : {}),
+      // 보존 강도는 화면에 조절 칩이 보일 때만 — 제품만 노출은 분위기 참고 사진이 있을 때만 칩이 나온다
+      ...(uploadsForFlow.length
+        ? { uploadedRefs: uploadsForFlow, ...(flow === 'model' || uploadsForFlow.some((u) => u.role === 'style') ? { preservation } : {}) }
+        : {}),
       ...(hasBaseUpload && editTargets.length ? { editTargets } : {}),
       ...(withPeople && refProduct ? { refProduct } : {}),
       engine: effectiveEngine,
@@ -556,7 +567,7 @@ export default function CreateStudio(p: Props) {
      * 인물 없는 컷 또는 AI 가상 인물(자유 서술)만 통과. 서버에도 같은 가드가 있다.
      */
     if (!dryRun && effectiveEngine === 'gpt' && withPeople && picks.length > 0) {
-      setErr('GPT는 전속 모델 컷에 쓸 수 없습니다 — 인물 없는 컷 또는 AI 가상 인물만 가능합니다. 엔진을 제미나이로 바꾸거나 전속 모델 선택을 비워주세요.');
+      setErr('GPT는 전속 모델 컷에 쓸 수 없습니다 — 엔진을 제미나이로 바꾸거나 전속 모델 선택을 비워주세요.');
       return;
     }
     setErr(''); setBusy(dryRun ? 'dry' : 'gen');
@@ -608,7 +619,7 @@ export default function CreateStudio(p: Props) {
         const res = await fetch('/api/upload', { method: 'POST', body: fd });
         const json = await res.json();
         if (json.ok) {
-          setUploads((u) => [...u, { url: json.url, title: json.title, role: flow === 'model' ? 'style' : 'background' }]);
+          setUploads((u) => [...u, { url: json.url, title: json.title, role: flowRef.current === 'model' ? 'style' : 'background' }]);
         } else setErr(json.error || '업로드 실패');
       }
     } finally {
@@ -702,7 +713,7 @@ export default function CreateStudio(p: Props) {
               {s.panels.map((panel) => {
                 const on = value?.sheetId === s.id && value.key === panel.key;
                 return (
-                  <button key={panel.key} onClick={() => onChange(on ? null : { sheetId: s.id, key: panel.key })}
+                  <button key={panel.key} onClick={() => onChange(on ? null : { sheetId: s.id, key: panel.key })} aria-pressed={on}
                           title={`${s.title} · ${panel.label}`}
                           className="rounded-lg overflow-hidden border block text-center"
                           style={{ width: thumb, padding: 0, background: '#fff',
@@ -800,7 +811,7 @@ export default function CreateStudio(p: Props) {
             {FLOWS.map(({ value: v, title, desc }) => {
               const on = flow === v;
               return (
-                <button key={v} onClick={() => switchFlow(v)} className="card p-3.5 text-left"
+                <button key={v} onClick={() => switchFlow(v)} className="card p-3.5 text-left" aria-pressed={on}
                         style={{ borderColor: on ? 'var(--accent)' : 'var(--line)', borderWidth: on ? 2 : 1,
                                  background: on ? 'var(--accent-soft)' : 'var(--surface)' }}>
                   <div className="text-[13.5px] font-bold" style={{ color: on ? 'var(--accent)' : 'var(--text)' }}>
@@ -1112,7 +1123,7 @@ export default function CreateStudio(p: Props) {
                 <div className="label mt-3 mb-1">배치</div>
                 <div className="flex flex-wrap gap-1.5">
                   {PLACEMENTS.map((x) => (
-                    <button key={x.value} onClick={() => setMainPlacement(x.value)} className="chip"
+                    <button key={x.value} onClick={() => setMainPlacement(x.value)} className="chip" aria-pressed={mainPlacement === x.value}
                             style={mainPlacement === x.value ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
                       {x.label}
                     </button>
@@ -1140,7 +1151,7 @@ export default function CreateStudio(p: Props) {
                   ['posecut', '우리 컷에서 포즈', '우리가 만든 컷의 포즈·앵글·눌림만 빌립니다'],
                   ['pose', '실사 포즈 레퍼', '촬영 원본 — 형태(사람 지운 눌림)와 각도를 각각 고릅니다'],
                 ] as const).map(([v, l, tip]) => (
-                  <button key={v} title={tip} className="chip"
+                  <button key={v} title={tip} className="chip" aria-pressed={baseTab === v}
                           onClick={() => { setBaseTab(v); if (v !== 'posecut') setBaseCutUrl(''); }}
                           style={baseTab === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
                     {l}

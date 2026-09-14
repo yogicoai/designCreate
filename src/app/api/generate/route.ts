@@ -15,7 +15,7 @@ import { generateImageGpt, openaiConfigured, OpenAIImageError } from '@/lib/open
 import { uploadBuffer, dailySubpath, ftpConfigured } from '@/lib/ftp';
 import { cropToSize, measureProductColor } from '@/lib/image-post';
 import { planAspect } from '@/lib/aspect';
-import { toSheet, supportPanels, type AiProductSheet } from '@/lib/ai-products';
+import { toSheet, supportPanels, panelAngleEn, type AiProductSheet } from '@/lib/ai-products';
 import { recoloredPanelUrl, normalizeHex } from '@/lib/sheet-recolor';
 import { ObjectId } from 'mongodb';
 import { measureSceneTone } from '@/lib/scene-tone';
@@ -194,8 +194,14 @@ export async function POST(req: Request) {
      * 인쇄에서 흐려진다. 150ppi 를 맞추려고 만든 규격이므로 화질을 아끼면 의미가 없다.
      * 4K(4096) 로 뽑아도 A1 은 1.2배 확대가 남지만 그 정도는 인쇄에서 견딘다.
      */
+    /*
+     * 제품이 들어간 요청은 GPT 를 달라고 해도 제미나이로 돈다 (아래 엔진 결정과 같은 규칙).
+     * 해상도 규칙(인쇄 4K·얼굴 보호 2K)도 실제로 도는 엔진 기준이어야 한다 — 검토 확인.
+     */
+    const hasProductPick = !!(body.products?.length || body.line);
+    const gptRequested = body.engine === 'gpt' && !hasProductPick;
     const isPrint = size.group === '인쇄' || Math.max(size.width, size.height) >= 2500;
-    if (isPrint && body.engine !== 'gpt') body.imageSize = '4K';
+    if (isPrint && !gptRequested) body.imageSize = '4K';
 
     /*
      * ── 2.5) 얼굴 보호 강제 상향 — 전속 모델이 들어간 컷(모델 변경 포함)은 서버가 해상도를 올려버린다 ──
@@ -207,7 +213,7 @@ export async function POST(req: Request) {
      * 비율은 그대로라 배치·용도는 안 바뀌고 파일만 커진다. 자유 인물(freeform)만 있으면 건드리지 않는다.
      */
     if (talentPicks.some((t) => !t.freeform)) {
-      if (body.engine !== 'gpt' && body.imageSize !== '4K') body.imageSize = '2K';
+      if (!gptRequested && body.imageSize !== '4K') body.imageSize = '2K';
       const genLong = body.imageSize === '4K' ? 4096 : 2048;
       const shortSide = Math.min(size.width, size.height);
       const longSide = Math.max(size.width, size.height);
@@ -399,7 +405,8 @@ export async function POST(req: Request) {
        *    대표 컷·공식 사진은 넣지 않는다. 다른 생성에서 나온 형태가 섞이면 모델이 평균을 내
        *    형태가 무너진다(드롭 꼭지 사고). 색은 칸 픽셀을 컬러칩 hex 로 먼저 바꿔서 넣는다.
        */
-      const sheet = pick.sheetPanel ? sheetById.get(pick.sheetPanel.sheetId) : undefined;
+      const editBase = (!!baseCut && body.baseCutUsage !== 'pose') || uploadedRefs.some((u) => u.role === 'base');
+      const sheet = pick.sheetPanel && !editBase ? sheetById.get(pick.sheetPanel.sheetId) : undefined;
       const primaryPanel = sheet && sheet.line === doc.line ? sheet.panels.find((x) => x.key === pick.sheetPanel!.key) : undefined;
       if (sheet && primaryPanel) {
         const wantHex = normalizeHex(col?.hex);
@@ -415,6 +422,7 @@ export async function POST(req: Request) {
             primary,
             recolored: rc.recolored,
             label: panel.label,
+            angleEn: panelAngleEn(doc.line, panel.key),
           });
         };
         await place(primaryPanel, true);
@@ -528,6 +536,8 @@ export async function POST(req: Request) {
       variations: variations.map((v) => ({ axis: v.axis, label: v.label, hint: v.hint })),
       ...(body.direction ? { direction: body.direction } : {}),
       houseRules: activeRules.map((r) => r.en).filter(Boolean),
+      // 스토리보드 연속 컷은 앞 컷을 배경으로 넘긴다 — 가구를 지우면 컷끼리 안 이어진다
+      clearBlockingFurniture: body.origin !== 'storyboard',
     };
 
     /*

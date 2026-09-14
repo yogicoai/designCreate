@@ -26,7 +26,7 @@ interface Props {
   /**
    * 이 화면이 만드는 것.
    *   person  — 사진 속 사람을 우리 전속 모델로 교체 (제미나이)
-   *   product — 사람 없는 공간에 우리 빈백을 배치 (GPT)
+   *   product — 사람 없는 공간에 우리 빈백을 배치 (제미나이)
    * 한 화면에서 둘을 섞으면 담당자가 헷갈린다 — 화면 자체를 나눈다.
    */
   mode: 'person' | 'product';
@@ -43,7 +43,7 @@ interface Row {
   locked?: boolean;
   /**
    * 제품컷 — 인물 없이 배경 사진에 우리 빈백만 얹는다.
-   * 인물컷(제미나이)과 엔진이 다르다: 제품컷은 GPT 로 간다.
+   * 제품컷도 제미나이로 간다 — GPT 는 제품 형태를 참조대로 못 그린다 (실측 2026-09-14, 서버도 강제).
    */
   product?: { line: string; colorKey: string; colorName: string };
 }
@@ -194,14 +194,14 @@ export default function SnsAutomation({ pool, models, products, mode }: Props) {
       });
       if (skip) continue;
       const row = rows[i];
-      // 제품컷 — 인물 없이 배경 사진에 우리 빈백을 얹는다. 엔진은 GPT (배경 합성이 자연스럽다)
+      // 제품컷 — 인물 없이 배경 사진에 우리 빈백을 얹는다. 엔진은 제미나이 (GPT 는 제품 형태가 틀어진다 — 실측)
       if (row.product) {
         try {
           const res = await fetch("/api/generate", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              engine: "gpt",
+              engine: "gemini",
               origin: "sns-auto",
               sizeValue: "1080x1350",
               mode: "thumbnail",
@@ -268,7 +268,7 @@ export default function SnsAutomation({ pool, models, products, mode }: Props) {
   const doneCount = rows.filter((r) => r.status === 'done').length;
   const todo = rows.filter((r) => r.status !== 'done').length;
   // 생성은 모델을 배정한 컷만 — 인원 0(원본 채택)은 생성 없이 통과
-  // 생성이 도는 컷 = 모델 배정분(제미나이) + 제품컷(GPT). 인원 0(원본 채택)만 무과금
+  // 생성이 도는 컷 = 모델 배정분 + 제품컷 (둘 다 제미나이). 인원 0(원본 채택)만 무과금
   const paidTodo = rows.filter((r) => r.status !== 'done' && (r.codes.length > 0 || r.product)).length;
   const productTodo = rows.filter((r) => r.status !== 'done' && r.product).length;
   const modelLabel = (code: string) => models.find((m) => m.code === code)?.label ?? code;
@@ -285,8 +285,8 @@ export default function SnsAutomation({ pool, models, products, mode }: Props) {
           <>
             <b style={{ color: 'var(--accent)' }}>사람이 없는 공간 컷</b>에 우리 빈백을 얹습니다 —
             제품과 컬러는 카드마다 <b>랜덤</b>으로 정해지고, 📦 를 다시 누르면 제품만 다시 뽑습니다.
-            <br />엔진은 <b>GPT</b> 입니다 (배경 합성이 자연스럽습니다). 다만 제품 형태를 바꿔 놓는 일이 있으니
-            <b> 결과의 제품 모양을 꼭 확인</b>해 주세요.
+            <br />엔진은 <b>제미나이</b> 입니다 — GPT 는 제품 형태를 다른 의자로 바꿔 그려서(실측) 제품컷에는 쓰지 않습니다.
+            제미나이 월 생성 한도에서 차감됩니다.
             <br />후보는 <b>자산관리 &gt; 레퍼런스</b> 의 <b>SNS 배경자동화</b> 폴더에서 옵니다 — 거기에 사진을 넣어두시면 됩니다.
           </>
         ) : (
@@ -407,7 +407,7 @@ export default function SnsAutomation({ pool, models, products, mode }: Props) {
                 ))}
                 <span className="mx-0.5" style={{ color: 'var(--line-strong)' }}>|</span>
                 <button className="chip px-1.5 py-0"
-                        title="제품컷 — 인물 없이 이 배경에 우리 빈백을 얹습니다 (GPT). 다시 누르면 제품만 재추첨"
+                        title="제품컷 — 인물 없이 이 배경에 우리 빈백을 얹습니다 (제미나이). 다시 누르면 제품만 재추첨"
                         disabled={running}
                         onClick={() => toggleProduct(i)}
                         style={r.product ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>

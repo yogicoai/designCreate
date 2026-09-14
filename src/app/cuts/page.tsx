@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 const REF_KIND_KR: Record<string, string> = {
   base: '베이스', style: '스타일', background: '배경', shape: '형태',
   pose: '포즈', usage: '연출', talent: '모델', outfit: '의상',
-  product: '제품 뷰', swatch: '색 스와치',
+  product: '제품 뷰', sheet: 'AI 제품', swatch: '색 스와치',
 };
 
 const TALENT_LABEL: Record<string, string> = {

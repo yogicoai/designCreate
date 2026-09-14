@@ -102,6 +102,19 @@ export const PANEL_ANGLE_EN: Record<string, string> = {
 };
 
 /**
+ * 같은 키가 시트마다 다른 칸일 때의 덮어쓰기 — 라인 → 칸 키 → 문구.
+ * 팟의 side2 는 "측면 2 (사선)" 이라 라운저의 side2(반대쪽 측면)와 뜻이 다르다.
+ */
+const LINE_PANEL_ANGLE_EN: Record<string, Record<string, string>> = {
+  Pod: { side2: 'diagonal three-quarter view' },
+};
+
+/** 칸의 영문 각도 문구 — 라인별 덮어쓰기 > 공통 표 > 키 그대로 */
+export function panelAngleEn(line: string, key: string): string {
+  return LINE_PANEL_ANGLE_EN[line]?.[key] ?? PANEL_ANGLE_EN[key] ?? key;
+}
+
+/**
  * 형태 보조로 자동으로 붙이지 않는 칸 — 자세가 바뀐 컷(세운 모습)·위에서 내려다본 컷·확대 컷은
  * 장면 속 제품을 그 자세로 끌고 간다(실측: 누운 로그형 뷰 + 착석이 크레센트로 휨).
  * 사람이 배치 각도로 직접 고르는 건 막지 않는다.
