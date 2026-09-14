@@ -2,12 +2,26 @@
 
 import { useMemo, useState } from 'react';
 import { thumbUrl } from '@/lib/thumb';
-import { KIND_LABEL, STATUS_LABEL, type AiProductSheet } from '@/lib/ai-products';
+import { KIND_LABEL, STATUS_LABEL, type AiProductSheet, type SheetKind } from '@/lib/ai-products';
+
+/** 제품 라인 한글 이름 — DB 에는 영문 라인명이 들어 있다 */
+const LINE_KR: Record<string, string> = {
+  Max: '맥스', Midi: '미디', Mini: '미니', Slim: '슬림', Drop: '드롭', Lounger: '라운저',
+  Pyramid: '피라미드', Pod: '팟', Double: '더블', Support: '서포트',
+};
+const lineName = (l: string) => LINE_KR[l] ?? (l || '기타');
+
+/** 상단 탭 — 빈 제품만 찍은 컷과 앉은/눌린 컷을 따로 본다 */
+const TABS: { kind: SheetKind; label: string }[] = [
+  { kind: 'shape', label: '제품컷' },
+  { kind: 'usage', label: '앉은컷' },
+];
 
 /**
  * AI 생성 제품 시트 목록.
  *
- * 제품 라인별로 묶어 보여준다. 카드 하나 = 힉스필드로 한 번 뽑은 시트 한 장.
+ * 상단 탭(제품컷 / 앉은컷) → 제품 칩으로 거르고 → 제품 라인별로 묶어 보여준다.
+ * 카드 하나 = 힉스필드로 한 번 뽑은 시트 한 장.
  * 위에 원본 시트, 아래에 칸별로 자른 사진. 누르면 크게 본다 — 형태는 작게 보면 판단이 안 된다.
  */
 export default function AiProductsManager({ initial }: { initial: AiProductSheet[] }) {
@@ -15,16 +29,31 @@ export default function AiProductsManager({ initial }: { initial: AiProductSheet
   const [zoom, setZoom] = useState('');
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
+  const [tab, setTab] = useState<SheetKind>('shape');
+  const [line, setLine] = useState('');   // '' = 전체
+
+  const inTab = useMemo(() => sheets.filter((s) => s.kind === tab), [sheets, tab]);
+
+  // 탭 안에 있는 제품만 칩으로 — 없는 제품 칩을 누르면 빈 화면이 된다
+  const lines = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of inTab) m.set(s.line, (m.get(s.line) ?? 0) + 1);
+    return [...m.entries()];
+  }, [inTab]);
+
+  // 탭을 바꿨는데 고른 제품이 그 탭에 없으면 전체로 본다
+  const activeLine = line && lines.some(([l]) => l === line) ? line : '';
 
   const byLine = useMemo(() => {
     const m = new Map<string, AiProductSheet[]>();
-    for (const s of sheets) {
+    for (const s of inTab) {
+      if (activeLine && s.line !== activeLine) continue;
       const k = s.line || '기타';
       if (!m.has(k)) m.set(k, []);
       m.get(k)!.push(s);
     }
     return [...m.entries()];
-  }, [sheets]);
+  }, [inTab, activeLine]);
 
   async function setStatus(s: AiProductSheet, status: 'approved' | 'review') {
     setBusy(s.id); setErr('');
@@ -69,9 +98,53 @@ export default function AiProductsManager({ initial }: { initial: AiProductSheet
 
   return (
     <div>
-      {byLine.map(([line, list]) => (
-        <section key={line} className="mb-8">
-          <h2 className="h-section mb-3">{line} <span className="text-[12px] font-normal" style={{ color: 'var(--text-mute)' }}>· {list.length}장</span></h2>
+      {/* 상단 탭 */}
+      <div className="flex gap-1 mb-3 border-b" style={{ borderColor: 'var(--line)' }}>
+        {TABS.map((t) => {
+          const on = tab === t.kind;
+          const n = sheets.filter((s) => s.kind === t.kind).length;
+          return (
+            <button key={t.kind} onClick={() => setTab(t.kind)}
+                    className="px-4 py-2 text-[13px] font-bold -mb-px"
+                    style={{
+                      borderBottom: `2px solid ${on ? 'var(--accent)' : 'transparent'}`,
+                      color: on ? 'var(--text)' : 'var(--text-mute)',
+                    }}>
+              {t.label} <span className="text-[11px] font-normal" style={{ color: 'var(--text-mute)' }}>{n}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 제품별 */}
+      {lines.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap mb-5">
+          {[['', inTab.length] as [string, number], ...lines].map(([l, n]) => {
+            const on = activeLine === l;
+            return (
+              <button key={l || 'all'} onClick={() => setLine(l)}
+                      className="px-3 py-1 rounded-full text-[12px] border"
+                      style={{
+                        background: on ? 'var(--accent)' : 'var(--surface-2)',
+                        borderColor: on ? 'var(--accent)' : 'var(--line)',
+                        color: on ? '#fff' : 'var(--text-dim)',
+                      }}>
+                {l ? lineName(l) : '전체'} {n}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {byLine.length === 0 && (
+        <div className="card p-8 text-center text-[12.5px]" style={{ color: 'var(--text-mute)' }}>
+          이 탭에는 아직 시트가 없습니다.
+        </div>
+      )}
+
+      {byLine.map(([lk, list]) => (
+        <section key={lk} className="mb-8">
+          <h2 className="h-section mb-3">{lineName(lk)}<span className="text-[12px] font-normal" style={{ color: 'var(--text-mute)' }}>· {list.length}장</span></h2>
           <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 520px), 1fr))' }}>
             {list.map((s) => {
               const approved = s.status === 'approved';
