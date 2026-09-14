@@ -1,6 +1,7 @@
 import 'server-only';
 import { collection, COLLECTIONS } from '@/lib/db';
 import type { ProductDoc, PoseRefDoc, TalentDoc, CutDoc, HouseRuleDoc, ColorChipDoc, ExpressionDoc } from '@/lib/types';
+import { toSheet, type AiProductSheet } from '@/lib/ai-products';
 
 /** 규격 프리셋 — 자사몰/스마트스토어/SNS */
 export interface SizePresetDoc {
@@ -129,6 +130,16 @@ export async function getExpressions(): Promise<WithId<ExpressionDoc>[]> {
   const col = await collection<ExpressionDoc>('expressions');
   const docs = await col.find({ active: true }).sort({ order: 1 }).toArray();
   return docs.map((d) => plain(d)!);
+}
+
+/**
+ * 이미지 생성에서 고를 수 있는 AI 생성 제품 시트 — 승인된 형태 시트만.
+ * 검증중 시트는 화면에 안 띄운다: 고를 수 있으면 승인 절차가 의미를 잃는다.
+ */
+export async function getApprovedShapeSheets(): Promise<AiProductSheet[]> {
+  const col = await collection(COLLECTIONS.aiProducts);
+  const docs = await col.find({ kind: 'shape', status: 'approved', hidden: { $ne: true } }).sort({ line: 1, approvedAt: -1, createdAt: -1 }).toArray();
+  return docs.map((d) => toSheet(d)).filter((s) => s.panels.length > 0);
 }
 
 /** 생성 참조로 쓸 수 있는 연출컷만 (텍스트 박힌 가이드시트·GIF 제외) */

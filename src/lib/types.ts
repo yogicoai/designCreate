@@ -177,7 +177,7 @@ export interface CutRecipe {
 /** 생성에 실제로 넣은 입력 이미지 1장 — 삭제·수정에 흔들리지 않게 URL 을 스냅샷으로 박아둔다 */
 export interface InputImage {
   /** 참조의 역할 — prompt-writer 의 RefKind 와 동일 */
-  kind: 'base' | 'style' | 'background' | 'shape' | 'pose' | 'usage' | 'talent' | 'outfit' | 'product' | 'swatch';
+  kind: 'base' | 'style' | 'background' | 'shape' | 'pose' | 'usage' | 'talent' | 'outfit' | 'product' | 'sheet' | 'swatch';
   title: string;
   url: string;
   role?: string;

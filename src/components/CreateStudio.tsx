@@ -6,6 +6,7 @@ import type { SizePresetDoc, PreservationDoc, ReferenceDoc } from '@/lib/queries
 import { shrinkForUpload, formatBytes } from '@/lib/client-image';
 import Zoomable from '@/components/Zoomable';
 import { thumbUrl } from '@/lib/thumb';
+import { defaultPanelKey, supportPanels, type AiProductSheet } from '@/lib/ai-products';
 
 type WithId<T> = T & { id: string };
 
@@ -23,6 +24,8 @@ interface Props {
   baseCuts: BaseCut[];
   /** 자산관리 > 레퍼런스 보관함 (레퍼런스 화면에서 등록한 것만 — 생성 중 업로드분은 안 들어간다) */
   references: ReferenceDoc[];
+  /** 자산관리 > AI 생성 제품 — 승인된 형태 시트만. 제품을 고르면 이 칸들 중에서 배치 각도를 고른다 */
+  aiSheets: AiProductSheet[];
   /** 프롬프트 작성 모드 — local(템플릿·무과금) / opus(라이브, 확인에도 소액 과금) */
   promptMode: 'local' | 'opus';
   /** 로컬 개발 여부. 대화로 넘기는 버튼은 여기서만 보인다 */
@@ -31,15 +34,25 @@ interface Props {
   gptEnabled?: boolean;
 }
 
+/*
+ * 올린 사진의 쓰임.
+ *   「모델과 함께」 — 기존 레퍼런스 방식 그대로: 분위기 참고 / 이 사진을 편집(base) / 배경으로 사용
+ *   「제품만 노출」 — 배경 이미지: 배경으로 사용 / 분위기 참고 (편집 없음)
+ * (사용자 확정 2026-09-14)
+ */
 type RefRole = 'style' | 'base' | 'background';
 interface UploadedRef { url: string; title: string; role: RefRole }
+
+/** 작업 탭 — 제품만 노출 / 모델과 함께. 이게 아래 섹션 구성과 참조 구성을 정한다 */
+type Flow = 'product' | 'model';
+
+/** 고른 AI 생성 제품 칸 — 승인된 시트의 칸 하나가 "배치 각도" */
+interface SheetPick { sheetId: string; key: string }
 
 /** 선택된 모델 1명 — 순서가 곧 "사진 왼쪽부터" 배정 순서다 */
 interface TalentPick { code: string; expression: string; outfitCode: string; placement?: string }
 /** 추가 제품 — 한 컷에 2~3종을 넣을 때. 첫 제품은 위의 line/colorKey 가 맡는다. */
-interface ExtraProduct { line: string; colorKey: string; placement: string }
-/** 자유 서술 인물 — 전속 모델에 없는 인물 */
-interface FreePerson { presetKey: string; extra: string; placement: string }
+interface ExtraProduct { line: string; colorKey: string; placement: string; sheet: SheetPick | null }
 
 /** 위치 — 프롬프트의 "on the left" 로 그대로 들어간다 */
 const PLACEMENTS = [
@@ -49,39 +62,6 @@ const PLACEMENTS = [
   { value: 'right', label: '오른쪽' },
   { value: 'foreground', label: '앞쪽' },
   { value: 'background', label: '뒤쪽' },
-];
-
-/*
- * 자유 인물 프리셋.
- * 한글만 받아서 그대로 넘기면 영문 프롬프트에 한글이 섞여 품질이 떨어진다.
- * 자주 쓰는 인물형은 영문 서술을 미리 박아두고, 나머지는 extra 로 덧붙인다.
- * (Opus 모드에서는 extra 한글도 영문으로 풀린다)
- */
-const PERSON_PRESETS: { key: string; kr: string; identityEn: string; sizeEn: string }[] = [
-  { key: 'k_m_mid', kr: '한국인 중년 남성',
-    identityEn: 'a Korean man in his early 50s, natural greying at the temples, warm approachable face, short tidy hair',
-    sizeEn: 'about 173 cm, average build' },
-  { key: 'k_f_mid', kr: '한국인 중년 여성',
-    identityEn: 'a Korean woman in her late 40s, soft warm face, shoulder-length dark hair',
-    sizeEn: 'about 160 cm, slim build' },
-  { key: 'k_m_20', kr: '한국인 20대 남성',
-    identityEn: 'a Korean man in his mid 20s, clean-cut, short black hair',
-    sizeEn: 'about 178 cm, lean build' },
-  { key: 'k_f_20', kr: '한국인 20대 여성',
-    identityEn: 'a Korean woman in her mid 20s, long straight black hair, natural light makeup',
-    sizeEn: 'about 164 cm, slim build' },
-  { key: 'k_m_old', kr: '한국인 노년 남성',
-    identityEn: 'a Korean man in his early 70s, grey hair, kind lined face',
-    sizeEn: 'about 168 cm, slight build' },
-  { key: 'k_f_old', kr: '한국인 노년 여성',
-    identityEn: 'a Korean woman in her late 60s, short permed grey hair, gentle face',
-    sizeEn: 'about 155 cm, small build' },
-  { key: 'k_boy', kr: '한국인 남자아이',
-    identityEn: 'a Korean boy about 7 years old, round cheeks, short black hair',
-    sizeEn: 'about 122 cm, child proportions' },
-  { key: 'k_girl', kr: '한국인 여자아이',
-    identityEn: 'a Korean girl about 7 years old, shoulder-length black hair',
-    sizeEn: 'about 120 cm, child proportions' },
 ];
 
 type EditTarget = 'face' | 'person' | 'add-person' | 'outfit' | 'product-color' | 'background' | 'text-removal';
@@ -100,6 +80,17 @@ const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
   { value: 'style', label: '분위기 참고', desc: '조명·색감·무드만 따라가고 장면은 새로 — 그 공간 자체를 쓰려면 「배경으로 사용」을 고르세요' },
   { value: 'base', label: '이 사진을 편집', desc: '사진은 그대로 두고 지정한 것만 바꿈 (합성·교체)' },
   { value: 'background', label: '배경으로 사용', desc: '공간만 가져오고 인물·제품은 우리 자산으로' },
+];
+
+/** 「제품만 노출」 의 배경 이미지 역할 — 사진 편집(base)은 없다 */
+const BG_ROLE_META: { value: RefRole; label: string; desc: string }[] = [
+  { value: 'background', label: '배경으로 사용', desc: '이 공간에 제품을 새로 배치합니다 — 조명·색감도 이 공간에 맞춥니다' },
+  { value: 'style', label: '분위기 참고', desc: '조명·색감·무드만 따라가고 장면은 새로 그립니다' },
+];
+
+const FLOWS: { value: Flow; title: string; desc: string }[] = [
+  { value: 'model', title: '모델과 함께', desc: '제품에 전속·AI 모델을 앉히거나 함께 세웁니다. 포즈·표정·의상을 고릅니다' },
+  { value: 'product', title: '제품만 노출', desc: '승인된 AI 생성 제품을 골라 배경·배치·색상을 입힙니다. 사람은 나오지 않습니다' },
 ];
 
 /**
@@ -189,15 +180,21 @@ export default function CreateStudio(p: Props) {
    *   ref    = 가진 사진으로 제작 (사진이 출발점)
    *   direct = 자산으로 직접 제작 (제품·모델·포즈 조합이 출발점)
    */
-  // 기본은 '레퍼런스로 제작하기'. 실무에서 압도적으로 이쪽이 많고,
-  // 레퍼런스를 깔고 시작하는 편이 결과도 안정적이다.
-  const [flow, setFlow] = useState<'ref' | 'direct'>('ref');
+  /*
+   * 작업 탭 (사용자 확정 2026-09-14) — 제품만 노출 / 모델과 함께.
+   * 예전의 "레퍼런스로 제작 / 직접 제작" 은 두 컷의 개념이 섞여 섹션이 전부 보였다.
+   * 이제 탭이 섹션과 참조 구성을 정한다: 제품만 노출엔 모델·포즈가 없다.
+   */
+  const [flow, setFlow] = useState<Flow>('model');
   // 앱의 생성 엔진은 나노바나나 하나다. 힉스필드는 화면에서 뺐다 (백엔드 경로는 살아 있다).
   /*
-   * 생성 엔진 — 제미나이(나노바나나, 기본) / GPT(gpt-image-1).
+   * 생성 엔진 — 제미나이(나노바나나) / GPT(gpt-image-1).
+   * 「제품만 노출」 탭은 GPT 가 기본이다 (사용자 지시). 「모델과 함께」 는 제미나이 —
+   * GPT 는 전속 모델 얼굴을 유지하지 못한다(실측).
    * GPT 는 최대 1536px 라 POP·인쇄용(4K) 화질이 없다 — 고르면 4K 선택지를 숨기고 2K 로 되돌린다.
    * (힉스필드는 앱 키에 크레딧이 없어 여전히 화면에서 뺀다)
    */
+  // 첫 탭이 「모델과 함께」 라 제미나이로 시작한다 — 「제품만 노출」 로 바꾸면 switchFlow 가 GPT 로 돌린다
   const [engine, setEngine] = useState<'gemini' | 'gpt'>('gemini');
   const [balance, setBalance] = useState<{ gemini?: { count: number; limit: number; remaining: number } } | null>(null);
   const [mode, setMode] = useState<'thumbnail' | 'banner'>('thumbnail');
@@ -210,14 +207,14 @@ export default function CreateStudio(p: Props) {
   const [savingSize, setSavingSize] = useState(false);
   const [line, setLine] = useState('');
   const [colorKey, setColorKey] = useState('');
+  /** 첫 제품의 AI 생성 제품 칸 (배치 각도). null = 승인 시트 없음 또는 공식 사진으로 */
+  const [sheetPick, setSheetPick] = useState<SheetPick | null>(null);
   /** 선택 순서 유지 — ①②③④ = 사진 왼쪽부터 */
   const [picks, setPicks] = useState<TalentPick[]>([]);
   const [mainPlacement, setMainPlacement] = useState('');
   const [extraProducts, setExtraProducts] = useState<ExtraProduct[]>([]);
-  const [freePeople, setFreePeople] = useState<FreePerson[]>([]);
-  // 전속 모델 / AI 가상 모델 — 섞어 쓸 수 있고, 탭은 보기만 가른다
-  const [modelTab, setModelTab] = useState<'own' | 'ai'>('own');
-  const [baseTab, setBaseTab] = useState<'none' | 'cut' | 'posecut' | 'pose'>('none');
+  // 포즈 소스 — 우리 컷에서 포즈만(posecut) / 실사 포즈 레퍼(pose). 「모델과 함께」 에서만 쓴다
+  const [baseTab, setBaseTab] = useState<'none' | 'posecut' | 'pose'>('none');
   const [baseCutUrl, setBaseCutUrl] = useState('');
   const [poseRefKey, setPoseRefKey] = useState('');
   const [shapeRefKey, setShapeRefKey] = useState('');
@@ -327,12 +324,32 @@ export default function CreateStudio(p: Props) {
   };
   const size = sizes.find((s) => s.value === sizeValue);
   const linePoses = p.poses.filter((x) => x.line === line);
-  const hasBaseUpload = uploads.some((u) => u.role === 'base');
-  /** 베이스 컷(그대로 재현) — 같은 제품·컬러의 확정 컷 */
-  const lineCuts = useMemo(
-    () => p.baseCuts.filter((c) => (!line || c.line === line) && (!colorKey || c.colorKey === colorKey)).slice(0, 60),
-    [p.baseCuts, line, colorKey],
-  );
+  // 사진 편집(base)은 「모델과 함께」 에서만 — 제품만 노출 탭에서는 역할 칩이 없어 base 를 못 고른다
+  const hasBaseUpload = flow === 'model' && uploads.some((u) => u.role === 'base');
+
+  /** 라인의 승인된 AI 생성 제품 시트 (최근 승인 순) */
+  const sheetsFor = useCallback((l: string) => p.aiSheets.filter((s) => s.line === l), [p.aiSheets]);
+  /** 제품을 새로 고르면 첫 시트의 45° 칸을 배치 각도로 미리 골라둔다 — 사람은 바꾸기만 하면 된다 */
+  const defaultSheetPick = useCallback((l: string): SheetPick | null => {
+    const s = sheetsFor(l)[0];
+    const key = s ? defaultPanelKey(s) : '';
+    return s && key ? { sheetId: s.id, key } : null;
+  }, [sheetsFor]);
+
+  function switchFlow(next: Flow) {
+    setFlow(next);
+  }
+  /*
+   * 제품을 고르면 무조건 제미나이 (사용자 확정 2026-09-14).
+   * 실측: 같은 배경·같은 AI 생성 제품 칸으로 GPT 는 색·배경은 따라왔지만 맥스·라운저 형태를 다른 의자로 다시 그렸다.
+   * GPT 는 제품 없는 컷(분위기 러프 등)에만 남긴다. 서버(route.ts)도 같은 규칙으로 막는다.
+   */
+  const gptAllowed = !!p.gptEnabled && !line;
+  const effectiveEngine: 'gemini' | 'gpt' = gptAllowed ? engine : 'gemini';
+  const withPeople = flow === 'model';
+  const uploadsForFlow = flow === 'model' ? uploads : uploads.filter((u) => u.role !== 'base');
+  /** 형태 보조 칸 수 — 서버(route.ts)와 같은 규칙: 여러 종이면 0, 모델 컷 1, 제품만 2 */
+  const supportCount = extraProducts.some((x) => x.line) ? 0 : withPeople ? 1 : 2;
 
   /**
    * 포즈 소스 — 포즈만 빌리는 용도라 컬러로 거르지 않는다.
@@ -398,7 +415,7 @@ export default function CreateStudio(p: Props) {
 
   /** 보관함에서 현재 작업으로 가져오기 (중복 제외) */
   function addFromLibrary(r: ReferenceDoc) {
-    setUploads((cur) => (cur.some((u) => u.url === r.url) ? cur : [...cur, { url: r.url, title: r.title, role: 'style' }]));
+    setUploads((cur) => (cur.some((u) => u.url === r.url) ? cur : [...cur, { url: r.url, title: r.title, role: flow === 'model' ? 'style' : 'background' }]));
   }
 
   /** 직접 지정 규격을 '내 규격' 프리셋으로 저장 */
@@ -496,52 +513,33 @@ export default function CreateStudio(p: Props) {
       mode, dryRun, samples,
       sizeValue,
       ...(sizeValue === 'custom' ? { customSize: { width: Number(customW), height: Number(customH) } } : {}),
-      // 제품이 2종 이상이면 products[] 로, 1종이면 기존 line/colorKey 로 보낸다
-      ...(line && extraProducts.length
+      // 탭 — 서버가 형태 보조 칸 수를 이걸로 정한다
+      composition: flow,
+      /*
+       * 제품은 한 종이어도 products[] 로 보낸다 — 배치(placement)·AI 생성 제품 칸(sheetPanel)이
+       * 제품마다 붙기 때문이다. 서버는 1종이면 단일 제품으로 다룬다.
+       */
+      ...(line
         ? {
             products: [
-              { line, colorKey, placement: mainPlacement },
-              ...extraProducts.filter((x) => x.line),
-            ],
-          }
-        : line
-          ? { line, ...(colorKey ? { colorKey } : {}) }
-          : {}),
-      ...(picks.length || freePeople.length
-        ? {
-            talents: [
-              ...picks,
-              ...freePeople
-                .map((f) => {
-                  const preset = PERSON_PRESETS.find((x) => x.key === f.presetKey);
-                  const extra = f.extra.trim();
-                  if (!preset && !extra) return null;
-                  return {
-                    freeform: {
-                      identityEn: [preset?.identityEn, extra].filter(Boolean).join(', '),
-                      sizeEn: preset?.sizeEn ?? '',
-                      ...(f.placement ? { placement: f.placement } : {}),
-                    },
-                  };
-                })
-                .filter(Boolean),
+              { line, colorKey, placement: mainPlacement, ...(sheetPick ? { sheetPanel: sheetPick } : {}) },
+              ...extraProducts
+                .filter((x) => x.line)
+                .map((x) => ({ line: x.line, colorKey: x.colorKey, placement: x.placement, ...(x.sheet ? { sheetPanel: x.sheet } : {}) })),
             ],
           }
         : {}),
-      /*
-       * 제품 단독 + 포즈 컷 조합은 화면 문구로 안내한다 (잠그지 않음 — 사용자 확정).
-       * 실수로 골라도 안전장치가 있다: 제품 단독의 포즈 역할은 "카메라 앵글만 복사"로 제한되고,
-       * 대표(마스터) 컷이 형태 충돌에서 이긴다.
-       */
-      ...((baseTab === 'cut' || baseTab === 'posecut') && baseCutUrl
-        ? { baseCutId: baseCutUrl, baseCutUsage: baseTab === 'posecut' ? 'pose' : 'full' }
-        : {}),
-      ...(baseTab === 'pose' && poseRefKey ? { poseRefKey } : {}),
-      ...(baseTab === 'pose' && shapeRefKey ? { shapeRefKey } : {}),
-      ...(uploads.length ? { uploadedRefs: uploads, preservation } : {}),
+      // 사람은 「모델과 함께」 탭에서만 — 제품만 노출 탭으로 바꿔도 고른 모델이 몰래 따라가지 않게
+      ...(withPeople && picks.length ? { talents: picks } : {}),
+      // 포즈는 「모델과 함께」 에서만 — 포즈는 사람이 앉는 방식이다
+      ...(withPeople && baseTab === 'posecut' && baseCutUrl ? { baseCutId: baseCutUrl, baseCutUsage: 'pose' } : {}),
+      ...(withPeople && baseTab === 'pose' && poseRefKey ? { poseRefKey } : {}),
+      ...(withPeople && baseTab === 'pose' && shapeRefKey ? { shapeRefKey } : {}),
+      // 제품만 노출 탭에서는 편집 베이스를 보내지 않는다 (모델과 함께에서 base 로 두고 탭을 바꾼 경우)
+      ...(uploadsForFlow.length ? { uploadedRefs: uploadsForFlow, preservation } : {}),
       ...(hasBaseUpload && editTargets.length ? { editTargets } : {}),
-      ...(refProduct ? { refProduct } : {}),
-      engine,
+      ...(withPeople && refProduct ? { refProduct } : {}),
+      engine: effectiveEngine,
       ...(imageSize !== '2K' ? { imageSize } : {}),
       ...(direction.trim() ? { direction: direction.trim() } : {}),
       // promptMode 는 보내지 않는다 — 서버 env 가 유일한 결정권자여야
@@ -557,7 +555,7 @@ export default function CreateStudio(p: Props) {
      * GPT 는 얼굴 유지가 안 돼서(실측) 브랜드 모델 일관성이 깨진다.
      * 인물 없는 컷 또는 AI 가상 인물(자유 서술)만 통과. 서버에도 같은 가드가 있다.
      */
-    if (!dryRun && engine === 'gpt' && picks.length > 0) {
+    if (!dryRun && effectiveEngine === 'gpt' && withPeople && picks.length > 0) {
       setErr('GPT는 전속 모델 컷에 쓸 수 없습니다 — 인물 없는 컷 또는 AI 가상 인물만 가능합니다. 엔진을 제미나이로 바꾸거나 전속 모델 선택을 비워주세요.');
       return;
     }
@@ -574,9 +572,11 @@ export default function CreateStudio(p: Props) {
       if (dryRun) setDry(json);
       else {
         setResults(json.results ?? []);
-        if (json.prompt) setDry({ prompt: json.prompt, promptMode: json.promptMode, refs: json.refs, aspect: json.aspect, target: json.target, usage: json.usage ?? null, promptCost: json.promptCost ?? null });
+        if (json.prompt) {
+          setDry({ prompt: json.prompt, promptMode: json.promptMode, refs: json.refs, aspect: json.aspect, target: json.target, usage: json.usage ?? null, promptCost: json.promptCost ?? null });
           setPromptText(json.prompt);
           setPromptEdited(false);
+        }
         if (!json.ok) setErr(json.results?.find((r: GenResult) => r.error)?.error || '생성 실패');
         // 성공한 결과가 하나라도 있으면 완료 팝업을 띄운다
         const ok = (json.results ?? []).filter((r: GenResult) => r.ok);
@@ -608,7 +608,7 @@ export default function CreateStudio(p: Props) {
         const res = await fetch('/api/upload', { method: 'POST', body: fd });
         const json = await res.json();
         if (json.ok) {
-          setUploads((u) => [...u, { url: json.url, title: json.title, role: 'style' }]);
+          setUploads((u) => [...u, { url: json.url, title: json.title, role: flow === 'model' ? 'style' : 'background' }]);
         } else setErr(json.error || '업로드 실패');
       }
     } finally {
@@ -671,6 +671,73 @@ export default function CreateStudio(p: Props) {
 
   const isMySize = size?.group === MY_SIZE_GROUP;
 
+  /**
+   * AI 생성 제품 칸 고르기 — 제품 섹션(첫 제품)과 함께 놓을 제품(추가 제품)이 같이 쓴다.
+   * 컴포넌트가 아니라 JSX 를 돌려주는 함수다: 렌더 중 컴포넌트를 만들면 매번 새로 마운트된다.
+   */
+  function renderSheetPicker(l: string, ck: string, value: SheetPick | null, onChange: (v: SheetPick | null) => void, compact: boolean) {
+    const sheets = sheetsFor(l);
+    if (!sheets.length) {
+      return (
+        <div className="text-[10.5px] mt-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+          승인된 AI 생성 제품이 없어 공식 사진으로 형태를 잡습니다 — 자산관리 &gt; AI 생성 제품에서 시트를 승인하면 여기서 각도를 고를 수 있습니다.
+        </div>
+      );
+    }
+    const chosen = value ? sheets.find((s) => s.id === value.sheetId) : undefined;
+    const prod = p.products.find((x) => x.line === l);
+    const colorName = prod ? colorsFor(prod).find((c) => c.key === ck)?.name : undefined;
+    const thumb = compact ? 56 : 76;
+    return (
+      <div className="mt-3">
+        <div className="label mb-1">
+          각도 <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>— AI 생성 제품에서 장면에 보여줄 방향을 고릅니다</span>
+        </div>
+        {sheets.map((s) => (
+          <div key={s.id} className="mb-1.5">
+            {sheets.length > 1 && (
+              <div className="text-[10px] mb-1" style={{ color: 'var(--text-mute)' }}>{s.title}</div>
+            )}
+            <div className="flex flex-wrap gap-1.5">
+              {s.panels.map((panel) => {
+                const on = value?.sheetId === s.id && value.key === panel.key;
+                return (
+                  <button key={panel.key} onClick={() => onChange(on ? null : { sheetId: s.id, key: panel.key })}
+                          title={`${s.title} · ${panel.label}`}
+                          className="rounded-lg overflow-hidden border block text-center"
+                          style={{ width: thumb, padding: 0, background: '#fff',
+                                   borderColor: on ? 'var(--accent)' : 'var(--line)', borderWidth: on ? 2 : 1 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={thumbUrl(panel.url, 256)} alt={panel.label} loading="lazy"
+                         className="w-full object-contain" style={{ aspectRatio: '1/1' }} />
+                    <div className="text-[9px] px-0.5 py-0.5 truncate"
+                         style={{ background: 'var(--surface)', color: on ? 'var(--accent)' : 'var(--text-mute)' }}>
+                      {panel.label}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <div className="text-[10.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-dim)' }}>
+          {!value || !chosen
+            ? '각도를 고르지 않으면 공식 사진으로 형태를 잡습니다.'
+            : (() => {
+                const panel = chosen.panels.find((x) => x.key === value.key);
+                const sup = supportPanels(chosen, value.key, supportCount).map((x) => x.label);
+                const colorNote = !ck
+                  ? `컬러를 고르지 않아 시트 색(${chosen.colorName}) 그대로 넣습니다`
+                  : ck === chosen.colorKey
+                    ? `시트 색이 ${colorName ?? chosen.colorName} 이라 그대로 넣습니다`
+                    : `${colorName ?? '고른 컬러'} 로 색을 바꿔 넣습니다`;
+                return `배치 각도 ${panel?.label ?? value.key}${sup.length ? ` + 형태 보조 ${sup.join('·')}` : ''} · ${colorNote}`;
+              })()}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col xl:flex-row h-full">
       {/*
@@ -730,13 +797,10 @@ export default function CreateStudio(p: Props) {
         <div className="w-full max-w-[1320px] flex flex-col gap-3 2xl:block 2xl:columns-2 2xl:gap-3 [&>*]:2xl:mb-3 [&>*]:2xl:break-inside-avoid">
           {/* 0. 작업 방식 — 이 선택이 아래 섹션 구성을 바꾼다 */}
           <div className="grid sm:grid-cols-2 gap-2.5 2xl:break-inside-avoid">
-            {([
-              ['ref', '레퍼런스로 제작', '가진 사진에서 출발 — 그 사진을 편집하거나, 분위기·배경만 가져옵니다'],
-              ['direct', '직접 제작', '제품·컬러·모델·포즈를 조합해 새로 만듭니다'],
-            ] as const).map(([v, title, desc]) => {
+            {FLOWS.map(({ value: v, title, desc }) => {
               const on = flow === v;
               return (
-                <button key={v} onClick={() => setFlow(v)} className="card p-3.5 text-left"
+                <button key={v} onClick={() => switchFlow(v)} className="card p-3.5 text-left"
                         style={{ borderColor: on ? 'var(--accent)' : 'var(--line)', borderWidth: on ? 2 : 1,
                                  background: on ? 'var(--accent-soft)' : 'var(--surface)' }}>
                   <div className="text-[13.5px] font-bold" style={{ color: on ? 'var(--accent)' : 'var(--text)' }}>
@@ -814,7 +878,7 @@ export default function CreateStudio(p: Props) {
           </Section>
 
           {/* ② 레퍼런스 — 가장 흔한 시작 행동이라 위로 올렸다 */}
-          {flow === 'ref' && (
+          {flow === 'model' && (
           <Section n="2" title="레퍼런스 이미지"
                    hint="새로 올리거나 보관함에서 가져옵니다. 여기서 올린 이미지는 이번 작업에만 쓰이고 보관함에는 쌓이지 않습니다 — 계속 쓸 사진은 자산관리 > 레퍼런스에서 등록하세요."
                    right={
@@ -896,7 +960,7 @@ export default function CreateStudio(p: Props) {
                     <div className="text-[10.5px] mt-2" style={{ color: 'var(--text-dim)' }}>
                       {editTargets.includes('add-person')
                         ? '앉힐 모델을 아래 모델 섹션에서 고르세요. 사진 왼쪽 좌석부터 ①②③④ 순서로 앉습니다. 제품은 비워두세요 — 사진의 빈백을 그대로 씁니다.'
-                        : '교체할 모델을 아래 ④에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.'}
+                        : '교체할 모델을 아래 모델 섹션에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.'}
                     </div>
                     {/*
                       사진 속 빈백이 무엇인지 알려주면, 그 실측 치수로 모델 크기를 잡는다.
@@ -936,13 +1000,98 @@ export default function CreateStudio(p: Props) {
           </Section>
           )}
 
-          {/* ③ 제품 */}
-          <Section n={flow === "ref" ? "3" : "2"} title="제품 · 컬러" hint={flow === "ref" ? "사진 속 제품을 그대로 쓸 거면 비워두세요. 다른 제품으로 바꿀 때만 고릅니다." : "선택하면 실측 치수·기하 서술·컬러 스와치가 자동으로 들어갑니다."}>
-            <select className="input mb-2" value={line} onChange={(e) => { setLine(e.target.value); setColorKey(''); setPoseRefKey(''); setShapeRefKey(''); }}>
-              <option value="">— 제품 없음 (인물/분위기만) —</option>
+          {/*
+            ② 배경 이미지 — 예전 "레퍼런스 이미지" 자리.
+            올린 사진은 배경으로 쓰거나(그 공간에 제품·모델을 새로 배치) 분위기만 참고한다.
+            사진 편집(base)은 화면에서 뺐다 (사용자 확정 2026-09-14).
+          */}
+          {flow === 'product' && (
+          <Section n="2" title="배경 이미지 (선택)"
+                   hint="제품을 놓을 공간 사진을 올리거나 보관함에서 가져옵니다. 사진이 없으면 아래 「배경 · 연출」에 글로 적으면 됩니다. 여기서 올린 사진은 이번 작업에만 쓰이고 보관함에는 쌓이지 않습니다."
+                   right={
+                     <button className="btn btn-ghost text-[11px]" onClick={() => { setLibOpen(true); setLibCat(''); setLibSub(''); setLibSearch(''); setLibPage(1); }}>
+                       보관함 열기 ({library.length})
+                     </button>
+                   }>
+            <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} />
+            <div className="flex gap-2 flex-wrap items-start mb-1">
+              <button className="btn" onClick={() => fileInput.current?.click()} disabled={uploading}>
+                {uploading ? '업로드 중…' : '＋ 이미지 추가'}
+              </button>
+            </div>
+            {uploadNote && <div className="text-[10.5px] mb-2" style={{ color: 'var(--ok)' }}>{uploadNote}</div>}
+
+            {uploads.map((u, i) => (
+              <div key={u.url} className="flex gap-2.5 p-2 rounded-lg mb-2" style={{ background: 'var(--surface-2)' }}>
+                <Zoomable src={u.url} alt={u.title} caption={u.title}
+                          className="w-[76px] h-[76px] object-cover rounded-lg shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] truncate" style={{ color: 'var(--text-dim)' }}>{u.title}</div>
+                    <button onClick={() => setUploads((a) => a.filter((_, j) => j !== i))}
+                            className="text-[11px] shrink-0" style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                      빼기
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                    {BG_ROLE_META.map((r) => (
+                      <button key={r.value} title={r.desc}
+                              onClick={() => setUploads((a) => a.map((x, j) => j === i ? { ...x, role: r.value } : x))}
+                              className="chip"
+                              style={u.role === r.value ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[10px] mt-1" style={{ color: 'var(--text-mute)' }}>
+                    {BG_ROLE_META.find((r) => r.value === u.role)?.desc}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {uploads.some((u) => u.role === 'background') && (
+              <div className="text-[10.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                빈백 놓을 자리에 기존 가구가 걸리면 그 가구는 지우고 생성합니다.
+              </div>
+            )}
+
+            {uploads.some((u) => u.role === 'style') && (
+              <div className="mt-2">
+                <div className="label mb-1">분위기 참고를 얼마나 살릴까요</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {p.preservations.map((m) => (
+                    <button key={m.value} onClick={() => setPreservation(m.value)} className="chip"
+                            style={m.value === preservation ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Section>
+          )}
+
+          {/* ③ 제품 · 컬러 · 각도 · 배치 */}
+          <Section n="3" title="제품 · 컬러 · 각도"
+                   hint={hasBaseUpload
+                     ? '사진 속 제품을 그대로 쓸 거면 비워두세요. 다른 제품으로 바꿀 때만 고릅니다.'
+                     : '제품을 고르고 컬러칩으로 색을 정한 뒤, 승인된 AI 생성 제품에서 보여줄 각도를 고릅니다. 고른 칸은 컬러칩 색으로 바꿔서 넣습니다.'}>
+            <select className="input mb-2" value={line}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setLine(next); setColorKey(''); setPoseRefKey(''); setShapeRefKey('');
+                      setSheetPick(next ? defaultSheetPick(next) : null);
+                    }}>
+              <option value="">— 제품 없음 {withPeople ? '(인물·분위기만)' : ''} —</option>
               {/* 메인 제품은 빈백류만 — 메이트 인형·소품은 '함께 놓을 제품'에서 고른다 */}
               {p.products.filter((x) => !x.accessory).map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>)}
             </select>
+            {withPeople && (
+              <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                레퍼런스 사진 안에서 <b style={{ color: 'var(--text-dim)' }}>모델만 바꾸는 경우</b>에는 제품·컬러를 고르지 않아도 됩니다 — 사진 속 빈백을 그대로 씁니다.
+              </div>
+            )}
             {product && (
               <>
                 <div className="label mb-1">컬러</div>
@@ -957,6 +1106,18 @@ export default function CreateStudio(p: Props) {
                     </button>
                   ))}
                 </div>
+
+                {renderSheetPicker(line, colorKey, sheetPick, setSheetPick, false)}
+
+                <div className="label mt-3 mb-1">배치</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {PLACEMENTS.map((x) => (
+                    <button key={x.value} onClick={() => setMainPlacement(x.value)} className="chip"
+                            style={mainPlacement === x.value ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                      {x.label}
+                    </button>
+                  ))}
+                </div>
               </>
             )}
           </Section>
@@ -965,20 +1126,59 @@ export default function CreateStudio(p: Props) {
             포즈 — 예전엔 제품 카드 안에 묻혀 있어 눈에 안 띄었다.
             제품·컬러 다음에 바로 고르는 것이라 제 번호를 단 섹션으로 올린다.
           */}
-          <Section n={flow === "ref" ? "4" : "3"} title="포즈"
-                   hint="우리가 실제로 만든 썸네일 컷에서 포즈·앵글만 가져옵니다. 다른 색 컷도 쓸 수 있고, 제품·컬러는 위 선택이 적용됩니다.">
+          {/* 포즈는 사람이 앉는 방식이라 「모델과 함께」 에만 있다 */}
+          {withPeople && (
+          <Section n="4" title="포즈"
+                   hint="우리가 실제로 만든 컷에서 포즈·앵글만 가져오거나, 촬영 원본 실사 포즈 레퍼를 고릅니다. 제품·컬러는 위 선택이 적용됩니다.">
             {!product && (
               <div className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>먼저 제품을 고르세요.</div>
             )}
-            {/* 제품 단독 작업 안내 — 잠그지 않고 문구로 알린다 (사용자 확정 UX) */}
             {product && (
-              <div className="text-[11px] px-2 py-1.5 rounded-[8px] mb-1"
-                   style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--warn)' }}>
-                ⚠ 제품 컷으로만(모델 없이) 진행하실 땐 포즈를 선택하지 않고 <b>자동</b>으로 진행해주세요 —
-                포즈는 인물이 앉는 방식이라, 제품 단독 컷은 확정 대표 컷이 자동 기준이 됩니다.
+              <div className="flex gap-1.5 mb-1 flex-wrap">
+                {([
+                  ['none', '자동', ''],
+                  ['posecut', '우리 컷에서 포즈', '우리가 만든 컷의 포즈·앵글·눌림만 빌립니다'],
+                  ['pose', '실사 포즈 레퍼', '촬영 원본 — 형태(사람 지운 눌림)와 각도를 각각 고릅니다'],
+                ] as const).map(([v, l, tip]) => (
+                  <button key={v} title={tip} className="chip"
+                          onClick={() => { setBaseTab(v); if (v !== 'posecut') setBaseCutUrl(''); }}
+                          style={baseTab === v ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                    {l}
+                  </button>
+                ))}
               </div>
             )}
-            {product && (
+            {product && baseTab === 'pose' && (
+              linePoses.length ? (
+                <>
+                  <div className="text-[10.5px] mt-2 mb-2" style={{ color: 'var(--text-mute)' }}>
+                    <b style={{ color: 'var(--accent)' }}>형태</b>(사람 지운 눌림)와 <b style={{ color: 'var(--info)' }}>포즈</b>(각도·자세)를
+                    <b> 둘 다</b> 고르는 게 가장 정확합니다.
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 max-h-[240px] overflow-y-auto pr-1">
+                    {linePoses.map((r) => (
+                      <div key={r.key} className="text-center">
+                        <div className="flex gap-1">
+                          {([['off', r.offUrl, shapeRefKey], ['on', r.onUrl, poseRefKey]] as const).map(([kind, url, sel]) => (
+                            <button key={kind} onClick={() => kind === 'off'
+                                      ? setShapeRefKey(shapeRefKey === r.key ? '' : r.key)
+                                      : setPoseRefKey(poseRefKey === r.key ? '' : r.key)}
+                                    className="flex-1" title={`${r.name} · ${kind === 'off' ? '형태' : '포즈각도'}`}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={thumbUrl(url, 256)} alt={r.name} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
+                                   style={{ borderColor: sel === r.key ? 'var(--accent)' : 'var(--line)', borderWidth: sel === r.key ? 2 : 1 }} />
+                              <div className="text-[9px] mt-0.5" style={{ color: 'var(--text-mute)' }}>{kind === 'off' ? '형태' : '포즈'}</div>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="text-[9.5px] mt-0.5 leading-tight" style={{ color: 'var(--text-mute)' }}>{r.name.replace(/^\S+\s/, '')}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : <p className="text-[11.5px] mt-2" style={{ color: 'var(--text-mute)' }}>이 제품의 실사 포즈 레퍼가 아직 없습니다.</p>
+            )}
+            {product && baseTab === 'posecut' && (
               <>
                 {poseCuts.length > 0 && (
                   <>
@@ -993,19 +1193,13 @@ export default function CreateStudio(p: Props) {
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-1.5 max-h-[210px] overflow-y-auto pr-1">
-                      <button onClick={() => { setBaseCutUrl(''); setBaseTab('none'); }} className="chip"
-                              style={!baseCutUrl ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}>
-                        자동
-                      </button>
                       {poseCuts.map((c, ci) => {
                         const on = baseCutUrl === c.url;
                         return (
                           // 같은 URL 이 두 번 올 수 있어 인덱스를 섞어 key 를 유일하게 만든다
                           <button key={`${c.url}#${ci}`}
                                   onClick={() => {
-                                    const next = on ? '' : c.url;
-                                    setBaseCutUrl(next);
-                                    setBaseTab(next ? 'posecut' : 'none');
+                                    setBaseCutUrl(on ? '' : c.url);
                                   }}
                                   title={`${c.line} · ${c.colorName}
 ${c.spec}`}
@@ -1028,6 +1222,7 @@ ${c.spec}`}
               </>
             )}
           </Section>
+          )}
 
           {/*
             함께 놓을 제품 · 소품 — 한 컷에 2~3종.
@@ -1035,8 +1230,8 @@ ${c.spec}`}
             그래서 추가하는 순간 첫 제품에도 위치 선택이 생긴다.
             메이트 인형·필로우(소품)도 여기서 고른다 — youtube 제품 데이터에서 끌어왔다.
           */}
-          <Section n={flow === "ref" ? "5" : "4"} title="함께 놓을 제품 · 소품"
-                   hint="한 컷에 2~3종. 메이트 인형·필로우 같은 소품도 여기서 고릅니다. 위치를 지정해야 형태·색이 안 섞입니다.">
+          <Section n={withPeople ? '5' : '4'} title="함께 놓을 제품 · 소품"
+                   hint="한 컷에 2~3종. 메이트 인형·필로우 같은 소품도 여기서 고릅니다. 제품마다 컬러·각도·배치를 따로 정해야 형태·색이 안 섞입니다.">
             {!line && (
               <div className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>먼저 제품을 고르세요.</div>
             )}
@@ -1051,19 +1246,15 @@ ${c.spec}`}
                   </div>
                   {extraProducts.length < 2 && (
                     <button className="chip shrink-0"
-                            onClick={() => setExtraProducts((c) => [...c, { line: '', colorKey: '', placement: '' }])}>
+                            onClick={() => setExtraProducts((c) => [...c, { line: '', colorKey: '', placement: '', sheet: null }])}>
                       + 제품 추가
                     </button>
                   )}
                 </div>
 
-                {extraProducts.length > 0 && (
-                  <div className="flex items-center gap-2 mb-2 text-[11px]">
-                    <span className="shrink-0" style={{ color: 'var(--text-dim)' }}>① {line}</span>
-                    <select className="input py-1 text-[11px]" style={{ width: 110 }} value={mainPlacement}
-                            onChange={(e) => setMainPlacement(e.target.value)}>
-                      {PLACEMENTS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
-                    </select>
+                {extraProducts.length > 0 && !mainPlacement && (
+                  <div className="text-[10.5px] mb-2" style={{ color: 'var(--warn)' }}>
+                    ① {line} 의 배치가 자동입니다 — 위 제품 섹션에서 위치를 정해야 제품끼리 섞이지 않습니다.
                   </div>
                 )}
 
@@ -1075,7 +1266,7 @@ ${c.spec}`}
                         <span className="text-[11px] shrink-0" style={{ color: 'var(--text-dim)' }}>{i === 0 ? '②' : '③'}</span>
                         <select className="input py-1 text-[11px] flex-1" value={ex.line}
                                 onChange={(e) => setExtraProducts((c) =>
-                                  c.map((x, j) => (j === i ? { ...x, line: e.target.value, colorKey: '' } : x)))}>
+                                  c.map((x, j) => (j === i ? { ...x, line: e.target.value, colorKey: '', sheet: e.target.value ? defaultSheetPick(e.target.value) : null } : x)))}>
                           <option value="">— 제품 선택 —</option>
                           <optgroup label="빈백">
                             {p.products.filter((x) => !x.accessory).map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line}</option>)}
@@ -1108,6 +1299,12 @@ ${c.spec}`}
                           ))}
                         </div>
                       )}
+                      {exProd && (
+                        <div className="ml-5">
+                          {renderSheetPicker(ex.line, ex.colorKey, ex.sheet,
+                            (v) => setExtraProducts((cur) => cur.map((x, j) => (j === i ? { ...x, sheet: v } : x))), true)}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1115,22 +1312,9 @@ ${c.spec}`}
             )}
           </Section>
 
-          {/* 모델 — 전속과 AI 가상을 섞어 쓴다. 왼쪽부터 전속 ①… 다음에 가상 */}
-          <Section n={flow === "ref" ? "6" : "5"} title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다. 전속과 AI 가상 모델을 섞을 수 있습니다.">
-            <div className="flex gap-1.5 mb-3">
-              <button className={`btn flex-1 ${modelTab === 'own' ? 'btn-primary' : ''}`} onClick={() => setModelTab('own')}>
-                전속 모델{picks.length ? ` · ${picks.length}명` : ''}
-              </button>
-              <button className={`btn flex-1 ${modelTab === 'ai' ? 'btn-primary' : ''}`} onClick={() => setModelTab('ai')}>
-                AI 가상 모델{freePeople.length ? ` · ${freePeople.length}명` : ''}
-              </button>
-            </div>
-            {picks.length > 0 && freePeople.length > 0 && (
-              <div className="text-[11px] px-2.5 py-1.5 rounded-lg mb-2" style={{ background: 'var(--accent-soft)', color: 'var(--text-dim)' }}>
-                이 컷: 전속 {picks.length}명 + 가상 {freePeople.length}명 — 사진 왼쪽부터 전속, 그다음 가상 순서로 섭니다.
-              </div>
-            )}
-            {modelTab === 'own' && (<>
+          {/* 모델 — 전속 모델. 클릭 순서 = 사진 왼쪽부터 */}
+          {withPeople && (
+          <Section n="6" title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다.">
             <div className="flex flex-wrap gap-2 mb-3">
               {p.talents.map((t) => {
                 const idx = picks.findIndex((x) => x.code === t.code);
@@ -1260,155 +1444,6 @@ ${c.spec}`}
                 })}
               </div>
             )}
-            </>)}
-
-            {/*
-              AI 가상 모델 — 전속 모델에 없는 사람(가족 구성 등).
-              얼굴 시트가 없으니 프롬프트가 유일한 근거다. 그래서 한글만 받지 않고
-              자주 쓰는 인물형은 영문 서술을 프리셋으로 박아둔다.
-              전속 모델 뒤에 이어 붙으므로 위치를 지정해 자리를 못박는 게 좋다.
-            */}
-            {modelTab === 'ai' && (
-            <div>
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <div className="label">
-                  몇 명을 만들까요{' '}
-                  <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
-                    — 얼굴 레퍼런스 없이 서술로만 만드는 가상 인물. 전속 모델과 섞여 한 컷에 들어갑니다.
-                  </span>
-                </div>
-              </div>
-              <div className="flex gap-1.5 mb-2">
-                {/* 가상 모델은 전속과 합쳐 총 4명 한도. 전속이 없으면 가상만 4명까지 */}
-                {[0, 1, 2, 3, 4].map((n) => {
-                  const cap = Math.max(0, 4 - picks.length);
-                  const target = Math.min(n, cap);
-                  return (
-                    <button key={n} className="chip"
-                            style={freePeople.length === n ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}
-                            disabled={n > cap}
-                            title={n > cap ? '전속 모델 포함 최대 4명입니다' : ''}
-                            onClick={() => setFreePeople((c) => {
-                              const next = c.slice(0, target);
-                              while (next.length < target) next.push({ presetKey: '', extra: '', placement: '' });
-                              return next;
-                            })}>
-                      {n === 0 ? '없음' : `${n}명`}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {freePeople.map((f, i) => (
-                <div key={i} className="mb-2 rounded-lg p-2" style={{ background: 'var(--surface-2)' }}>
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-[11px] shrink-0" style={{ color: 'var(--text-dim)' }}>
-                      {['①', '②', '③', '④'][picks.length + i] ?? '·'}
-                    </span>
-                    <select className="input py-1 text-[11px] flex-1" value={f.presetKey}
-                            onChange={(e) => setFreePeople((c) => c.map((x, j) => (j === i ? { ...x, presetKey: e.target.value } : x)))}>
-                      <option value="">— 인물형 선택 —</option>
-                      {PERSON_PRESETS.map((x) => <option key={x.key} value={x.key}>{x.kr}</option>)}
-                    </select>
-                    <select className="input py-1 text-[11px]" style={{ width: 110 }} value={f.placement}
-                            onChange={(e) => setFreePeople((c) => c.map((x, j) => (j === i ? { ...x, placement: e.target.value } : x)))}>
-                      {PLACEMENTS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
-                    </select>
-                    <button className="chip shrink-0" style={{ color: 'var(--text-mute)' }}
-                            onClick={() => setFreePeople((c) => c.filter((_, j) => j !== i))}>✕</button>
-                  </div>
-                  <input className="input py-1 text-[11px]" value={f.extra}
-                         placeholder="추가 서술 (선택) — 예: 베이지 니트에 청바지, 안경 착용"
-                         onChange={(e) => setFreePeople((c) => c.map((x, j) => (j === i ? { ...x, extra: e.target.value } : x)))} />
-                </div>
-              ))}
-            </div>
-            )}
-          </Section>
-
-          {/* 베이스 (자산) */}
-          {flow === 'direct' && (
-          <Section n="6" title="베이스 (선택)" hint="포즈는 위 포즈 섹션에서 고릅니다. 여기서는 컷을 통째로 재현하거나 촬영 실사 레퍼를 앵커로 쓸 때만 씁니다.">
-            <div className="flex gap-1.5 mb-3 flex-wrap">
-              {([
-                ['none', '없음', ''],
-                ['cut', '기존 컷 그대로', '그 컷을 재현하고 지정한 것만 교체 (같은 제품·컬러 컷)'],
-                ['pose', '실사 포즈 레퍼', '촬영 원본 — 형태(사람 지운 눌림)와 각도를 각각 고릅니다'],
-              ] as const).map(([v, l, tip]) => (
-                <button key={v} onClick={() => setBaseTab(v)} className="btn" title={tip}
-                        style={baseTab === v ? { background: 'var(--surface-3)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' } : {}}>
-                  {l}
-                </button>
-              ))}
-            </div>
-
-            {baseTab === 'posecut' && (
-              poseCuts.length ? (
-                <>
-                  <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
-                    포즈·앵글·눌림만 가져옵니다. <b style={{ color: 'var(--text-dim)' }}>제품·컬러·모델·의상은 위에서 고른 값</b>이 적용되므로
-                    다른 색 컷을 골라도 됩니다.
-                  </div>
-                  <div className="grid grid-cols-6 gap-1.5 max-h-[240px] overflow-y-auto pr-1">
-                    {poseCuts.map((c) => (
-                      <button key={c.url} onClick={() => setBaseCutUrl(c.url === baseCutUrl ? '' : c.url)}
-                              title={`${c.line} · ${c.colorName}
-${c.spec}`}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={thumbUrl(c.url, 256)} alt={c.spec} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
-                             style={{ borderColor: c.url === baseCutUrl ? 'var(--accent)' : 'var(--line)', borderWidth: c.url === baseCutUrl ? 2 : 1 }} />
-                        <div className="text-[8.5px] mt-0.5 truncate" style={{ color: c.line === line ? 'var(--accent)' : 'var(--text-mute)' }}>
-                          {c.line}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : <p className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>아직 컷이 없습니다.</p>
-            )}
-            {baseTab === 'cut' && (
-              lineCuts.length ? (
-                <div className="grid grid-cols-6 gap-1.5 max-h-[220px] overflow-y-auto pr-1">
-                  {lineCuts.map((c, ci) => (
-                    <button key={`${c.url}#${ci}`} onClick={() => setBaseCutUrl(c.url === baseCutUrl ? '' : c.url)} title={c.spec}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={thumbUrl(c.url, 256)} alt={c.spec} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
-                           style={{ borderColor: c.url === baseCutUrl ? 'var(--accent)' : 'var(--line)', borderWidth: c.url === baseCutUrl ? 2 : 1 }} />
-                    </button>
-                  ))}
-                </div>
-              ) : <p className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>제품·컬러를 먼저 고르면 해당 컷이 나옵니다.</p>
-            )}
-            {baseTab === 'pose' && (
-              linePoses.length ? (
-                <>
-                  <div className="text-[10.5px] mb-2" style={{ color: 'var(--text-mute)' }}>
-                    <b style={{ color: 'var(--accent)' }}>형태</b>(사람 지운 눌림)와 <b style={{ color: 'var(--info)' }}>포즈</b>(각도·자세)를
-                    <b> 둘 다</b> 고르는 게 가장 정확합니다.
-                  </div>
-                  <div className="grid grid-cols-4 gap-2 max-h-[240px] overflow-y-auto pr-1">
-                    {linePoses.map((r) => (
-                      <div key={r.key} className="text-center">
-                        <div className="flex gap-1">
-                          {([['off', r.offUrl, shapeRefKey], ['on', r.onUrl, poseRefKey]] as const).map(([kind, url, sel]) => (
-                            <button key={kind} onClick={() => kind === 'off'
-                                      ? setShapeRefKey(shapeRefKey === r.key ? '' : r.key)
-                                      : setPoseRefKey(poseRefKey === r.key ? '' : r.key)}
-                                    className="flex-1" title={`${r.name} · ${kind === 'off' ? '형태' : '포즈각도'}`}>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={thumbUrl(url, 256)} alt={r.name} loading="lazy" className="w-full aspect-square object-cover rounded-md border"
-                                   style={{ borderColor: sel === r.key ? 'var(--accent)' : 'var(--line)', borderWidth: sel === r.key ? 2 : 1 }} />
-                              <div className="text-[9px] mt-0.5" style={{ color: 'var(--text-mute)' }}>{kind === 'off' ? '형태' : '포즈'}</div>
-                            </button>
-                          ))}
-                        </div>
-                        <div className="text-[9.5px] mt-0.5 leading-tight" style={{ color: 'var(--text-mute)' }}>{r.name.replace(/^\S+\s/, '')}</div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : <p className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>제품을 먼저 고르면 그 제품의 실사 포즈 레퍼가 나옵니다.</p>
-            )}
           </Section>
           )}
 
@@ -1418,8 +1453,8 @@ ${c.spec}`}>
             (variation_options 데이터는 남아 있어 필요하면 되살릴 수 있다)
           */}
 
-          {/* ⑤ 방향 지시 */}
-          <Section n="7" title="방향 지시" hint="한글로 편하게 적으면 됩니다. 카메라 각도·조명·인물 구성도 여기에 함께 적으세요.">
+          {/* 배경 · 연출 (글) — 배경 사진이 없으면 여기 적은 글이 배경을 정한다 */}
+          <Section n={withPeople ? '7' : '5'} title="배경 · 연출" hint="배경 공간·조명·분위기를 한글로 편하게 적으면 됩니다. 배경 사진을 올렸다면 그 공간에 더할 것만 적으세요.">
             {/*
               광각 배너(21:9·16:9) 힌트 — 넓게 뽑으면 한쪽을 비워야 글자가 들어간다.
               애초에 빈 쪽이 없으면 배너 스튜디오의 자동 배치도 놓을 자리가 없다.
@@ -1498,19 +1533,31 @@ ${hint}` : hint))}>
           </div>
         )}
 
-        <h2 className="text-[13.5px] font-bold mb-3">참조 이미지</h2>
+        <h2 className="text-[13.5px] font-bold mb-3">
+          참조 이미지
+          {!!dry?.refs?.some((r) => r.kind === 'sheet') && (
+            <span className="text-[10.5px] font-normal ml-1.5" style={{ color: 'var(--text-mute)' }}>
+              AI 생성 제품 {dry.refs.filter((r) => r.kind === 'sheet').length}칸
+            </span>
+          )}
+        </h2>
         {dry?.refs?.length ? (
           <div className="flex flex-col gap-1.5 mb-4">
             {dry.refs.map((r, i) => (
               <div key={i} className="flex items-center gap-2 p-1.5 rounded-lg" style={{ background: 'var(--surface-2)' }}>
                 <span className="text-[9.5px] w-[46px] shrink-0 font-bold" style={{ color: 'var(--accent)' }}>
-                  {['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'SIXTH', 'SEVENTH', 'EIGHTH'][i]}
+                  {ORDS[i]}
                 </span>
                 {r.swatchHex
                   ? <span className="w-8 h-8 rounded shrink-0" style={{ background: r.swatchHex, border: '1px solid rgba(255,255,255,.15)' }} />
                   /* eslint-disable-next-line @next/next/no-img-element */
                   : <img src={r.url} alt={r.title} className="w-8 h-8 object-cover rounded shrink-0" />}
-                <span className="text-[10.5px] leading-tight" style={{ color: 'var(--text-dim)' }}>{r.title}</span>
+                <span className="text-[10.5px] leading-tight" style={{ color: 'var(--text-dim)' }}>
+                  {r.kind === 'sheet' && (
+                    <span className="text-[9px] font-bold px-1 py-px rounded mr-1" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>AI 제품</span>
+                  )}
+                  {r.title}
+                </span>
               </div>
             ))}
           </div>
@@ -1631,10 +1678,10 @@ ${hint}` : hint))}>
           <div className="flex gap-1.5">
             <button onClick={() => setEngine('gemini')} className="chip flex-1 justify-center"
                     title="나노바나나(gemini-3-pro-image) — 기본 엔진. 2K/4K 지원."
-                    style={engine === 'gemini' ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+                    style={effectiveEngine === 'gemini' ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
               제미나이로 생성하기
             </button>
-            {p.gptEnabled && (
+            {gptAllowed && (
               <button onClick={() => { setEngine('gpt'); setImageSize('2K'); }} className="chip flex-1 justify-center"
                       title="GPT(gpt-image-1) — 최대 1536px, POP·인쇄용 4K 없음. 비용은 OpenAI 계정에서 나갑니다 (장당 약 $0.2 안팎, 참고치)."
                       style={engine === 'gpt' ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
@@ -1642,13 +1689,18 @@ ${hint}` : hint))}>
               </button>
             )}
           </div>
-          {engine === 'gpt' && (
+          {effectiveEngine === 'gpt' && (
             <div className="text-[10px] px-1" style={{ color: 'var(--text-mute)' }}>
-              gpt-image-1 · 최대 1536px (POP/인쇄용 없음) · 제품 형태·로고·씬 합성 부정확 — 정밀 컷은 제미나이
+              gpt-image-1 · 최대 1536px (POP/인쇄용 없음) · 제품 없는 컷 전용
+            </div>
+          )}
+          {p.gptEnabled && !!line && (
+            <div className="text-[10px] px-1" style={{ color: 'var(--text-mute)' }}>
+              제품이 들어간 컷은 제미나이로만 생성합니다 — GPT 는 제품 형태를 참조대로 못 그립니다(실측).
             </div>
           )}
           {/* GPT 는 참조 조건화가 느슨해 전속 모델 얼굴이 유지되지 않는다 (실측) — 고르면 미리 경고 */}
-          {engine === 'gpt' && picks.length > 0 && (
+          {effectiveEngine === 'gpt' && withPeople && picks.length > 0 && (
             <div className="text-[10px] px-1" style={{ color: 'var(--warn)' }}>
               ⚠ GPT는 전속 모델 얼굴 유지력이 낮습니다 (실측: 얼굴이 바뀜) — 모델 얼굴이 중요한 컷은 제미나이를 쓰세요.
             </div>
@@ -1658,7 +1710,7 @@ ${hint}` : hint))}>
           <div>
             <div className="flex gap-1.5">
               {([['2K', '2K · 웹/SNS 기본'], ['4K', '4K · POP/인쇄용']] as const)
-                .filter(([v]) => engine !== 'gpt' || v !== '4K')
+                .filter(([v]) => effectiveEngine !== 'gpt' || v !== '4K')
                 .map(([v, l]) => (
                 <button key={v} onClick={() => setImageSize(v)} className="chip flex-1 justify-center"
                         title={v === '4K'
@@ -1675,7 +1727,7 @@ ${hint}` : hint))}>
               </div>
             )}
             {/* 얼굴 보호 — 서버가 강제하는 규칙을 화면에도 말해둔다. 몰래 커지면 "왜 파일이 크지?"가 된다 */}
-            {picks.length > 0 && (
+            {withPeople && picks.length > 0 && (
               <div className="text-[10px] px-1 mt-1" style={{ color: 'var(--text-mute)' }}>
                 🛡 전속 모델 컷은 얼굴 보호를 위해 결과물이 자동으로 짧은 변 2048px까지 상향됩니다 (작은 규격을 골라도 서버가 올립니다).
               </div>

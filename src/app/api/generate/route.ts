@@ -15,6 +15,10 @@ import { generateImageGpt, openaiConfigured, OpenAIImageError } from '@/lib/open
 import { uploadBuffer, dailySubpath, ftpConfigured } from '@/lib/ftp';
 import { cropToSize, measureProductColor } from '@/lib/image-post';
 import { planAspect } from '@/lib/aspect';
+import { toSheet, supportPanels, type AiProductSheet } from '@/lib/ai-products';
+import { recoloredPanelUrl, normalizeHex } from '@/lib/sheet-recolor';
+import { ObjectId } from 'mongodb';
+import { measureSceneTone } from '@/lib/scene-tone';
 
 /**
  * POST /api/generate — 자산 조합 → 프롬프트 → 나노바나나 → 크롭 → FTP → DB.
@@ -90,7 +94,17 @@ interface Body {
    * 다중 제품 — 한 컷에 2~3종을 위치별로. products 가 오면 line/colorKey 는 무시된다.
    * placement 예: 'left' | 'centre' | 'right'
    */
-  products?: { line: string; colorKey?: string; placement?: string }[];
+  products?: { line: string; colorKey?: string; placement?: string; sheetPanel?: SheetPanelPick }[];
+  /** 단일 제품(line) 의 AI 생성 제품 칸 — products[] 로 보낼 때는 각 항목에 넣는다 */
+  sheetPanel?: SheetPanelPick;
+  /** 단일 제품(line) 의 화면상 위치 */
+  placement?: string;
+  /**
+   * 화면의 작업 탭 — product(제품만 노출) | model(모델과 함께).
+   * 형태 보조 칸 수를 정한다: 모델 컷은 얼굴 참조가 예산을 먼저 쓰므로 보조 칸을 줄인다.
+   * 없으면 인물 유무로 판단한다 (SNS 자동화 등 다른 화면).
+   */
+  composition?: 'product' | 'model';
   /** 프롬프트 작성 방식 — 미지정이면 서버 기본값(PROMPT_MODE) */
   promptMode?: 'local' | 'opus';
   /**
@@ -125,6 +139,12 @@ interface Body {
   resolution?: '2k' | '4k';
   /** 대기열에서 알아보기 위해 사람이 붙인 이름 */
   handoffTitle?: string;
+}
+
+/** 생성 화면에서 고른 AI 생성 제품 칸 — 승인된 시트의 칸 하나가 "배치 각도"가 된다 */
+interface SheetPanelPick {
+  sheetId: string;
+  key: string;
 }
 
 interface SizeDocLike {
@@ -304,9 +324,31 @@ export async function POST(req: Request) {
      * 다중이면 placement 로 위치를 못박아야 색·형태가 뒤섞이지 않는다.
      */
     const productById = new Map(productDocs.map((d) => [String(d._id), d]));
-    const picks = body.products?.length
+    const picks: { line: string; colorKey?: string; placement?: string; sheetPanel?: SheetPanelPick }[] = body.products?.length
       ? body.products
-      : body.line ? [{ line: body.line, colorKey: body.colorKey, placement: undefined }] : [];
+      : body.line ? [{ line: body.line, colorKey: body.colorKey, placement: body.placement, sheetPanel: body.sheetPanel }] : [];
+
+    /*
+     * AI 생성 제품 시트 — 화면에서 고른 칸의 시트만 읽는다. **승인된 것만** 쓴다
+     * (자산관리 > AI 생성 제품의 "형태 기준으로 승인"이 곧 생성 사용 허가다).
+     * 승인이 풀렸거나 숨긴 시트를 고른 채 남아 있으면 조용히 공식 사진 경로로 돌아간다.
+     */
+    const sheetIds = [...new Set(picks.map((x) => x.sheetPanel?.sheetId).filter((v): v is string => !!v && ObjectId.isValid(v)))];
+    const sheetById = new Map<string, AiProductSheet>(
+      sheetIds.length
+        ? (await db.collection(COLLECTIONS.aiProducts)
+            .find({ _id: { $in: sheetIds.map((v) => new ObjectId(v)) }, status: 'approved', hidden: { $ne: true } })
+            .toArray()).map((d) => [String(d._id), toSheet(d)])
+        : [],
+    );
+    /*
+     * 형태 보조 칸 수 — 배치 각도 칸 1장 + 같은 시트의 다른 각도.
+     * 제품만: 2장 (정면·측면·45° 중 둘이면 입체가 잡힌다)
+     * 모델과 함께: 1장 (얼굴 대표컷·표정컷이 참조 예산을 먼저 쓴다)
+     * 제품 여러 종: 0장 (제품마다 배치 각도 칸만 — 한 종이 칸을 다 먹으면 나머지 형태가 무너진다)
+     */
+    const withPeople = body.composition ? body.composition === 'model' : talentPicks.length > 0;
+    const supportsPerProduct = picks.length > 1 ? 0 : withPeople ? 1 : 2;
 
     // 카메라 변형이 지정되면 그 각도의 공식 뷰를 우선 붙인다 (미지정=¾)
     const cameraPick = (body.variationIds ?? []).find((v) => v.startsWith('camera:'))?.split(':')[1];
@@ -349,28 +391,58 @@ export async function POST(req: Request) {
        * 사진 참조 없이 텍스트만으로 형태를 지시하면 제품이 다른 물건으로 나온다 —
        * 이 프로젝트에서 확인된 가장 큰 품질 요인이다.
        */
-      const views: { angle: string; url: string; colorMatched: boolean; canonical?: boolean }[] = [];
+      const views: NonNullable<ProductSpec['views']> = [];
+
       /*
-       * 대표(캐노니컬) 컷 — 형태·로고까지 확정한 마스터 렌더 (드롭·팟·라운저·피라미드).
-       * 어떤 컬러를 고르든 항상 1순위 앵커로 들어간다 — "우리가 지정한 제품컷이 정답"
-       * (사용자 확정). 색은 텍스트(hex)가, 조명은 씬이 다시 정한다.
+       * ① AI 생성 제품 칸을 골랐으면 — 그 칸이 제품의 정답이다 (사용자 확정 방식:
+       *    "내가 만든 AI 생성 제품 + 배경 + 배치 + 색상").
+       *    대표 컷·공식 사진은 넣지 않는다. 다른 생성에서 나온 형태가 섞이면 모델이 평균을 내
+       *    형태가 무너진다(드롭 꼭지 사고). 색은 칸 픽셀을 컬러칩 hex 로 먼저 바꿔서 넣는다.
        */
-      const canonicalUrl: string | null = doc.shapeViews?.canonical ? (doc.shapeViews?.views?.front ?? null) : null;
-      if (canonicalUrl) views.push({ angle: 'front', url: canonicalUrl, colorMatched: false, canonical: true });
-      let viewSrc: Record<string, string> | undefined = col?.views;
-      let colorMatched = true;
-      if (!viewSrc || !Object.keys(viewSrc).length) {
-        viewSrc = doc.colors?.find((c: { views?: Record<string, string> }) => c.views && Object.keys(c.views).length)?.views;
-        colorMatched = false;
-      }
-      if (!viewSrc || !Object.keys(viewSrc).length) {
-        viewSrc = doc.shapeViews?.views;
-        colorMatched = false;
-      }
-      if (viewSrc) {
-        for (const a of wantedAngles) {
-          if (views.length >= viewsPerProduct) break;
-          if (viewSrc[a] && viewSrc[a] !== canonicalUrl) views.push({ angle: a, url: viewSrc[a], colorMatched });
+      const sheet = pick.sheetPanel ? sheetById.get(pick.sheetPanel.sheetId) : undefined;
+      const primaryPanel = sheet && sheet.line === doc.line ? sheet.panels.find((x) => x.key === pick.sheetPanel!.key) : undefined;
+      if (sheet && primaryPanel) {
+        const wantHex = normalizeHex(col?.hex);
+        // 시트 색과 고른 색이 같으면(또는 색을 안 골랐으면) 칸을 그대로 쓴다
+        const sameColor = !wantHex || (!!pick.colorKey && pick.colorKey === sheet.colorKey) || wantHex === normalizeHex(sheet.hex);
+        const place = async (panel: { key: string; label: string; url: string }, primary: boolean) => {
+          const rc = sameColor ? { url: panel.url, recolored: false } : await recoloredPanelUrl(panel.url, wantHex);
+          views.push({
+            angle: panel.key,
+            url: rc.url,
+            colorMatched: sameColor || rc.recolored,
+            source: 'sheet',
+            primary,
+            recolored: rc.recolored,
+            label: panel.label,
+          });
+        };
+        await place(primaryPanel, true);
+        for (const sp of supportPanels(sheet, primaryPanel.key, supportsPerProduct)) await place(sp, false);
+      } else {
+        /*
+         * ② 칸을 안 골랐으면 기존 경로 — 대표(캐노니컬) 컷 + 공식 뷰 3단 폴백.
+         * 대표 컷은 형태·로고까지 확정한 마스터 렌더 (드롭·팟·라운저·피라미드).
+         * 어떤 컬러를 고르든 항상 1순위 앵커로 들어간다 — "우리가 지정한 제품컷이 정답"
+         * (사용자 확정). 색은 텍스트(hex)가, 조명은 씬이 다시 정한다.
+         */
+        const canonicalUrl: string | null = doc.shapeViews?.canonical ? (doc.shapeViews?.views?.front ?? null) : null;
+        if (canonicalUrl) views.push({ angle: 'front', url: canonicalUrl, colorMatched: false, canonical: true });
+        let viewSrc: Record<string, string> | undefined = col?.views;
+        let colorMatched = true;
+        if (!viewSrc || !Object.keys(viewSrc).length) {
+          viewSrc = doc.colors?.find((c: { views?: Record<string, string> }) => c.views && Object.keys(c.views).length)?.views;
+          colorMatched = false;
+        }
+        if (!viewSrc || !Object.keys(viewSrc).length) {
+          viewSrc = doc.shapeViews?.views;
+          colorMatched = false;
+        }
+        if (viewSrc) {
+          for (const a of wantedAngles) {
+            if (views.length >= viewsPerProduct) break;
+            if (viewSrc[a] && viewSrc[a] !== canonicalUrl) views.push({ angle: a, url: viewSrc[a], colorMatched });
+          }
         }
       }
 
@@ -417,8 +489,17 @@ export async function POST(req: Request) {
       ? await db.collection('products').findOne({ _id: body.refProduct as never })
       : null;
 
+    /*
+     * 배경 톤 측정 — 배경 사진(없으면 분위기 참고 사진)의 화이트밸런스·밝기·대비·암부·채도·빛 방향.
+     * 편집 베이스는 원본을 그대로 재현하는 흐름이라 재지 않는다. 로컬 계산이라 비용이 없다.
+     */
+    const toneSource = uploadedRefs.find((u) => u.role === 'background') ?? uploadedRefs.find((u) => u.role === 'style');
+    const hasEditBase = uploadedRefs.some((u) => u.role === 'base') || (!!baseCut && body.baseCutUsage !== 'pose');
+    const sceneTone = toneSource && !hasEditBase ? await measureSceneTone(toneSource.url) : null;
+
     const spec: GenerationSpec = {
       mode: body.mode || 'thumbnail',
+      ...(sceneTone ? { sceneTone: sceneTone.summaryEn } : {}),
       ...(baseCut
         ? { baseCut: { url: baseCut.url, spec: baseCut.spec, line: baseCut.line, colorName: baseCut.colorName, usage: body.baseCutUsage ?? 'full' } }
         : {}),
@@ -519,7 +600,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'FTP 설정이 없습니다 (.env.local).' }, { status: 500 });
     }
 
-    const engine = body.engine === 'higgs' ? 'higgs' : body.engine === 'gpt' ? 'gpt' : 'gemini';
+    /*
+     * 제품이 들어간 생성은 무조건 제미나이 (사용자 확정 2026-09-14).
+     * 실측: 같은 배경·같은 AI 생성 제품 칸(색 보정 포함)으로 GPT 는 색·배경은 따라왔지만
+     * 맥스를 등받이 의자로, 라운저를 흔한 1인 의자로 다시 그렸다 — 제품 형태를 참조에서 못 가져온다.
+     * 화면에서도 제품을 고르면 GPT 버튼이 사라지지만, 다른 화면·옛 탭에서 들어와도 여기서 막는다.
+     */
+    const engine = body.engine === 'higgs'
+      ? 'higgs'
+      : body.engine === 'gpt' && !productSpecs.length ? 'gpt' : 'gemini';
     if (engine === 'higgs' && !higgsfieldConfigured()) {
       return NextResponse.json({ ok: false, error: 'Higgsfield 설정이 없습니다 (.env.local).' }, { status: 500 });
     }

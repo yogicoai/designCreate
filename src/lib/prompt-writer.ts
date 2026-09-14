@@ -1,6 +1,7 @@
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import { loadReference, colorSwatch } from './gemini';
+import { PANEL_ANGLE_EN } from './ai-products';
 
 /**
  * 생성 프롬프트 작성기.
@@ -13,7 +14,8 @@ import { loadReference, colorSwatch } from './gemini';
  * 그래서 참조 목록과 프롬프트를 따로 만들지 않고 여기서 함께 만든다.
  */
 
-export type RefKind = 'base' | 'style' | 'background' | 'shape' | 'pose' | 'usage' | 'talent' | 'outfit' | 'product' | 'swatch';
+/** sheet = 자산관리 > AI 생성 제품(승인)의 칸 — 공식 사진(product)과 역할 문구가 다르다 */
+export type RefKind = 'base' | 'style' | 'background' | 'shape' | 'pose' | 'usage' | 'talent' | 'outfit' | 'product' | 'sheet' | 'swatch';
 
 export interface RefSlot {
   kind: RefKind;
@@ -105,7 +107,22 @@ export interface ProductSpec {
    * colorMatched=false 면 같은 라인의 다른 색 뷰(형태만 참고, 색은 스와치가 잡는다).
    */
   /** canonical = 확정 대표(마스터) 컷 — 다른 참조와 충돌 시 이긴다 */
-  views?: { angle: string; url: string; colorMatched: boolean; canonical?: boolean }[];
+  views?: {
+    angle: string;
+    url: string;
+    colorMatched: boolean;
+    canonical?: boolean;
+    /**
+     * sheet = AI 생성 제품 칸 (승인된 시트). 이게 오면 공식 뷰·대표 컷은 같이 오지 않는다.
+     * primary = 사람이 고른 "배치 각도" 칸 — 장면 속 제품이 이 각도로 보여야 한다.
+     * recolored = 칸 픽셀을 컬러칩 hex 로 이미 바꿔 넣었다.
+     */
+    source?: 'official' | 'sheet';
+    primary?: boolean;
+    recolored?: boolean;
+    /** 칸 이름 (정면·45° 등) — 화면 표시용 */
+    label?: string;
+  }[];
   /** 화면상 위치 — 'left' | 'centre' | 'right' | 'back' 등. 다중 배치에서 색·형태를 못박는다 */
   placement?: string;
 }
@@ -195,6 +212,12 @@ export interface GenerationSpec {
 
   /** 활성화된 전 컷 공통 규칙 (영문) */
   houseRules?: string[];
+
+  /**
+   * 배경(또는 분위기 참고) 사진에서 잰 톤 — scene-tone.ts 의 영문 한 줄.
+   * 있으면 제품·인물을 그 톤으로 찍힌 것처럼 맞추라는 블록이 숫자와 함께 들어간다.
+   */
+  sceneTone?: string;
 }
 
 /**
@@ -345,6 +368,35 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
     // 공식 제품 뷰 — 형태가 어긋나는 사고의 직접 대응.
     // 눌림 레퍼는 "앉은 뒤의 변형"을, 공식 뷰는 "제품 자체의 형태·비례"를 잡는다.
     for (const { p, v } of (spec.products ?? []).flatMap((p) => (p.views ?? []).map((v) => ({ p, v })))) {
+      /*
+       * AI 생성 제품 칸 — 공식 사진과 다르게 말한다.
+       * 배치 각도 칸은 "이 제품을, 이 각도로" 가 핵심이고, 보조 칸은 입체만 알려준다
+       * (보조 칸의 각도까지 따라가면 제품이 어느 방향을 볼지 모델이 헷갈린다).
+       * 흰 스튜디오 배경·조명은 가져오지 않게 못박는다 — 배경은 장면이 정한다.
+       */
+      if (v.source === 'sheet') {
+        const who = `the Yogibo ${p.line}${p.placement ? ` ${wherePhrase(p.placement)}` : ''}`;
+        const angle = ANGLE_EN[v.angle] ?? v.angle;
+        // describeRefs 가 끝에 마침표를 붙이므로 역할 문장은 마침표 없이 끝낸다
+        const colourNote = v.recolored
+          ? ' It is already shown in the requested colour'
+          : v.colorMatched
+            ? ''
+            : ' It is shown in a different colour — take ONLY its shape; the colour is specified in the text';
+        slots.push({
+          kind: 'sheet',
+          title: `AI 제품 · ${p.line}${p.placement ? `(${p.placement})` : ''} ${v.label || v.angle}${v.primary ? ' · 배치 각도' : ' · 형태 보조'}${v.recolored ? ' · 컬러 보정' : ''}`,
+          url: v.url,
+          role: v.primary
+            ? `THE EXACT PRODUCT TO PLACE: an approved reference image of ${who}, seen from the ${angle}. ` +
+              'Reproduce this very product — its three-dimensional shape, proportions, seams, plumpness and fabric — ' +
+              `and show it in the scene from this same viewing angle (the ${angle}), so the camera sees the product the way this image does.` +
+              `${colourNote ? `${colourNote}.` : ''} Take nothing else from it: ignore its plain studio background, studio lighting and framing`
+            : `another angle of the SAME approved ${p.line} reference (${angle}) — use it ONLY to understand the product's full three-dimensional shape. ` +
+              `Do not show the product from this angle and take nothing else from it${colourNote ? `.${colourNote}` : ''}`,
+        });
+        continue;
+      }
       slots.push({
         kind: 'product',
         title: `제품 뷰 · ${p.line}${p.placement ? `(${p.placement})` : ''} ${v.angle}${v.canonical ? ' 대표' : v.colorMatched ? '' : ' 형태만'}`,
@@ -411,10 +463,16 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
   return slots.slice(0, MAX_REFS);
 }
 
-const ORDINALS = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'SIXTH', 'SEVENTH', 'EIGHTH'];
+/*
+ * 참조 순서 표기 — MAX_REFS(14) 만큼 있어야 한다.
+ * 8개뿐이던 시절, 참조가 9장을 넘으면 "The undefined image is …" 가 프롬프트에 들어갔다.
+ */
+const ORDINALS = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'SIXTH', 'SEVENTH', 'EIGHTH', 'NINTH', 'TENTH', 'ELEVENTH', 'TWELFTH', 'THIRTEENTH', 'FOURTEENTH'];
+if (ORDINALS.length < MAX_REFS) throw new Error('ORDINALS 가 MAX_REFS 보다 짧습니다');
 
-/** 제품 뷰 각도 → 영문 표기 */
+/** 제품 뷰 각도 → 영문 표기 (AI 생성 제품 칸 키 포함) */
 const ANGLE_EN: Record<string, string> = {
+  ...PANEL_ANGLE_EN,
   front: 'front view',
   side: 'side view',
   back: 'back view',
@@ -501,12 +559,78 @@ function compositionFor(spec: GenerationSpec): string {
   return `TALL MOBILE FORMAT (${width}x${height}). The TOP third stays clean and empty for copy; ${SUBJ.replace('the ', '')} fills the LOWER two thirds.${NO_PEOPLE}` + FILL_FRAME;
 }
 
+/**
+ * 제품끼리 크기 비교 — 여러 종을 한 장면에 넣을 때 (사용자 지시 2026-09-14: "제품별로 크기 차이가 제대로").
+ *
+ * 제품마다 EXACT SIZE 가 있어도 모델은 제품을 비슷한 크기로 맞춰 그리는 경향이 있다. 특히 AI 생성 제품 칸은
+ * 제품마다 칸을 꽉 채워 찍혀 있어 참조 이미지끼리는 크기 차이가 전혀 안 보인다 — 크기는 숫자로만 전달된다.
+ * 그래서 가장 긴 변 기준으로 큰 순서와 배율을 따로 적는다.
+ */
+function relativeSizeLines(products: ProductSpec[]): string[] {
+  const sized = products
+    .map((p, i) => {
+      const d = p.dims ?? {};
+      const longest = Math.max(d.w ?? 0, d.d ?? 0, d.h ?? 0);
+      return { p, i, d, longest };
+    })
+    .filter((x) => x.longest > 0);
+  if (sized.length < 2) return [];
+  const multi = products.length > 1;
+  const nameOf = (x: (typeof sized)[number]) =>
+    `${multi && x.p.placement ? `${x.p.placement.toUpperCase()} ` : ''}Yogibo ${x.p.line}`;
+  const order = [...sized].sort((a, b) => b.longest - a.longest);
+  const big = order[0];
+  const dimsText = (d: ProductSpec['dims']) =>
+    [d.w && `${d.w}cm wide`, d.d && `${d.d}cm deep`, d.h && `${d.h}cm tall/long`].filter(Boolean).join(' x ');
+  const L = [
+    'RELATIVE SIZE BETWEEN THE PRODUCTS — they stand on the same floor, so their sizes must compare exactly as these real measurements do. ' +
+      'The reference images are each cropped to fill their own frame, so they do NOT show relative size; use these numbers:',
+  ];
+  for (const x of order) {
+    const ratio = x.longest / big.longest;
+    L.push(`  - ${nameOf(x)}: ${dimsText(x.d)} — longest side ${x.longest}cm${x === big ? ' (the largest product)' : `, about ${ratio.toFixed(2)}× the ${big.p.line}'s longest side`}.`);
+  }
+  L.push(
+    `  Order from largest to smallest: ${order.map((x) => x.p.line).join(' > ')}. ` +
+      'A smaller product must never be drawn as large as a bigger one, and a large product must never shrink to match the others.',
+  );
+  L.push('');
+  return L;
+}
+
+/**
+ * 톤 맞추기 — 배경 사진에서 잰 수치로 "같은 카메라·같은 순간에 찍힌 사진" 을 요구한다.
+ * 합성 티의 주범은 조명 방향보다 화이트밸런스·암부 깊이·채도·선명도 차이다 (제품 칸은 스튜디오 렌더라 전부 과하다).
+ */
+function toneBlock(spec: GenerationSpec): string[] {
+  if (!spec.sceneTone) return [];
+  const who = spec.talents?.length ? 'every product and person' : 'every product';
+  return [
+    `SCENE TONE (measured from the supplied photograph): ${spec.sceneTone}.`,
+    `PHOTOGRAPHIC MATCH — render ${who} as if captured by the same camera in the same moment as that photograph, not composited: ` +
+      "the same white balance (fabric colours shift toward the room's warmth or coolness exactly as real fabric would under that light), " +
+      'shadows on the products no darker than the darkest shadows already in the room, the same contrast and saturation level, ' +
+      'the same softness of light and shadow edges, the same sharpness, depth of field, lens perspective, camera height, noise and grain. ' +
+      'Add a soft contact shadow and ambient occlusion where each product meets the floor, and gentle colour bounce from the floor and walls onto the fabric. ' +
+      "The hex colours above are the fabric's true dye colour under neutral daylight — show that same fabric as it would photograph in THIS room. " +
+      'Any subject that looks cleaner, brighter, more saturated, higher-contrast or sharper than the room reads as an AI composite and is a failure.',
+  ];
+}
+
 /** 제품 블록 — 12차 실측 4종 세트 */
 function productBlock(spec: GenerationSpec): string[] {
   const products = spec.products ?? [];
   if (!products.length) return [];
   const multi = products.length > 1;
   const L: string[] = [];
+  /*
+   * 사람 없는 제품 컷 — USE(사용법) 문장을 넣지 않는다.
+   * 실측 사고(2026-09-14 피라미드): 사람이 없는데 "경사면에 기대 앉거나, 눕혀서 로운저로 쓴다" 가 들어가자
+   * 모델이 피라미드를 눕히고 앉은 뒤처럼 눌린 모양으로 그렸다. 사용법 문장은 곧 "그 상태를 그려라" 로 읽힌다.
+   * 대신 빈 상태·레퍼런스와 같은 놓임새·눌림 없음을 제품마다 못박는다.
+   * (포즈 소스 컷이 있어도 사람이 없으면 같다 — 포즈 역할도 "눌림 복사 금지" 로 이미 제한돼 있다)
+   */
+  const noPeople = !(spec.talents?.length);
 
   if (multi) {
     L.push(
@@ -515,6 +639,8 @@ function productBlock(spec: GenerationSpec): string[] {
         'do not give them the same shape, and do not swap their colours:',
     );
   }
+
+  L.push(...relativeSizeLines(products));
 
   products.forEach((p, i) => {
     const colorEn = p.color?.nameEn || p.color?.name || '';
@@ -529,7 +655,20 @@ function productBlock(spec: GenerationSpec): string[] {
     if (p.scalePrompt) L.push(`  SCALE ANCHOR: ${p.scalePrompt}.`);
     L.push(`  NEGATIVE: ${p.negative}.`);
     if (p.color?.hex) L.push(`  COLOUR: ${colorEn} (${p.color.hex}) — exact, must not drift toward a neighbouring hue.`);
-    L.push(`  USE: ${p.staging || p.modes}.`);
+    // 단일 제품도 위치를 고를 수 있다 — 다중은 머리(where)에 이미 박혀 있다
+    if (!multi && p.placement) L.push(`  PLACEMENT: put the product ${wherePhrase(p.placement)} of the frame.`);
+    const placeRef = (p.views ?? []).find((v) => v.source === 'sheet' && v.primary);
+    if (placeRef) {
+      L.push(`  CAMERA ANGLE ON THIS PRODUCT: the ${ANGLE_EN[placeRef.angle] ?? placeRef.angle}, exactly as in its placement reference image.`);
+    }
+    if (noPeople) {
+      L.push(
+        `  STATE: EMPTY — nobody sits, leans or lies on it. It stands in its normal resting position ${placeRef ? 'exactly as in its placement reference image' : 'as in its reference photographs'}, ` +
+          'fully inflated and taut: no dents, no seat hollow, no slumped or sagging top, no sitting creases, never tipped over or laid down on its side.',
+      );
+    } else {
+      L.push(`  USE: ${p.staging || p.modes}.`);
+    }
   });
   /*
    * 공식 뷰는 제품을 눕혀/세워 놓고 찍은 "기본 자세"다.
@@ -538,9 +677,14 @@ function productBlock(spec: GenerationSpec): string[] {
    * 장면 속 놓임새는 포즈가 정하되 껍데기 자체는 못 바꾼다고 못박는다.
    */
   L.push(
-    'PRODUCT VIEWS show each product in its factory resting orientation. In the scene, position the product however ' +
-      'the pose and staging require, BUT its shell keeps the exact shape and true dimensions from the views — ' +
-      'never bend, curl, stretch, inflate or merge a product to fit a pose, a person or the composition.',
+    noPeople
+      /* 사람이 없으면 놓임새를 바꿀 이유가 없다 — 눕히거나 세우는 순간 형태가 다른 물건이 된다 */
+      ? 'PRODUCT VIEWS show each product in its factory resting orientation, and with nobody in this image each product KEEPS that exact ' +
+        'orientation and stance — do not tip it over, lay it down, stand it up, rotate it onto another face or pose it like furniture in use. ' +
+        'Its shell keeps the exact shape and true dimensions from the views — never bend, curl, stretch, flatten, deflate or merge a product to fit the composition.'
+      : 'PRODUCT VIEWS show each product in its factory resting orientation. In the scene, position the product however ' +
+        'the pose and staging require, BUT its shell keeps the exact shape and true dimensions from the views — ' +
+        'never bend, curl, stretch, inflate or merge a product to fit a pose, a person or the composition.',
     /*
      * 뷰 사진 > 텍스트 서술 — 형태가 생성마다 흔들리는 사고(라운저 등받이 각도·좌석 비례)의 대책.
      * 글로는 각도·비례를 다 못 박는다. 사진을 형태의 최종 기준으로 못박는다.
@@ -562,6 +706,24 @@ function productBlock(spec: GenerationSpec): string[] {
    * 평면광·채도가 방에 그대로 붙어 들어옴). 인물용 RELIGHT 와 같은 원리를 제품에도 건다.
    * 순수 스튜디오 썸네일(배경 없음)에서는 스튜디오 룩이 정답이라 안 붙인다.
    */
+  /*
+   * 배경 사진에 빈백을 채울 때 기존 가구가 걸리면 지운다 (사용자 지시 2026-09-14).
+   * 배경 사진의 가구를 전부 지켜야 할 대상으로 읽으면, 모델은 빈백을 가구 틈에 욱여넣거나
+   * 작게 줄이거나 가구 뒤에 숨긴다. 공간(벽·창·바닥·조명)은 지키되 걸리는 물건은 치운다.
+   * 편집 베이스(base)가 아니라 배경(background)으로 쓸 때만 — 베이스는 원본 그대로가 원칙이다.
+   * local 템플릿과 Opus 브리프가 이 블록을 같이 쓰므로 여기에 둔다.
+   */
+  const onBackground = (!spec.baseCut || spec.baseCut.usage === 'pose') && (spec.uploadedRefs ?? []).some((u) => u.role === 'background')
+    && !(spec.uploadedRefs ?? []).some((u) => u.role === 'base');
+  if (onBackground) {
+    L.push(
+      'CLEAR THE PLACEMENT AREA — the background photograph supplies the room, but its existing furniture and objects are NOT fixed: ' +
+        'if a sofa, chair, table, shelf, rug, plant or any other object stands where the bean bag' + (multi ? 's need' : ' needs') + ' to go, ' +
+        'or would overlap, block, crowd or hide ' + (multi ? 'them' : 'it') + ', REMOVE that object completely and rebuild the floor, ' +
+        'wall and skirting behind it seamlessly. Keep the room itself unchanged — walls, windows, floor material, ceiling and light. ' +
+        'Never shrink, squeeze, tilt or partially hide a bean bag to make it fit around existing furniture.',
+    );
+  }
   const inScene = (!!spec.baseCut && spec.baseCut.usage !== 'pose')
     || (spec.uploadedRefs ?? []).some((u) => u.role === 'base' || u.role === 'background');
   if (inScene) {
@@ -952,6 +1114,9 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
   const sb = scaleBlock(spec);
   if (sb.length) { L.push(...sb); L.push(''); }
 
+  const toneL = toneBlock(spec);
+  if (toneL.length) { L.push(...toneL); L.push(''); }
+
   L.push(compositionFor(spec));
 
   if (spec.size.retention < 0.97) {
@@ -1073,6 +1238,9 @@ function specToBrief(spec: GenerationSpec, refs: RefSlot[]): string {
 
   const sb = scaleBlock(spec);
   if (sb.length) { L.push(''); L.push('스케일 (빈백 대비 사람 크기 — 반드시 반영):'); L.push(...sb.filter(Boolean).map((x) => '  ' + x)); }
+
+  const toneB = toneBlock(spec);
+  if (toneB.length) { L.push(''); L.push('톤 맞추기 (배경 사진에서 잰 값 — 합성 티 방지, 반드시 반영):'); L.push(...toneB.map((x) => '  ' + x)); }
 
   const vars = (spec.variations ?? []).filter((v) => v.hint);
   if (vars.length) { L.push(''); L.push('연출 옵션: ' + vars.map((v) => `${v.label}(${v.hint})`).join(', ')); }

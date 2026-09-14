@@ -1,13 +1,13 @@
 import CreateStudio from '@/components/CreateStudio';
 import {
   getProducts, getTalents, getPoseRefs, getSizePresets,
-  getPreservationModes, getExpressions, getCuts, getReferences,
+  getPreservationModes, getExpressions, getCuts, getReferences, getApprovedShapeSheets,
 } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CreatePage() {
-  const [products, talents, poses, sizes, preservations, expressions, recentCuts, references] = await Promise.all([
+  const [products, talents, poses, sizes, preservations, expressions, recentCuts, references, aiSheets] = await Promise.all([
     getProducts(),
     getTalents(),
     getPoseRefs(),
@@ -16,6 +16,7 @@ export default async function CreatePage() {
     getExpressions(),
     getCuts({ limit: 400 }),
     getReferences(4000),
+    getApprovedShapeSheets(),
   ]);
 
   /*
@@ -57,10 +58,9 @@ export default async function CreatePage() {
       {process.env.OPENAI_API_KEY && (
         <div className="mx-4 sm:mx-6 mt-4 px-3 py-2 rounded-[10px] text-[11.5px] leading-relaxed"
              style={{ background: 'rgba(240,180,41,.08)', border: '1px solid var(--warn)', color: 'var(--warn)' }}>
-          ⚠ <b>GPT 엔진 사용 기준</b> — GPT(gpt-image-1)는 전속 모델 <b>얼굴</b>이 유지되지 않고,
-          <b>제품 형태·로고 재현과 배경 합성도 부정확합니다</b> (실측: 드롭·라운저가 다른 물건으로 생성됨).
-          전속 모델 선택 시 GPT는 차단되며, <b>제품 컷·씬 합성은 제미나이를 사용</b>하세요.
-          GPT는 분위기 참고용 러프 컷 정도에만 권장합니다.
+          ⚠ <b>GPT 엔진 사용 기준</b> — GPT(gpt-image-1)는 전속 모델 <b>얼굴</b>이 유지되지 않고, <b>제품 형태도 참조대로 그리지 못합니다</b>
+          (실측 2026-09-14: AI 생성 제품 칸을 넣어도 맥스·라운저가 다른 의자로 생성됨).
+          그래서 <b>제품을 고른 컷은 제미나이로만</b> 생성되고, GPT는 제품 없는 분위기 러프 컷에만 쓸 수 있습니다.
         </div>
       )}
       <CreateStudio
@@ -71,6 +71,7 @@ export default async function CreatePage() {
       preservations={preservations}
       expressions={expressions}
       baseCuts={baseCuts}
+      aiSheets={aiSheets}
       references={[...bannerRefs, ...references]}
       promptMode={(process.env.PROMPT_MODE || 'opus') === 'opus' && process.env.ANTHROPIC_API_KEY ? 'opus' : 'local'}
       /* 넘기기 버튼은 로컬 전용 — MD 화면에 나올 기능이 아니다 */
