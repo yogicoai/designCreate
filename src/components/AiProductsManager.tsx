@@ -109,8 +109,8 @@ export default function AiProductsManager({ initial }: { initial: AiProductSheet
                       {s.panels.map((p) => (
                         <button key={p.url} onClick={() => setZoom(p.url)} className="min-w-0 block text-left" style={{ padding: 0 }}
                                 title={`크게 보기 — ${p.label}`}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           {/* 4칸 시트는 칸당 200px 넘게 커진다 — 256 이면 고해상도 화면에서 흐리다 */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={thumbUrl(p.url, 384)} alt={p.label} loading="lazy"
                                className="w-full rounded border object-contain"
                                style={{ aspectRatio: '1/1', background: '#fff', borderColor: 'var(--line)' }} />
