@@ -194,12 +194,8 @@ export async function POST(req: Request) {
      * 인쇄에서 흐려진다. 150ppi 를 맞추려고 만든 규격이므로 화질을 아끼면 의미가 없다.
      * 4K(4096) 로 뽑아도 A1 은 1.2배 확대가 남지만 그 정도는 인쇄에서 견딘다.
      */
-    /*
-     * 제품이 들어간 요청은 GPT 를 달라고 해도 제미나이로 돈다 (아래 엔진 결정과 같은 규칙).
-     * 해상도 규칙(인쇄 4K·얼굴 보호 2K)도 실제로 도는 엔진 기준이어야 한다 — 검토 확인.
-     */
-    const hasProductPick = !!(body.products?.length || body.line);
-    const gptRequested = body.engine === 'gpt' && !hasProductPick;
+    // 해상도 규칙(인쇄 4K·얼굴 보호 2K)은 GPT 에 해당하지 않는다 — GPT 는 최대 1536px
+    const gptRequested = body.engine === 'gpt';
     const isPrint = size.group === '인쇄' || Math.max(size.width, size.height) >= 2500;
     if (isPrint && !gptRequested) body.imageSize = '4K';
 
@@ -611,14 +607,12 @@ export async function POST(req: Request) {
     }
 
     /*
-     * 제품이 들어간 생성은 무조건 제미나이 (사용자 확정 2026-09-14).
-     * 실측: 같은 배경·같은 AI 생성 제품 칸(색 보정 포함)으로 GPT 는 색·배경은 따라왔지만
-     * 맥스를 등받이 의자로, 라운저를 흔한 1인 의자로 다시 그렸다 — 제품 형태를 참조에서 못 가져온다.
-     * 화면에서도 제품을 고르면 GPT 버튼이 사라지지만, 다른 화면·옛 탭에서 들어와도 여기서 막는다.
+     * 엔진은 요청 그대로 — 제품 컷도 GPT 로 만들 수 있다.
+     * 2026-09-14 에 "제품이 들어가면 무조건 제미나이" 로 막았다가 되돌렸다 (사용자 지시 2026-09-15):
+     * 제미나이 프로젝트가 월 지출 한도(429 "exceeded its monthly spending cap")에 걸리면 GPT 가 유일한 길이다.
+     * 단 실측상 GPT 는 제품 형태를 참조대로 못 그린다(맥스·라운저가 다른 의자로) — 화면에서 경고한다.
      */
-    const engine = body.engine === 'higgs'
-      ? 'higgs'
-      : body.engine === 'gpt' && !productSpecs.length ? 'gpt' : 'gemini';
+    const engine = body.engine === 'higgs' ? 'higgs' : body.engine === 'gpt' ? 'gpt' : 'gemini';
     if (engine === 'higgs' && !higgsfieldConfigured()) {
       return NextResponse.json({ ok: false, error: 'Higgsfield 설정이 없습니다 (.env.local).' }, { status: 500 });
     }

@@ -307,23 +307,19 @@ export default function CreateStudio(p: Props) {
   const product = p.products.find((x) => x.line === line);
 
   /**
-   * 컬러 칩 = 그 제품에 **실제로 있는 컬러** + 그 제품 **AI 생성 제품 시트의 컬러** 만 (사용자 지시 2026-09-14).
-   * 예전엔 맥스 슬롯 컬러를 전 라인에 붙여 없는 조합(미니 × 맥스 전용색 등)까지 고를 수 있었다.
-   * 시트 컬러가 제품 등록 컬러에 없으면(미디 라이트그레이 등) 시트의 이름·hex 로 칩을 만든다.
+   * 컬러 칩 = **모든 제품이 맥스 컬러 목록 그대로** (사용자 지시 2026-09-15: "제품마다 컬러칩이 다르면 안 된다").
+   * 하루 동안 "그 제품 등록 컬러 + 시트 컬러만" 으로 바꿨다가 되돌렸다 — 제품을 바꿀 때마다 칩이 달라지면 헷갈린다.
+   * 맥스에 없는 제품 전용 키를 골라도 서버가 그 키를 가진 제품에서 이름·hex 를 빌려오고,
+   * AI 생성 제품 칸은 그 hex 로 색을 바꿔 넣으므로 어느 제품이든 같은 칩으로 생성된다.
+   * 같은 이름이 다른 키로 두 번 있으면(네이비블루 등) 한 번만 보여준다.
    */
-  const colorsFor = (pr: { line: string; colors: (typeof p.products)[number]['colors'] } | undefined) => {
-    if (!pr) return [];
-    const own = pr.colors ?? [];
-    const seenKey = new Set(own.map((c) => c.key));
-    const seenName = new Set(own.map((c) => c.name));
-    const fromSheets: typeof own = [];
-    for (const s of p.aiSheets) {
-      if (s.line !== pr.line || !s.colorKey || seenKey.has(s.colorKey) || seenName.has(s.colorName)) continue;
-      seenKey.add(s.colorKey); seenName.add(s.colorName);
-      fromSheets.push({ key: s.colorKey, name: s.colorName, hex: s.hex } as (typeof own)[number]);
-    }
-    return [...own, ...fromSheets];
-  };
+  const maxColors = useMemo(() => {
+    const max = p.products.find((x) => /^max$/i.test(x.line))
+      ?? [...p.products].sort((a, b) => (b.colors?.length ?? 0) - (a.colors?.length ?? 0))[0];
+    const seen = new Set<string>();
+    return (max?.colors ?? []).filter((c) => (seen.has(c.name) ? false : (seen.add(c.name), true)));
+  }, [p.products]);
+  const colorsFor = (pr: { line: string } | undefined) => (pr ? maxColors : []);
   const size = sizes.find((s) => s.value === sizeValue);
   const linePoses = p.poses.filter((x) => x.line === line);
   // 사진 편집(base)은 「모델과 함께」 에서만 — 제품만 노출 탭에서는 역할 칩이 없어 base 를 못 고른다
@@ -348,11 +344,10 @@ export default function CreateStudio(p: Props) {
     setDry(null); setPromptText(''); setPromptEdited(false);
   }
   /*
-   * 제품을 고르면 무조건 제미나이 (사용자 확정 2026-09-14).
-   * 실측: 같은 배경·같은 AI 생성 제품 칸으로 GPT 는 색·배경은 따라왔지만 맥스·라운저 형태를 다른 의자로 다시 그렸다.
-   * GPT 는 제품 없는 컷(분위기 러프 등)에만 남긴다. 서버(route.ts)도 같은 규칙으로 막는다.
+   * GPT 는 제품 컷에도 고를 수 있다 (사용자 지시 2026-09-15 — 제미나이가 월 지출 한도에 걸리면 GPT 로 만들어야 한다).
+   * 하루 동안 "제품이 있으면 제미나이만" 으로 막았던 적이 있다. 실측상 GPT 는 제품 형태가 틀어지므로 경고만 한다.
    */
-  const gptAllowed = !!p.gptEnabled && !line;
+  const gptAllowed = !!p.gptEnabled;
   const effectiveEngine: 'gemini' | 'gpt' = gptAllowed ? engine : 'gemini';
   const withPeople = flow === 'model';
   const uploadsForFlow = flow === 'model' ? uploads : uploads.filter((u) => u.role !== 'base');
@@ -1702,12 +1697,12 @@ ${hint}` : hint))}>
           </div>
           {effectiveEngine === 'gpt' && (
             <div className="text-[10px] px-1" style={{ color: 'var(--text-mute)' }}>
-              gpt-image-1 · 최대 1536px (POP/인쇄용 없음) · 제품 없는 컷 전용
+              gpt-image-1 · 최대 1536px (POP/인쇄용 없음)
             </div>
           )}
-          {p.gptEnabled && !!line && (
-            <div className="text-[10px] px-1" style={{ color: 'var(--text-mute)' }}>
-              제품이 들어간 컷은 제미나이로만 생성합니다 — GPT 는 제품 형태를 참조대로 못 그립니다(실측).
+          {effectiveEngine === 'gpt' && !!line && (
+            <div className="text-[10px] px-1" style={{ color: 'var(--warn)' }}>
+              ⚠ GPT는 제품 형태를 참조대로 못 그리는 경우가 많습니다 (실측: 맥스·라운저가 다른 의자로) — 결과의 제품 모양을 꼭 확인하세요.
             </div>
           )}
           {/* GPT 는 참조 조건화가 느슨해 전속 모델 얼굴이 유지되지 않는다 (실측) — 고르면 미리 경고 */}

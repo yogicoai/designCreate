@@ -60,7 +60,7 @@ export default async function CreatePage() {
              style={{ background: 'rgba(240,180,41,.08)', border: '1px solid var(--warn)', color: 'var(--warn)' }}>
           ⚠ <b>GPT 엔진 사용 기준</b> — GPT(gpt-image-1)는 전속 모델 <b>얼굴</b>이 유지되지 않고, <b>제품 형태도 참조대로 그리지 못합니다</b>
           (실측 2026-09-14: AI 생성 제품 칸을 넣어도 맥스·라운저가 다른 의자로 생성됨).
-          그래서 <b>제품을 고른 컷은 제미나이로만</b> 생성되고, GPT는 제품 없는 분위기 러프 컷에만 쓸 수 있습니다.
+          제품 컷도 GPT로 만들 수 있지만 <b>결과의 제품 모양을 꼭 확인</b>하세요 — 제미나이 한도가 막혔을 때의 대안으로 쓰는 것을 권합니다.
         </div>
       )}
       <CreateStudio
