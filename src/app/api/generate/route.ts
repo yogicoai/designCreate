@@ -19,6 +19,7 @@ import { toSheet, supportPanels, panelAngleEn, type AiProductSheet } from '@/lib
 import { recoloredPanelUrl, normalizeHex } from '@/lib/sheet-recolor';
 import { ObjectId } from 'mongodb';
 import { measureSceneTone } from '@/lib/scene-tone';
+import { scrubReferenceUrl, guardOutput, FOLD_EXEMPT_LINES } from '@/lib/logo-guard';
 
 /**
  * POST /api/generate — 자산 조합 → 프롬프트 → 나노바나나 → 크롭 → FTP → DB.
@@ -649,10 +650,27 @@ export async function POST(req: Request) {
       );
     }
 
+    /*
+     * ── 5-0) 사진 참조의 태그를 먼저 지운다 (logo-guard.ts) ─────
+     * 글로 "로고 없음" 이라고 해도 참조 사진에 태그가 보이면 그대로 옮겨 그린다(실측 2026-09-15).
+     * 사진류(포즈 소스·베이스·배경·스타일·형태·연출·공식 제품 사진)만 — 모델 시트·의상 크롭·AI 제품 칸·스와치는
+     * 태그가 없는 자산이라 검사하지 않는다. URL 만 바뀌고 순서·역할은 그대로라 프롬프트는 다시 쓸 필요가 없다.
+     * 힉스필드도 이 URL 을 받아 가므로 세 엔진 모두 지운 사본을 본다.
+     */
+    const SCRUB_KINDS = new Set<RefSlot['kind']>(['base', 'background', 'style', 'shape', 'pose', 'usage', 'product']);
+    const originalOf = new Map<string, string>();
+    const refsToLoad: RefSlot[] = await Promise.all(written.refs.map(async (r) => {
+      if (!r.url || r.swatchHex || !SCRUB_KINDS.has(r.kind)) return r;
+      const s = await scrubReferenceUrl(r.url);
+      if (!s.cleaned) return r;
+      originalOf.set(s.url, r.url);
+      return { ...r, url: s.url };
+    }));
+
     // ── 5) 참조 이미지 적재 (순서가 프롬프트와 일치해야 한다) ─────
     const inline: InlineImage[] = [];
     const usedRefs: RefSlot[] = [];
-    for (const r of written.refs) {
+    for (const r of refsToLoad) {
       // 모델 시트는 다패널이라 덜 줄인다 — 1024 로 줄이면 얼굴이 판독 불가 크기가 된다
       const img = r.swatchHex
         ? await colorSwatch(r.swatchHex)
@@ -731,7 +749,20 @@ export async function POST(req: Request) {
         continue;
       }
 
-      const cropped = await cropToSize(gen.buffer, size.width, size.height);
+      const croppedRaw = await cropToSize(gen.buffer, size.width, size.height);
+      /*
+       * 결과물 검사 (logo-guard.ts) — 참조를 지웠어도 모델이 태그를 새로 그릴 수 있다.
+       * 남은 태그는 그 자리만 주변 원단으로 메운다(다시 생성하지 않으니 얼굴·구도는 그대로).
+       * 피라미드가 아닌 빈백의 윗부분 말림은 지우는 게 아니라 다시 뽑아야 하는 문제라 표시만 한다.
+       */
+      const foldTargets = productSpecs.filter((p) => !FOLD_EXEMPT_LINES.has(p.line));
+      const guard = await guardOutput(croppedRaw.buffer, {
+        topFold: foldTargets.length > 0,
+        // 정답 형태를 같이 줘야 "꽉 찬 물방울이라 정상" 같은 오판을 안 한다
+        expectedShapes: foldTargets.map((p) => `Yogibo ${p.line}: ${p.shape}`),
+        exemptProducts: productSpecs.filter((p) => FOLD_EXEMPT_LINES.has(p.line)).map((p) => `the Yogibo ${p.line}`),
+      });
+      const cropped = { ...croppedRaw, buffer: guard.buffer };
       const colorCheck = color?.hex ? await measureProductColor(cropped.buffer, color.hex) : null;
 
       const stamp = isoNow.replace(/[-:T]/g, '').slice(0, 14);
@@ -745,6 +776,19 @@ export async function POST(req: Request) {
           .join('_')
           .slice(0, 80) || 'gen';
       const url = await uploadBuffer(dailySubpath(isoNow), `${namePart}_${stamp}_${rand}_${n}.jpg`, cropped.buffer);
+      // 태그를 지웠으면 지우기 전 원본도 남긴다 — 오검출로 다른 걸 지웠을 때 되돌릴 수 있게 (숨김 원칙과 같은 이유)
+      const rawUrl = guard.erased.length
+        ? await uploadBuffer(dailySubpath(isoNow), `${namePart}_${stamp}_${rand}_${n}_raw.jpg`, croppedRaw.buffer).catch(() => '')
+        : '';
+      const qc = {
+        checked: guard.checked,
+        model: guard.model,
+        logoErased: guard.erased.length,
+        ...(guard.erased.length ? { logoBoxes: guard.erased, rawUrl } : {}),
+        topFold: guard.topFold,
+        refsCleaned: originalOf.size,
+        ...(guard.usage ? { usage: guard.usage } : {}),
+      };
 
       const doc = {
         // 대표 제품 = 첫 번째. 갤러리 필터·컬러 측정이 이 값을 쓴다.
@@ -789,7 +833,10 @@ export async function POST(req: Request) {
         inputImages: usedRefs.map((r) => ({
           kind: r.kind, title: r.title, url: r.url ?? '', role: r.role,
           ...(r.swatchHex ? { swatchHex: r.swatchHex } : {}),
+          // 태그를 지운 사본을 보냈으면 원래 사진 주소도 남긴다
+          ...(r.url && originalOf.has(r.url) ? { originalUrl: originalOf.get(r.url) } : {}),
         })),
+        qc,
         direction: body.direction ?? '',
         width: cropped.width,
         height: cropped.height,
@@ -822,6 +869,7 @@ export async function POST(req: Request) {
         deltaE: colorCheck?.deltaE ?? null,
         measuredHex: colorCheck?.hex ?? null,
         elapsedMs: gen.elapsedMs,
+        qc: { checked: qc.checked, logoErased: qc.logoErased, topFold: qc.topFold, refsCleaned: qc.refsCleaned },
       });
     }
 

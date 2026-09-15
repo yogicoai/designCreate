@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { thumbUrl } from '@/lib/thumb';
 import { shrinkForUpload, formatBytes } from '@/lib/client-image';
 import { AGE_BANDS, BODY_TYPES, composeSize } from '@/lib/model-profile';
+import { isRecent } from '@/lib/recent';
 
 /**
  * 모델 레퍼런스 등록 — "이런 느낌의 사람" 을 사진과 조건으로 등록해 두는 곳.
@@ -39,6 +40,8 @@ export interface ModelRef {
   aiFront: string;
   /** 시트를 칸별로 자른 것 (정면·3/4·측면 좌우) */
   aiPanels: string[];
+  /** 등록 시각 — 하루 안이면 카드에 N 표시 */
+  createdAt?: string | null;
 }
 
 /** 우리 모델로 얼마나 강하게 끌어올지 — 엔진에 들어가는 건 숫자가 아니라 이 문장이다 */
@@ -374,6 +377,11 @@ export default function ModelRefsManager({ initial }: { initial: ModelRef[] }) {
                     {showAi && (
                       <span className="absolute top-1 left-1 text-[9px] px-1.5 py-0.5 rounded"
                             style={{ background: 'var(--ok)', color: '#04210f' }}>AI</span>
+                    )}
+                    {/* 새로 등록된 모델 — 하루 동안 N */}
+                    {isRecent(m.createdAt) && (
+                      <span className="absolute top-1 right-1 text-[9.5px] font-bold leading-none px-1.5 py-[3px] rounded-full"
+                            style={{ background: 'var(--accent)', color: '#fff' }} title="최근 하루 안에 등록">N</span>
                     )}
                   </div>
                 </button>

@@ -63,11 +63,11 @@ const NAV = [
       // 어떤 방식으로 만들지 — 실제로 두 방식을 돌려보고 정한 근거를 남겨둔 문서
       { href: '/video/proposal', label: '영상 스토리보드 제안', icon: '📄' },
       /*
-       * 영상 갤러리 — 사용자 요청으로 메뉴에서 잠시 숨김 (2026-09-09).
-       * 화면(/video/gallery)과 등록된 9편은 그대로 살아 있어서 주소로는 들어가진다.
-       * 다시 열 때는 아래 줄의 주석만 풀면 된다.
+       * 영상 제작물 — 완성 영상이 쌓이는 곳 (예전 "영상 갤러리").
+       * 2026-09-09 에 메뉴에서 숨겼다가 2026-09-15 사용자 요청으로 이름을 바꿔 다시 연다
+       * — 대화에서 힉스필드로 만든 영상을 여기 저장한다.
        */
-      // { href: '/video/gallery', label: '영상 갤러리', icon: '▶' },
+      { href: '/video/gallery', label: '영상 제작물', icon: '▶' },
     ],
   },
   {
@@ -140,12 +140,14 @@ function ToggleButton({ collapsed, onClick }: { collapsed: boolean; onClick: () 
 }
 
 function NavBody({
-  path, onNavigate, collapsed, onToggle,
+  path, onNavigate, collapsed, onToggle, badges = {},
 }: {
   path: string;
   onNavigate?: () => void;
   collapsed?: boolean;
   onToggle?: () => void;
+  /** 메뉴 주소 → 배지 글자 — 하루 안에 새 데이터가 들어온 메뉴 (/api/nav-badges) */
+  badges?: Record<string, string>;
 }) {
   const narrow = !!collapsed;
   const activeHref = activeHrefFor(path);
@@ -189,13 +191,15 @@ function NavBody({
               : <div className="label px-2.5 mb-1.5">{g.group}</div>}
             {g.items.map((it) => {
               const active = it.href === activeHref;
+              // 고정 배지(새 메뉴) 또는 서버가 알려준 "새 데이터" 배지
+              const badge = ('badge' in it && it.badge) || badges[it.href] || '';
               return (
                 <Link
                   key={it.href}
                   href={it.href}
                   onClick={onNavigate}
                   title={it.label}
-                  className={`flex items-center rounded-lg text-[13px] font-medium transition-colors ${
+                  className={`relative flex items-center rounded-lg text-[13px] font-medium transition-colors ${
                     narrow ? 'justify-center px-0 py-2.5' : 'gap-2.5 px-2.5 py-2'
                   }`}
                   style={{
@@ -205,11 +209,16 @@ function NavBody({
                 >
                   <span className={`text-center text-[11px] opacity-80 ${narrow ? 'text-[13px]' : 'w-4'}`}>{it.icon}</span>
                   {!narrow && it.label}
-                  {!narrow && 'badge' in it && it.badge && (
+                  {!narrow && badge && (
                     <span className="ml-auto text-[9.5px] font-bold leading-none px-1.5 py-[3px] rounded-full"
                           style={{ background: 'var(--accent)', color: '#fff' }}>
-                      {it.badge}
+                      {badge}
                     </span>
+                  )}
+                  {/* 접혔을 때는 아이콘 옆 작은 점으로만 */}
+                  {narrow && badge && (
+                    <span className="absolute w-[6px] h-[6px] rounded-full translate-x-[10px] -translate-y-[8px]"
+                          style={{ background: 'var(--accent)' }} aria-label="새 항목" />
                   )}
                 </Link>
               );
@@ -228,6 +237,21 @@ export default function Sidebar() {
   // 접은 상태를 기억한다 — 화면을 옮길 때마다 다시 접는 건 번거롭다
   const collapsed = useSyncExternalStore(subscribeNav, () => navCollapsed, () => false);
   const toggleCollapsed = () => setNavCollapsed(!navCollapsed);
+
+  /*
+   * 새 데이터 배지 — 모델 레퍼런스가 새로 등록되면 하루 동안 N (사용자 요청 2026-09-15).
+   * 레이아웃은 화면을 옮겨도 다시 그려지지 않아서, 주소가 바뀔 때마다 다시 묻는다
+   * (방금 등록하고 다른 화면으로 가면 바로 뜨고, 하루가 지나면 사라진다).
+   */
+  const [badges, setBadges] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/nav-badges', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((j) => { if (alive && j?.badges) setBadges(j.badges); })
+      .catch(() => { /* 배지는 부가 정보 — 실패해도 메뉴는 그대로 */ });
+    return () => { alive = false; };
+  }, [path]);
 
   // ESC 로 드로어 닫기. 라우트 변경 시 닫는 건 각 Link 의 onNavigate 가 담당한다
   // (effect 에서 setState 하면 렌더 중 상태 변경 경고가 난다)
@@ -249,7 +273,7 @@ export default function Sidebar() {
         }`}
         style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
       >
-        <NavBody path={path} collapsed={collapsed} onToggle={toggleCollapsed} />
+        <NavBody path={path} collapsed={collapsed} onToggle={toggleCollapsed} badges={badges} />
       </aside>
 
       {/* 모바일·태블릿 — 상단 바 */}
@@ -281,7 +305,7 @@ export default function Sidebar() {
             className="flex flex-col w-[248px] max-w-[82vw] border-r"
             style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
           >
-            <NavBody path={path} onNavigate={() => setOpen(false)} />
+            <NavBody path={path} onNavigate={() => setOpen(false)} badges={badges} />
           </div>
           <div className="flex-1" onClick={() => setOpen(false)} style={{ background: 'rgba(0,0,0,.6)' }} />
         </div>

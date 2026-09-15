@@ -151,6 +151,23 @@ interface GenResult {
   tokenUsage?: { promptTokens: number; imageTokens: number; thoughtTokens: number; totalTokens: number } | null;
   deltaE?: number | null; measuredHex?: string | null; elapsedMs?: number;
   error?: string; blockReason?: string | null;
+  /** 결과물 자동 검사 — 태그는 지웠고, 윗부분 말림은 표시만 (logo-guard.ts) */
+  qc?: { checked: boolean; logoErased: number; topFold: { suspected: boolean; note: string } | null; refsCleaned: number } | null;
+}
+
+/** 자동 검사 결과 한 줄 — 결과 목록과 완료 팝업이 같이 쓴다 */
+function QcChips({ qc }: { qc?: GenResult['qc'] }) {
+  if (!qc) return null;
+  return (
+    <>
+      {!qc.checked && <span title="로고·형태 자동 검사를 못 했습니다 (비전 호출 실패)">검사 안 됨</span>}
+      {qc.logoErased > 0 && <span style={{ color: 'var(--ok)' }}>로고 {qc.logoErased}개 지움</span>}
+      {qc.refsCleaned > 0 && <span title="참조 사진에 붙은 태그를 지운 사본을 보냈습니다">참조 태그 정리 {qc.refsCleaned}장</span>}
+      {qc.topFold?.suspected && (
+        <span style={{ color: 'var(--danger)' }} title={qc.topFold.note}>⚠ 빈백 윗부분 말림 의심 — 다시 생성 권장</span>
+      )}
+    </>
+  );
 }
 
 function Section({ n, title, hint, children, right, id }: {
@@ -1805,6 +1822,7 @@ ${hint}` : hint))}>
                         컬러 ΔE {r.deltaE}
                       </span>
                     )}
+                    <QcChips qc={r.qc} />
                   </div>
                 </div>
               ) : (
@@ -1998,6 +2016,7 @@ ${hint}` : hint))}>
                   <div className="text-[10.5px] mt-1 flex gap-2 flex-wrap" style={{ color: 'var(--text-mute)' }}>
                     <span>{r.width}×{r.height}</span>
                     {r.deltaE != null && <span>컬러 ΔE {r.deltaE}</span>}
+                    <QcChips qc={r.qc} />
                   </div>
                 </div>
               ))}

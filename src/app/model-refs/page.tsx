@@ -33,6 +33,7 @@ export default async function ModelRefsPage() {
     hairNote: (r.hairNote as string) ?? '',
     aiFront: (r.aiFront as string) ?? '',
     aiPanels: Array.isArray(r.aiPanels) ? (r.aiPanels as string[]) : [],
+    createdAt: r.createdAt ? new Date(r.createdAt as string).toISOString() : null,
   }));
 
   return (

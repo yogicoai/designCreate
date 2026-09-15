@@ -258,8 +258,12 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
       url: spec.baseCut.url,
       role: spec.baseCut.usage === 'pose'
         ? (spec.talents?.length
-          /* 인물 있음 — 몸이 가라앉는 방식까지가 포즈다 */
-          ? 'a POSE reference from our own approved catalogue — copy ONLY the body pose, limb placement, camera angle, framing and how the fabric compresses under the body. Do NOT copy its product colour, its model identity or its outfit; those are specified separately below'
+          /*
+           * 인물 있음 — 몸이 얼마나 가라앉는지까지가 포즈다. 제품 자체는 아무것도 가져오지 않는다.
+           * 실측(2026-09-15 Drop 네이비 W_B): "눌림을 복사하라" 고 했더니 9/11 컷의 빈백을 통째로 옮겨 그렸다 —
+           * 윗부분이 뒤로 말린 형태와 태그까지 그대로 따라왔다.
+           */
+          ? 'a POSE reference from our own approved catalogue — copy ONLY the body pose, limb placement, camera angle, framing and how deeply the body sinks in. Take NOTHING about the product itself from this image — not its shape, silhouette, top edge, folds, tags or colour — and not its model identity or outfit; all of those are specified separately below'
           /* 제품 단독 — 눌림을 복사하면 빈 제품이 눌린 채 나온다 (실측: 초코 드롭 주름 사고) */
           : 'a POSE reference from our own approved catalogue — copy ONLY the camera angle, framing and where the product sits in frame. Do NOT copy its product colour, and do NOT copy its compression or dents: the product in THIS image is unoccupied, so it stays fully inflated and taut regardless of how the reference looks')
         : 'the base photograph — reproduce its camera angle, pose, product shape and compression, lighting and framing exactly',
@@ -708,6 +712,27 @@ function productBlock(spec: GenerationSpec): string[] {
         : `  CAMERA ANGLE ON THIS PRODUCT: the ${ang}, exactly as in its placement reference image.`);
     }
     L.push('  LOGO: none — plain fabric with no brand tag, label, patch or lettering (mandatory).');
+    /*
+     * 윗부분 말림 금지 — 피라미드만 끝이 뾰족한 게 정상이다 (사용자 지시 2026-09-15: "저런 식으로 말리는 게 너무 많다").
+     * 사람이 기대면 빈백 윗부분이 뒤로 접히거나 말리거나 꺾인 꼭지로 그려진다.
+     * 부정문만으로는 안 먹혔다(drop-peak 기록: "NOT a teardrop with a pointed tip" 이 들어간 33장 중 다수에서 꼭지) —
+     * 먼저 "어떤 모양이어야 하는지"를 긍정문으로 그리고, 금지는 마지막 한 줄로만 둔다.
+     */
+    if (p.line !== 'Pyramid') {
+      /*
+       * 둥근 빈백(Drop·Pod)은 "위로 갈수록 좁아지는 물방울" 이 가장 흔한 불량이다
+       * (비전 검사 실측 2026-09-15: 최근 Drop 인물컷 4장 모두 물방울 꼭지) — 공 윗면처럼 넓게 끝난다고 따로 그린다.
+       */
+      const ball = p.line === 'Drop' || p.line === 'Pod';
+      L.push(
+        '  TOP FORM: the upper part of this bean bag stays FULL and ROUNDED — its top edge is one smooth, continuous convex arc held up by the filling, ' +
+          (ball
+            ? 'as broad and round as the top of a ball: the silhouette keeps nearly its full width all the way up and closes in a wide, rounded crown. '
+            : 'like the top of a well-stuffed pillow. ') +
+          'Where a person leans back, only the fabric directly under their back compresses; ' +
+          'the part above and behind their shoulders stays a plump, upright, rounded dome. It never narrows into a teardrop, folds over, flops backwards, curls, rolls or bends into a tip.',
+      );
+    }
     if (baseEdit) {
       // 편집 베이스 — 제품 상태는 베이스 사진이 정한다 (사람이 앉아 있을 수도 있다)
     } else if (noPeople) {
@@ -1126,8 +1151,8 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
 
   if (spec.baseCut?.usage === 'pose') {
     L.push(
-      'Use the pose reference ONLY for body pose, limb placement, camera angle, framing and fabric compression. ' +
-        'The product, its colour, the model identity and the outfit all come from the specifications below — ' +
+      'Use the pose reference ONLY for body pose, limb placement, camera angle, framing and how deeply the body sinks in. ' +
+        'The product (its shape, top edge, folds and surface), its colour, the model identity and the outfit all come from the specifications below — ' +
         'do not inherit them from that image.',
     );
     L.push('');

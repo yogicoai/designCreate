@@ -102,7 +102,7 @@ export default function VideoGallery({ initial }: { initial: VideoRow[] }) {
             서버에 이미 올라간 영상의 주소를 넣습니다. cafe24 는 .mp4 업로드를 막기 때문에
             영상은 <b>.jpg 로 위장해</b> 올라가 있고, 재생은 이 앱의 프록시가 처리합니다 —
             그래서 주소가 <span className="font-mono">…/web/design/video/이름.jpg</span> 처럼 보이는 게 정상입니다.
-            <br />내 PC 의 영상 파일을 올리려면 대화에서 &ldquo;이 영상 갤러리에 올려줘&rdquo; 라고 하시면 됩니다
+            <br />내 PC 의 영상 파일을 올리려면 대화에서 &ldquo;영상 제작물에 올려줘&rdquo; 라고 하시면 됩니다
             (수십 MB 라 브라우저 업로드 한도를 넘습니다).
           </div>
           <div className="grid gap-2" style={{ gridTemplateColumns: 'minmax(180px,1fr) minmax(180px,1fr)' }}>
