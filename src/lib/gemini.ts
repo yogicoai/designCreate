@@ -1,5 +1,6 @@
 import 'server-only';
 import sharp from 'sharp';
+import { withNoLogo } from './no-logo';
 
 /**
  * 나노바나나(Gemini Image) 클라이언트.
@@ -173,7 +174,8 @@ export async function generateImage(input: GenerateInput): Promise<GenerateResul
 
   const parts: unknown[] = [
     ...input.references.map((r) => ({ inlineData: { mimeType: r.mimeType, data: r.data } })),
-    { text: input.prompt },
+    // 로고 없음은 필수 — 이미지 생성·배너 AI·스토리보드 어느 경로든 여기서 빠질 수 없게 붙인다 (no-logo.ts)
+    { text: withNoLogo(input.prompt) },
   ];
   const body = JSON.stringify({
     contents: [{ parts }],

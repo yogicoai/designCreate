@@ -2,6 +2,7 @@ import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import { loadReference, colorSwatch } from './gemini';
 import { PANEL_ANGLE_EN } from './ai-products';
+import { NO_LOGO_RULE, withNoLogo } from './no-logo';
 
 /**
  * 생성 프롬프트 작성기.
@@ -425,7 +426,7 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
           // 대표(마스터) 컷 — 형태·볼륨·태그까지 확정본. 다른 참조와 싸우면 이게 이긴다
           if (v.canonical) {
             return `the APPROVED MASTER photograph of ${who} — the definitive look of this product. Reproduce its ` +
-              'exact shape, proportions, plumpness and its small white brand tag. Repaint it to the colour specified ' +
+              'exact shape, proportions and plumpness — but NOT its brand tag: the product is plain fabric with no tag or logo. Repaint it to the colour specified ' +
               'in the text and re-light it for this scene; if ANY other reference disagrees with this photograph, THIS ONE WINS';
           }
           return v.colorMatched
@@ -500,19 +501,6 @@ const ANGLE_EN: Record<string, string> = {
   a270: '270-degree side view',
   a315: '315-degree three-quarter view',
 };
-
-/**
- * AI 생성 제품 칸이 참조로 들어가는 생성인가 (편집 베이스면 칸이 안 붙는다).
- * 이 경로는 로고·태그 없는 제품이 규칙이다 — AI 생성 제품 시트를 일부러 로고 없이 만들었고(태그를 넣으면
- * 모든 칸에서 과장됐다), 사용자 법칙이 "로고는 지워져서 나온다" 이다 (2026-09-14 라운저 컷에 태그가 붙어 확인).
- */
-function usesSheetProducts(spec: GenerationSpec): boolean {
-  return !hasEditBase(spec) && (spec.products ?? []).some((p) => (p.views ?? []).some((v) => v.source === 'sheet'));
-}
-
-const NO_LOGO_RULE =
-  'NO LOGO: every Yogibo product in this image is PLAIN fabric with NO brand tag, NO label, NO sewn patch, NO logo and NO lettering anywhere on it — ' +
-  'exactly as its reference image shows. Do not add a tag even if other photographs of this product usually have one.';
 
 /** 보는 방향이 아니라 제품 자세가 바뀐 칸 */
 const POSTURE_KEYS = new Set(['upright']);
@@ -719,7 +707,7 @@ function productBlock(spec: GenerationSpec): string[] {
         ? `  POSTURE: ${ang}, exactly as in its placement reference image.`
         : `  CAMERA ANGLE ON THIS PRODUCT: the ${ang}, exactly as in its placement reference image.`);
     }
-    if (placeRef) L.push('  LOGO: none — plain fabric with no brand tag, label, patch or lettering.');
+    L.push('  LOGO: none — plain fabric with no brand tag, label, patch or lettering (mandatory).');
     if (baseEdit) {
       // 편집 베이스 — 제품 상태는 베이스 사진이 정한다 (사람이 앉아 있을 수도 있다)
     } else if (noPeople) {
@@ -792,7 +780,7 @@ function productBlock(spec: GenerationSpec): string[] {
   if (inScene) {
     L.push(
       'PRODUCT RELIGHT — the product view photographs are flat STUDIO shots on a plain background: take ONLY ' +
-        (usesSheetProducts(spec) ? 'each product\'s shape, proportions, colour identity and fabric from them. NEVER copy their studio ' : 'each product\'s shape, proportions, colour identity, fabric and tag from them. NEVER copy their studio ') +
+        'each product\'s shape, proportions, colour identity and fabric from them (never a tag or logo). NEVER copy their studio ' +
         'lighting, white balance, saturation or clean studio sharpness into this scene. Re-light every product ' +
         'entirely with THIS scene\'s light — same direction, warmth, softness and shadows as the room around it, ' +
         'with natural colour bounce from nearby surfaces — and mute its colours into the scene\'s palette. ' +
@@ -1251,26 +1239,11 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
       'reconstruct the image beneath it, matching the surrounding texture, colour and lighting. This overrides ' +
       '"stay faithful to the base": the output must carry no inherited overlay text of any kind.',
   );
-  if (usesSheetProducts(spec)) {
-    L.push(NO_LOGO_RULE);
-    return L.join('\n');
-  }
-  L.push(
-    'BRAND TAGS: if the base image shows a sewn-in fabric tag or brand patch on the product, keep the tag itself — ' +
-      'same shape, size, position, fabric and fold. EXACTLY ONE tag per product — if different references show the ' +
-      'tag in different spots, pick the single most natural position and render only that one; never two tags on one ' +
-      'product. Reproduce its wordmark ONLY if it can be rendered cleanly and ' +
-      'legibly at the size it occupies in this frame. If the tag is too small for the letterforms to hold their shape, ' +
-      'render the tag BLANK instead, with no lettering at all. Never output distorted, misspelled, mirrored or ' +
-      'invented lettering: a garbled logo is worse than a clean blank tag. ' +
-      /*
-       * 태그 실측 크기 고정 — 제품이 프레임에서 작아져도 태그가 같이 안 줄고
-       * 커 보이는 사고 (사용자 확인, 초코 드롭 씬). 실물 비례를 숫자로 박는다.
-       */
-      'THE TAG IS TINY IN REAL LIFE: about 5x3cm — roughly 1/15 of the product\'s width. It must scale WITH the ' +
-      'product: when the product is small in frame the tag is proportionally smaller still. An oversized tag that ' +
-      'reads like a label or poster on the fabric is WRONG.',
-  );
+  /*
+   * 예전 BRAND TAGS 규칙("태그는 하나만·작게·글자가 무너지면 비워라")은 없앴다 — 계속 이상하게 나왔다.
+   * 로고·태그는 모든 생성에서 뺀다 (no-logo.ts).
+   */
+  L.push(NO_LOGO_RULE);
 
   return L.join('\n');
 }
@@ -1405,10 +1378,7 @@ export async function writePrompt(spec: GenerationSpec, opts: WriteOptions = {})
       '- Every product keeps its factory shape and true dimensions. The official product views show its resting ' +
         'orientation — in the scene, position it as the pose requires WITHOUT reshaping it: never bend, curl, ' +
         'stretch, inflate or merge the shell to fit a pose or composition.',
-      usesSheetProducts(spec)
-        ? `- ${NO_LOGO_RULE}`
-        : '- EXACTLY ONE small sewn Yogibo fabric tag per product — never two. Render it clean and legible, or blank; ' +
-          'never garbled lettering.',
+      `- ${NO_LOGO_RULE}`,
       '- Any watermark, copyright line, credit or username printed ON a reference photo is NOT part of the scene — ' +
         'remove it and reconstruct the surface beneath. The output carries no inherited overlay text.',
     ];
@@ -1484,7 +1454,8 @@ export async function writePrompt(spec: GenerationSpec, opts: WriteOptions = {})
 
     if (!text) throw new Error('Opus 응답이 비어 있습니다.');
     return {
-      prompt: text,
+      // Opus 가 로고 규칙을 빠뜨려도 필수 문장은 붙는다
+      prompt: withNoLogo(text),
       refs,
       mode: 'opus',
       usage: { input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens },
