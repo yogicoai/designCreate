@@ -305,6 +305,13 @@ export default function CreateStudio(p: Props) {
   useEffect(() => { loadBalance(); }, [loadBalance]);
 
   const product = p.products.find((x) => x.line === line);
+  /*
+   * 제품 선택 목록 = 형태 서술(geometry)이 있는 기본 빈백 10종만 (사용자 지시 2026-09-15).
+   * 유튜브 제품 데이터에서 끌어온 럭스 맥스·허기보·냅·키보드쿠션 등은 형태 서술이 없어
+   * 프롬프트가 "참조를 따르라" 뿐이라 생성용으로 쓰지 않는다 — 목록 아래쪽에 섞여 헷갈렸다.
+   * 메이트 인형·필로우(소품)는 「함께 놓을 제품」의 소품 목록에 그대로 남는다.
+   */
+  const beanBags = useMemo(() => p.products.filter((x) => !x.accessory && !!x.geometry), [p.products]);
 
   /**
    * 컬러 칩 = **모든 제품이 맥스 컬러 목록 그대로** (사용자 지시 2026-09-15: "제품마다 컬러칩이 다르면 안 된다").
@@ -977,7 +984,7 @@ export default function CreateStudio(p: Props) {
                       <select className="input py-1 text-[12px]" value={refProduct}
                               onChange={(e) => setRefProduct(e.target.value)}>
                         <option value="">— 모르면 비워두세요 —</option>
-                        {p.products.filter((x) => !x.accessory).map((x) => (
+                        {beanBags.map((x) => (
                           <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>
                         ))}
                       </select>
@@ -1091,7 +1098,7 @@ export default function CreateStudio(p: Props) {
                     }}>
               <option value="">— 제품 없음 {withPeople ? '(인물·분위기만)' : ''} —</option>
               {/* 메인 제품은 빈백류만 — 메이트 인형·소품은 '함께 놓을 제품'에서 고른다 */}
-              {p.products.filter((x) => !x.accessory).map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>)}
+              {beanBags.map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>)}
             </select>
             {withPeople && (
               <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
@@ -1275,7 +1282,7 @@ ${c.spec}`}
                                   c.map((x, j) => (j === i ? { ...x, line: e.target.value, colorKey: '', sheet: e.target.value ? defaultSheetPick(e.target.value) : null } : x)))}>
                           <option value="">— 제품 선택 —</option>
                           <optgroup label="빈백">
-                            {p.products.filter((x) => !x.accessory).map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line}</option>)}
+                            {beanBags.map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line}</option>)}
                           </optgroup>
                           {/* 메이트 인형·필로우·소품 — youtube 제품 데이터에서 끌어온 것들 */}
                           <optgroup label="메이트 · 소품">
