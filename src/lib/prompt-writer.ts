@@ -836,6 +836,78 @@ function wherePhrase(placement: string): string {
 }
 
 /**
+ * 사람 ↔ 제품 크기 짝짓기 (사용자 지시 2026-09-16).
+ *
+ * 문제: 아동B(120cm)로 라운저를 뽑든 어른(175cm)으로 뽑든 화면 속 라운저가 같은 크기로 보인다.
+ * 원인: 프롬프트가 제품 치수(EXACT SIZE)와 사람 키(BODY)를 각각 따로만 말한다. 둘을 이어주는 문장이 없으면
+ * 모델은 "빈백은 사람이 앉기 좋은 크기" 라는 평균값으로 그려버린다 — 사람이 작아져도 제품이 같이 작아진다.
+ * 대책: 사람 한 명 × 제품 한 종마다 두 숫자를 한 문장에 다시 넣고(제품 치수 + 그 사람 키),
+ * 배율과 몸의 어디까지 오는지를 적는다. 그리고 "제품 크기는 고정, 달라지는 건 사람" 을 못박는다.
+ */
+function scalePairingLines(products: ProductSpec[], talents: TalentSpec[]): string[] {
+  const sized = products.filter((p) => Math.max(p.dims?.w ?? 0, p.dims?.d ?? 0, p.dims?.h ?? 0) > 0);
+  const people = talents
+    .map((t, i) => ({
+      i,
+      cm: Number((t.sizeEn.match(/(\d{2,3})\s?cm/) || [])[1] || 0),
+      // composeSize 가 아동·틴에는 'child proportions' / 'pre-teen proportions' 를 붙인다 (키 숫자보다 확실한 판단 근거)
+      child: /child|pre-?teen/i.test(t.sizeEn),
+    }))
+    .filter((x) => x.cm > 0);
+  if (!sized.length || !people.length) return [];
+
+  // 세워 놨을 때의 높이가 사람 몸의 어디에 오는가 — 배율만 주면 모델이 잘 못 읽는다
+  const landmark = (ratio: number) =>
+    ratio < 0.20 ? 'mid-shin'
+      : ratio < 0.26 ? 'just below the knee'
+        : ratio < 0.31 ? 'knee'
+          : ratio < 0.36 ? 'just above the knee'
+            : ratio < 0.41 ? 'mid-thigh'
+              : ratio < 0.47 ? 'upper thigh'
+                : ratio < 0.53 ? 'hip'
+                  : ratio < 0.60 ? 'waist'
+                    : ratio < 0.68 ? 'lower ribs'
+                      : ratio < 0.78 ? 'chest'
+                        : ratio < 0.88 ? 'shoulder'
+                          : ratio < 0.97 ? 'chin'
+                            : ratio < 1.06 ? 'the top of their head'
+                              : 'well above their head';
+
+  const L: string[] = [
+    'SIZE PAIRING — the product sizes and the body sizes below are real measurements. Read them together: ' +
+      'a Yogibo never changes its real size between images; only the person does. The SAME product must therefore ' +
+      'look markedly LARGER against a small child than against a tall adult — it spans more of their body and rises ' +
+      'higher up them. Never scale a product up or down to "fit" the person.',
+  ];
+  for (const p of sized) {
+    const d = p.dims ?? {};
+    const longest = Math.max(d.w ?? 0, d.d ?? 0, d.h ?? 0);
+    const upright = d.h ?? longest;
+    const dims = [d.w && `${d.w}cm wide`, d.d && `${d.d}cm deep`, d.h && `${d.h}cm tall`].filter(Boolean).join(' x ');
+    for (const person of people) {
+      const who = talents.length > 1 ? `PERSON ${person.i + 1}` : 'the model';
+      const rHeight = upright / person.cm;
+      const rLong = longest / person.cm;
+      /*
+       * 아동은 어른 컷의 크기를 그대로 베끼는 사고가 가장 잦다 (사용자 실측: 아동B 라운저가 어른 컷과 같은 크기).
+       * 아동일 때는 배율만으로 부족해서 "어른 옆에서보다 눈에 띄게 커야 한다" 를 한 줄 더 못박는다.
+       */
+      const child = person.child || person.cm < 150;
+      L.push(
+        `  Yogibo ${p.line} (${dims}) vs ${who} (${person.cm}cm tall): standing beside them the product reaches about ` +
+          `${landmark(rHeight)} — its ${upright}cm height is ${rHeight.toFixed(2)}x their ${person.cm}cm height, and its ` +
+          `longest side (${longest}cm) is ${rLong.toFixed(2)}x their height. Seated or leaning on it, keep exactly this ratio.` +
+          (child
+            ? ` ${who} is a child, so this product must read visibly BIGGER against their body than it would against a 175cm adult:`
+              + ` it swallows more of them, its top sits higher on them, and their limbs look short against it.`
+            : ''),
+      );
+    }
+  }
+  return L;
+}
+
+/**
  * 인물-가구 스케일 블록.
  *
  * 빈백 대비 사람 크기가 흔들리는 걸 막는다. 모델별 실측 키를 한데 모아
@@ -905,6 +977,8 @@ function scaleBlock(spec: GenerationSpec): string[] {
       );
       if (heights.length) L.push(`  Real heights: ${heights.join(', ')}. Keep these height proportions between the people.`);
     }
+    // 사람 ↔ 제품 두 숫자를 한 문장에 다시 — 아동/어른이 같은 크기 제품으로 나오는 문제 대책
+    L.push(...scalePairingLines(spec.products ?? [], talents));
   }
 
   const sp = spec.scaleProduct;
@@ -1416,6 +1490,8 @@ export async function writePrompt(spec: GenerationSpec, opts: WriteOptions = {})
     ];
     const anchors = (spec.products ?? []).map((p) => p.scalePrompt).filter(Boolean);
     if (anchors.length) guard.push(`- TRUE SCALE: ${anchors.join(' / ')}`);
+    // 사람 ↔ 제품 치수 짝짓기 — 매뉴얼 프롬프트에도 숫자로 한 번 더 (아동/어른 크기 차이)
+    guard.push(...scalePairingLines(spec.products ?? [], spec.talents ?? []).map((x) => `- ${x.trim()}`));
     const negatives = (spec.products ?? []).map((p) => p.negative).filter(Boolean);
     if (negatives.length) guard.push(`- NEVER: ${negatives.join(' / ')}`);
     if ((spec.talents ?? []).some((t) => !t.freeform)) {
