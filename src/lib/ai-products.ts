@@ -28,6 +28,20 @@ export interface SheetPanel {
   key: string;
   label: string;
   url: string;
+  /**
+   * 사람이 "이 칸은 쓰지 말자" 로 꺼둔 칸. 생성에 안 들어간다.
+   *
+   * 왜 필요한가 (사용자 지시 2026-09-16): 한 시트 안에서도 칸마다 품질이 다르다.
+   * 맥스+서포트 시트의 측면·크기비교 칸은 서포트를 U 가 아니라 통짜 볼스터로 그려 놓았고,
+   * 그 칸들이 참조로 들어가는 바람에 프롬프트에 "U 자 팔 두 개" 라고 아무리 써도 소용이 없었다.
+   * 시트 전체를 버리기엔 멀쩡한 칸이 아깝다 — 그래서 칸 단위로 끈다.
+   */
+  off?: boolean;
+}
+
+/** 생성에 실제로 쓰는 칸만 (사람이 끈 칸 제외) */
+export function livePanels(sheet: Pick<AiProductSheet, 'panels'>): SheetPanel[] {
+  return sheet.panels.filter((p) => !p.off);
 }
 
 export interface AiProductSheet {
@@ -43,6 +57,14 @@ export interface AiProductSheet {
   sheet: string;
   panels: SheetPanel[];
   status: SheetStatus;
+  /**
+   * 조합 시트 — 두 제품을 함께 찍은 시트 (예: ['Max','Support']).
+   * 생성 화면의 제품 목록에 「맥스 + 서포트」 처럼 한 줄로 뜨고, 고르면 두 제품이 같이 들어간다.
+   * 조합은 상대 크기·접촉·방향 셋을 동시에 맞춰야 해서 숫자만으로는 안 잡힌다 (2026-09-16 실측).
+   */
+  comboLines?: string[];
+  /** 그 조합의 공식 실사 — 연출컷 생성에 크기·자세 기준으로 같이 넣는다 */
+  realRef?: string;
   /** 사양과 대조한 결과 — 사람이 승인 판단할 때 본다 */
   check: string;
   note: string;
@@ -65,9 +87,13 @@ export function toSheet(r: Record<string, unknown>): AiProductSheet {
     title: String(r.title ?? ''),
     sheet: String(r.sheet ?? ''),
     panels: Array.isArray(r.panels)
-      ? (r.panels as SheetPanel[]).filter((p) => p && p.url).map((p) => ({ key: String(p.key ?? ''), label: String(p.label ?? ''), url: String(p.url) }))
+      ? (r.panels as SheetPanel[]).filter((p) => p && p.url).map((p) => ({
+        key: String(p.key ?? ''), label: String(p.label ?? ''), url: String(p.url), ...(p.off ? { off: true } : {}),
+      }))
       : [],
     status,
+    ...(Array.isArray(r.comboLines) && r.comboLines.length ? { comboLines: (r.comboLines as string[]).map(String) } : {}),
+    ...(r.realRef ? { realRef: String(r.realRef) } : {}),
     check: String(r.check ?? ''),
     note: String(r.note ?? ''),
     model: String(src.model ?? ''),
@@ -143,7 +169,7 @@ export function supportPanels(sheet: Pick<AiProductSheet, 'panels'>, primaryKey:
   const primaryAngle = PANEL_ANGLE_EN[primaryKey] ?? primaryKey;
   const seen = new Set([primaryAngle]);
   const out: SheetPanel[] = [];
-  for (const p of [...sheet.panels].sort((a, b) => rank(a.key) - rank(b.key))) {
+  for (const p of [...livePanels(sheet)].sort((a, b) => rank(a.key) - rank(b.key))) {
     if (p.key === primaryKey || NOT_SUPPORT.has(p.key)) continue;
     const ang = PANEL_ANGLE_EN[p.key] ?? p.key;
     if (seen.has(ang)) continue;
@@ -156,6 +182,70 @@ export function supportPanels(sheet: Pick<AiProductSheet, 'panels'>, primaryKey:
 
 /** 생성 화면이 처음 골라두는 배치 각도 — 45° 가 있으면 그것, 없으면 첫 칸 */
 export function defaultPanelKey(sheet: Pick<AiProductSheet, 'panels'>): string {
-  for (const k of ['d45', 'fl34', 'front', 'side']) if (sheet.panels.some((p) => p.key === k)) return k;
-  return sheet.panels[0]?.key ?? '';
+  const live = livePanels(sheet);
+  for (const k of ['d45', 'fl34', 'front', 'side']) if (live.some((p) => p.key === k)) return k;
+  return live[0]?.key ?? '';
+}
+
+/*
+ * ── 제품 조합 ────────────────────────────────────────────────
+ * 맥스에 서포트를 얹는 식의 "두 제품을 겹쳐 쓰는" 연출은 제품을 따로 지시하면 반드시 틀어진다.
+ * 실측(2026-09-16): 서포트를 "맥스 폭의 1.1배" 로 쓰면 2.5배로 커지고, 크기만 맞춰도 팔이 허공에 뜬다.
+ * 그래서 ①두 제품이 함께 찍힌 조합 시트 칸 ②공식 실사 ③아래 숫자 세 겹으로 못박는다.
+ */
+
+/** 조합 시트인지 — 두 제품 이상이 한 칸에 같이 있다 */
+export function isComboSheet(s: Pick<AiProductSheet, 'comboLines'>): boolean {
+  return (s.comboLines?.length ?? 0) >= 2;
+}
+
+/** 조합 키 — 'Max+Support' */
+export function comboKey(lines: string[]): string {
+  return lines.join('+');
+}
+
+/**
+ * 제품 라인 한글 이름 — 화면에 보이는 곳은 전부 이걸 쓴다.
+ * 사용자 지시 2026-09-16: "Max 이렇게 된것들 다 한글로 변경해서 넣어줄래 다 한국사람이 사용하는건데".
+ * DB 의 line 은 영문 그대로 둔다 — 시트·포즈·컷이 전부 이 키로 묶여 있어 바꾸면 연결이 끊긴다.
+ */
+export const LINE_KR: Record<string, string> = {
+  Max: '맥스', Slim: '슬림', Midi: '미디', Mini: '미니', Double: '더블',
+  Drop: '드롭', Pod: '팟', Lounger: '라운저', Pyramid: '피라미드', Support: '서포트',
+  Etc: '기타',
+};
+/** 라인의 표시 이름 — 표에 없으면(이미 한글인 소품들) 그대로 */
+export function lineKr(line: string): string {
+  return LINE_KR[line] ?? line;
+}
+
+/** 화면에 뜨는 조합 이름 */
+export function comboLabelKr(lines: string[]): string {
+  return lines.map(lineKr).join(' + ');
+}
+
+/**
+ * 조합 배치 지시 (영문) — 프롬프트에 그대로 들어간다.
+ * 숫자는 공식 실사와 로컬 실측 합성에서 잰 값이다. 바꾸려면 근거 컷을 먼저 만들 것.
+ */
+export const COMBO_STAGING: Record<string, string[]> = {
+  'Max+Support': [
+    'The Yogibo Max lies FLAT on the floor along its 170cm length, like a low floor mattress — never stood upright, never folded.',
+    'The Yogibo Support sits ON TOP of the Max at its far (back) edge and becomes the backrest. Its underside presses into the Max and visibly dents it; it is never on the floor beside, behind or in front of the Max, and never merges into it — it reads as a separate cushion resting on the Max.',
+    'The U-shaped opening of the Support faces the camera and the sitter. Its two thick arms curve FORWARD past the sitter on either side, so the round cut end of each arm points toward the camera, hanging over the front of the Max. The arms never float in the air — their undersides rest on the Max or on the sitter.',
+    'SIZE — measured from the official photograph, not guessed: seen square-on from the front, the Support spans about 0.45x the visible width of the flat Max (the Max shows its 170cm length across frame; the Support is only 76cm wide). In an angled three-quarter view it reads larger, about 0.7x. Front-to-back the Support is about 1.34x the Max\'s 70cm width, so its arm tips overhang the front edge. The Support adds roughly 30cm of height above the Max\'s top surface.',
+    'The Support is a thick, densely filled cushion — each arm is a plump tube whose diameter is about 0.4x the Support\'s overall width, and the gap between the arms is only about 0.21x that width. It must never look thin, flat, deflated or like a folded towel.',
+  ],
+  'Pod+Support': [
+    'The Yogibo Pod stands on the floor in its normal upright seat shape — it is the base and the seat.',
+    'The Yogibo Support sits ON TOP of the Pod, straddling its upper edge as the backrest and armrests, its underside pressing into and denting the Pod. It is never on the floor beside the Pod.',
+    'The U-shaped opening faces the camera and the sitter; the two arms curve forward on either side of the sitter so the round cut end of each arm points toward the camera.',
+    'SIZE — measured from the official photograph: the Support spans about 0.89x the visible width of the Pod, and the Pod plus Support together stand roughly 115-125cm tall.',
+    'The Support is thick and densely filled — each arm is a plump tube about 0.4x the Support\'s overall width across, with only a narrow gap between the arms. It must never look thin, flat or deflated.',
+  ],
+};
+
+/** 이 조합의 배치 지시 — 없으면 빈 배열 (생성은 막지 않는다) */
+export function comboStaging(lines: string[]): string[] {
+  return COMBO_STAGING[comboKey(lines)] ?? [];
 }

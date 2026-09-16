@@ -189,6 +189,13 @@ export interface GenerationSpec {
    */
   scaleProduct?: { line: string; dims: { w?: number; d?: number; h?: number }; scalePrompt: string };
 
+  /**
+   * 제품 조합 — 맥스에 서포트를 얹는 식으로 두 제품을 겹쳐 쓰는 연출.
+   * 실측(2026-09-16): 제품을 따로 지시하면 상대 크기·접촉·방향이 반드시 틀어진다.
+   * 조합 시트 칸(제품 참조로 이미 들어간다) + 공식 실사 + 아래 staging 세 겹으로 못박는다.
+   */
+  combo?: { lines: string[]; realRef?: string; staging: string[] };
+
   /** 제품 형태 레퍼 (모델 제거본) */
   shapeRef?: { url: string; name: string };
   /** 포즈·각도 레퍼 (모델 포함본) */
@@ -441,6 +448,24 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
     }
   }
 
+  /*
+   * 조합 공식 실사 — 두 제품이 실제로 겹쳐 놓인 판매사 사진.
+   * 조합 시트 칸이 "어떻게 맞물리는지" 를 주고, 이 사진이 "사람이 들어갔을 때 얼마나 큰지" 를 준다.
+   * 둘 중 하나만 넣으면 크기가 틀어진다 (실측 2026-09-16).
+   */
+  if (spec.combo?.realRef && slots.length < MAX_REFS) {
+    const names = spec.combo.lines.map((l) => `Yogibo ${l}`).join(' + ');
+    slots.push({
+      kind: 'product',
+      title: `조합 실사 · ${spec.combo.lines.join('+')}`,
+      url: spec.combo.realRef,
+      role:
+        `the OFFICIAL photograph of the ${names} combination in real use, and the layout this shot copies. ` +
+        'It is the ground truth for how the two products are laid out relative to each other, for their relative size, ' +
+        'and for how large they are against a real person. Copy THAT layout and THAT scale relationship. ' +
+        'Take nothing else from it — not its room, its furniture, its lighting, its colours or its model',
+    });
+  }
 
   /*
    * 의상 크롭 (얼굴 제거본) — 자리가 남을 때만. 원본(imageUrl)은 절대 넣지 않는다:
@@ -685,6 +710,17 @@ function productBlock(spec: GenerationSpec): string[] {
         'Each is a separate product with its own shape and colour; do not merge them, ' +
         'do not give them the same shape, and do not swap their colours:',
     );
+  }
+
+  /*
+   * 조합 배치 — 제품 블록의 맨 앞이다. 뒤로 밀면 모델이 덜 읽는다 (긴 프롬프트는 후반부 가중치가 떨어진다).
+   * 이 컷이 실패하는 방식은 언제나 같다: 두 제품이 한 덩어리 쐐기로 뭉치고 높이 차가 사라진다.
+   */
+  if (spec.combo?.staging?.length) {
+    L.push('');
+    L.push(`HOW THE ${spec.combo.lines.map((l) => `Yogibo ${l}`).join(' AND THE ')} SIT TOGETHER — this is the point of the shot:`);
+    for (const line of spec.combo.staging) L.push(`  ${line}`);
+    L.push('');
   }
 
   L.push(...relativeSizeLines(products));

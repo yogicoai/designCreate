@@ -247,7 +247,8 @@ export async function getOverview() {
       .toArray(),
   ]);
 
-  const colorSlots = products.reduce((n, p) => n + p.colors.length, 0);
+  // colors 가 없는 제품이 있다 (소품·신규 등록분) — 없으면 0칸으로 센다
+  const colorSlots = products.reduce((n, p) => n + (p.colors?.length ?? 0), 0);
   const slotsWithCuts = await cutsCol
     .aggregate<{ _id: { line: string; colorKey: string } }>([
       { $match: { hidden: { $ne: true } } },

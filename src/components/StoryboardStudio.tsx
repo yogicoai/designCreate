@@ -479,7 +479,7 @@ export default function StoryboardStudio({ cuts, refs, products, talents }: Prop
               {product && (
                 <select className="input flex-1" value={colorKey} onChange={(e) => setColorKey(e.target.value)}>
                   <option value="">컬러 자동</option>
-                  {product.colors.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
+                  {(product.colors ?? []).map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
                 </select>
               )}
             </div>

@@ -23,7 +23,9 @@ export default async function ProductsPage() {
 
       <div className="flex flex-col gap-4">
         {products.map((p) => {
-          const covered = p.colors.filter((c) => cutCount.get(`${p.line}|${c.key}`)).length;
+          // 소품·신규 등록분은 colors 가 없을 수 있다
+          const colors = p.colors ?? [];
+          const covered = colors.filter((c) => cutCount.get(`${p.line}|${c.key}`)).length;
           return (
             <section key={p.id} className="card p-5">
               {/* 헤더 */}
@@ -45,8 +47,8 @@ export default async function ProductsPage() {
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-[12px] font-semibold tabular-nums">
-                    <span style={{ color: covered === p.colors.length ? 'var(--ok)' : 'var(--accent)' }}>{covered}</span>
-                    <span style={{ color: 'var(--text-mute)' }}> / {p.colors.length} 컬러</span>
+                    <span style={{ color: covered === colors.length ? 'var(--ok)' : 'var(--accent)' }}>{covered}</span>
+                    <span style={{ color: 'var(--text-mute)' }}> / {colors.length} 컬러</span>
                   </div>
                   <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-mute)' }}>{p.sizeText}</div>
                 </div>
@@ -81,7 +83,7 @@ export default async function ProductsPage() {
               {/* 컬러 슬롯 */}
               <div className="label mb-2">컬러 슬롯</div>
               <div className="flex flex-wrap gap-2">
-                {p.colors.map((c) => {
+                {colors.map((c) => {
                   const n = cutCount.get(`${p.line}|${c.key}`) ?? 0;
                   return (
                     <Link

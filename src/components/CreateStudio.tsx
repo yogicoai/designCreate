@@ -6,7 +6,7 @@ import type { SizePresetDoc, PreservationDoc, ReferenceDoc } from '@/lib/queries
 import { shrinkForUpload, formatBytes } from '@/lib/client-image';
 import Zoomable from '@/components/Zoomable';
 import { thumbUrl } from '@/lib/thumb';
-import { defaultPanelKey, supportPanels, type AiProductSheet } from '@/lib/ai-products';
+import { defaultPanelKey, supportPanels, livePanels, isComboSheet, comboLabelKr, lineKr, type AiProductSheet } from '@/lib/ai-products';
 
 type WithId<T> = T & { id: string };
 
@@ -152,7 +152,11 @@ interface GenResult {
   deltaE?: number | null; measuredHex?: string | null; elapsedMs?: number;
   error?: string; blockReason?: string | null;
   /** 결과물 자동 검사 — 태그는 지웠고, 윗부분 말림은 표시만 (logo-guard.ts) */
-  qc?: { checked: boolean; logoErased: number; topFold: { suspected: boolean; note: string } | null; refsCleaned: number } | null;
+  qc?: {
+    checked: boolean; logoErased: number; topFold: { suspected: boolean; note: string } | null; refsCleaned: number;
+    /** 전속 모델 얼굴이 등록된 얼굴과 같은 사람인지 — 고치지는 않고 알리기만 한다 */
+    face?: { checked: boolean; verdicts: { code: string; score: number; verdict: string; note: string; headFrac: number }[] };
+  } | null;
 }
 
 /** 자동 검사 결과 한 줄 — 결과 목록과 완료 팝업이 같이 쓴다 */
@@ -166,6 +170,26 @@ function QcChips({ qc }: { qc?: GenResult['qc'] }) {
       {qc.topFold?.suspected && (
         <span style={{ color: 'var(--danger)' }} title={qc.topFold.note}>⚠ 빈백 윗부분 말림 의심 — 다시 생성 권장</span>
       )}
+      {/*
+        얼굴 대조 — 와이드 컷에서 전속 모델 얼굴이 딴사람으로 흐르는 일이 잦다 (실측 2026-09-16).
+        'noFace'(뒷모습·측면)와 'ok' 는 표시하지 않는다 — 정상인 컷에 칩이 뜨면 경고를 안 믿게 된다.
+      */}
+      {qc.face?.verdicts?.map((v) => (
+        v.verdict === 'drift' ? (
+          <span key={v.code} style={{ color: 'var(--danger)' }} title={v.note}>
+            ⚠ 얼굴 어긋남 · {v.code} ({v.score}점) — 다시 생성 권장
+          </span>
+        ) : v.verdict === 'weak' ? (
+          <span key={v.code} style={{ color: 'var(--warn)' }} title={v.note}>
+            얼굴 애매 · {v.code} ({v.score}점)
+          </span>
+        ) : v.verdict === 'tooSmall' ? (
+          <span key={v.code} style={{ color: 'var(--text-mute)' }}
+                title="인물이 화면에서 너무 작아 동일인 판정을 할 수 없습니다. 와이드 컷은 얼굴이 흐르기 쉬우니 얼굴이 크게 나오는 컷에서 전속 모델을 쓰세요.">
+            얼굴 판정 불가 · {v.code} (머리 {Math.round(v.headFrac * 100)}%)
+          </span>
+        ) : null
+      ))}
     </>
   );
 }
@@ -232,6 +256,13 @@ export default function CreateStudio(p: Props) {
   const [picks, setPicks] = useState<TalentPick[]>([]);
   const [mainPlacement, setMainPlacement] = useState('');
   const [extraProducts, setExtraProducts] = useState<ExtraProduct[]>([]);
+  /*
+   * 제품 조합 — 「맥스 + 서포트」처럼 두 제품을 겹쳐 쓰는 연출. 조합 시트의 id 를 들고 있다.
+   * 조합을 고르면 line 이 첫 제품으로, extraProducts[0] 이 둘째 제품으로 자동 세팅된다 —
+   * 두 제품의 컬러를 따로 잡아야 하는데(사용자 지시 2026-09-16) 그 배선이 이미 extraProducts 에 있다.
+   * 조합 파트너 칸은 「함께 놓을 제품」에서 감추고 여기 ③ 안에서 컬러를 고르게 한다.
+   */
+  const [comboId, setComboId] = useState('');
   // 포즈 소스 — 우리 컷에서 포즈만(posecut) / 실사 포즈 레퍼(pose). 「모델과 함께」 에서만 쓴다
   const [baseTab, setBaseTab] = useState<'none' | 'posecut' | 'pose'>('none');
   const [baseCutUrl, setBaseCutUrl] = useState('');
@@ -350,7 +381,14 @@ export default function CreateStudio(p: Props) {
   const hasBaseUpload = flow === 'model' && uploads.some((u) => u.role === 'base');
 
   /** 라인의 승인된 AI 생성 제품 시트 (최근 승인 순) */
-  const sheetsFor = useCallback((l: string) => p.aiSheets.filter((s) => s.line === l), [p.aiSheets]);
+  const sheetsFor = useCallback(
+    // 조합 시트는 두 제품이 같이 찍힌 것이라 단일 제품 각도 목록에 섞이면 안 된다 — 조합 항목에서만 고른다
+    (l: string) => p.aiSheets.filter((s) => s.line === l && !isComboSheet(s)),
+    [p.aiSheets],
+  );
+  /** 승인된 조합 시트 — 제품 목록의 「제품 조합」 묶음에 그대로 뜬다 */
+  const comboSheets = useMemo(() => p.aiSheets.filter((s) => isComboSheet(s)), [p.aiSheets]);
+  const comboSheet = comboId ? comboSheets.find((s) => s.id === comboId) : undefined;
   /** 제품을 새로 고르면 첫 시트의 45° 칸을 배치 각도로 미리 골라둔다 — 사람은 바꾸기만 하면 된다 */
   const defaultSheetPick = useCallback((l: string): SheetPick | null => {
     const s = sheetsFor(l)[0];
@@ -705,8 +743,12 @@ export default function CreateStudio(p: Props) {
    * AI 생성 제품 칸 고르기 — 제품 섹션(첫 제품)과 함께 놓을 제품(추가 제품)이 같이 쓴다.
    * 컴포넌트가 아니라 JSX 를 돌려주는 함수다: 렌더 중 컴포넌트를 만들면 매번 새로 마운트된다.
    */
-  function renderSheetPicker(l: string, ck: string, value: SheetPick | null, onChange: (v: SheetPick | null) => void, compact: boolean) {
-    const sheets = sheetsFor(l);
+  function renderSheetPicker(
+    l: string, ck: string, value: SheetPick | null, onChange: (v: SheetPick | null) => void, compact: boolean,
+    /** 조합처럼 라인으로 못 찾는 시트를 직접 넘길 때 */
+    only?: AiProductSheet[],
+  ) {
+    const sheets = only ?? sheetsFor(l);
     if (!sheets.length) {
       return (
         <div className="text-[10.5px] mt-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
@@ -729,7 +771,8 @@ export default function CreateStudio(p: Props) {
               <div className="text-[10px] mb-1" style={{ color: 'var(--text-mute)' }}>{s.title}</div>
             )}
             <div className="flex flex-wrap gap-1.5">
-              {s.panels.map((panel) => {
+              {/* 자산관리에서 꺼둔 칸은 고를 수 없다 — 쓰지 않기로 한 칸이 각도 후보로 남으면 안 된다 */}
+              {livePanels(s).map((panel) => {
                 const on = value?.sheetId === s.id && value.key === panel.key;
                 return (
                   <button key={panel.key} onClick={() => onChange(on ? null : { sheetId: s.id, key: panel.key })} aria-pressed={on}
@@ -1002,7 +1045,7 @@ export default function CreateStudio(p: Props) {
                               onChange={(e) => setRefProduct(e.target.value)}>
                         <option value="">— 모르면 비워두세요 —</option>
                         {beanBags.map((x) => (
-                          <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>
+                          <option key={x.line} value={x.line}>{x.emoji} {lineKr(x.line)} · {x.sizeText}</option>
                         ))}
                       </select>
                       <div className="text-[10.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
@@ -1107,15 +1150,44 @@ export default function CreateStudio(p: Props) {
                    hint={hasBaseUpload
                      ? '사진 속 제품을 그대로 쓸 거면 비워두세요. 다른 제품으로 바꿀 때만 고릅니다.'
                      : '제품을 고르고 컬러칩으로 색을 정한 뒤, 승인된 AI 생성 제품에서 보여줄 각도를 고릅니다. 고른 칸은 컬러칩 색으로 바꿔서 넣습니다.'}>
-            <select className="input mb-2" value={line}
+            <select className="input mb-2" value={comboId ? `combo:${comboId}` : line}
                     onChange={(e) => {
-                      const next = e.target.value;
-                      setLine(next); setColorKey(''); setPoseRefKey(''); setShapeRefKey('');
-                      setSheetPick(next ? defaultSheetPick(next) : null);
+                      const raw = e.target.value;
+                      setPoseRefKey(''); setShapeRefKey(''); setColorKey('');
+                      if (raw.startsWith('combo:')) {
+                        /*
+                         * 조합 — 시트 하나가 두 제품을 다 들고 있다. 첫 제품을 메인으로,
+                         * 둘째를 「함께 놓을 제품」 첫 칸으로 자동 세팅하고 각도는 조합 시트 칸에서 고른다.
+                         */
+                        const id = raw.slice(6);
+                        const cs = comboSheets.find((x) => x.id === id);
+                        const lines = cs?.comboLines ?? [];
+                        setComboId(id);
+                        setLine(lines[0] ?? '');
+                        setSheetPick(cs ? { sheetId: cs.id, key: defaultPanelKey(cs) } : null);
+                        setExtraProducts(lines.slice(1).map((l) => ({ line: l, colorKey: '', placement: '', sheet: null })));
+                        return;
+                      }
+                      // 조합에서 단일 제품으로 돌아오면 자동으로 넣어둔 파트너를 걷어낸다
+                      if (comboId) setExtraProducts([]);
+                      setComboId('');
+                      setLine(raw);
+                      setSheetPick(raw ? defaultSheetPick(raw) : null);
                     }}>
               <option value="">— 제품 없음 {withPeople ? '(인물·분위기만)' : ''} —</option>
               {/* 메인 제품은 빈백류만 — 메이트 인형·소품은 '함께 놓을 제품'에서 고른다 */}
-              {beanBags.map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line} · {x.sizeText}</option>)}
+              {beanBags.map((x) => <option key={x.line} value={x.line}>{x.emoji} {lineKr(x.line)} · {x.sizeText}</option>)}
+              {/*
+                제품 조합 — 맥스+서포트처럼 겹쳐 쓰는 연출. 한 줄로 고르면 두 제품이 같이 들어가고
+                조합 시트 칸 + 공식 실사가 크기·접촉·방향의 기준으로 자동으로 붙는다.
+              */}
+              {comboSheets.length > 0 && (
+                <optgroup label="제품 조합">
+                  {comboSheets.map((cs) => (
+                    <option key={cs.id} value={`combo:${cs.id}`}>🧩 {comboLabelKr(cs.comboLines ?? [])} 조합</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
             {withPeople && (
               <div className="text-[10.5px] mb-2 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
@@ -1124,7 +1196,9 @@ export default function CreateStudio(p: Props) {
             )}
             {product && (
               <>
-                <div className="label mb-1">컬러</div>
+                <div className="label mb-1">
+                  컬러{comboSheet && <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}> — {lineKr(product.line)}</span>}
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {colorsFor(product).map((c) => (
                     <button key={c.key} onClick={() => { setColorKey(c.key === colorKey ? '' : c.key); setBaseCutUrl(''); setBaseTab('none'); }}
@@ -1137,7 +1211,45 @@ export default function CreateStudio(p: Props) {
                   ))}
                 </div>
 
-                {renderSheetPicker(line, colorKey, sheetPick, setSheetPick, false)}
+                {comboSheet ? (
+                  <>
+                    {/*
+                      조합은 두 제품의 컬러를 각각 잡아야 한다 (사용자 지시 2026-09-16).
+                      둘째 제품은 extraProducts[0] 에 들어 있고, 「함께 놓을 제품」에서는 감춰진다.
+                    */}
+                    {extraProducts.map((ex, i) => {
+                      const exProd = p.products.find((x) => x.line === ex.line);
+                      if (!exProd) return null;
+                      return (
+                        <div key={ex.line}>
+                          <div className="label mt-3 mb-1">
+                            컬러 <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>— {lineKr(exProd.line)}</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {colorsFor(exProd).map((c) => (
+                              <button key={c.key}
+                                      onClick={() => setExtraProducts((cur) =>
+                                        cur.map((x, j) => (j === i ? { ...x, colorKey: c.key === x.colorKey ? '' : c.key } : x)))}
+                                      className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-lg border text-[11px]"
+                                      style={{ borderColor: c.key === ex.colorKey ? 'var(--accent)' : 'var(--line)',
+                                               background: c.key === ex.colorKey ? 'var(--accent-soft)' : 'transparent' }}>
+                                <span className="w-4 h-4 rounded" style={{ background: c.hex, border: '1px solid rgba(255,255,255,.15)' }} />
+                                {c.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {renderSheetPicker(line, colorKey, sheetPick, setSheetPick, false, [comboSheet])}
+                    <div className="text-[10.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-dim)' }}>
+                      조합 칸과 <b style={{ color: 'var(--text-dim)' }}>공식 실사</b>가 크기·접촉·방향의 기준으로 같이 들어갑니다 —
+                      숫자만으로는 두 제품의 비율이 맞지 않습니다.
+                    </div>
+                  </>
+                ) : (
+                  renderSheetPicker(line, colorKey, sheetPick, setSheetPick, false)
+                )}
 
                 <div className="label mt-3 mb-1">배치</div>
                 <div className="flex flex-wrap gap-1.5">
@@ -1231,7 +1343,7 @@ export default function CreateStudio(p: Props) {
                                   onClick={() => {
                                     setBaseCutUrl(on ? '' : c.url);
                                   }}
-                                  title={`${c.line} · ${c.colorName}
+                                  title={`${lineKr(c.line)} · ${c.colorName}
 ${c.spec}`}
                                   className="rounded-lg overflow-hidden border block"
                                   style={{ width: 72, padding: 0, background: 'var(--surface)',
@@ -1241,7 +1353,7 @@ ${c.spec}`}
                                  className="w-full object-cover" style={{ aspectRatio: '1/1' }} />
                             <div className="text-[8.5px] px-1 py-0.5 truncate"
                                  style={{ color: on ? 'var(--accent)' : c.line === line ? 'var(--text-dim)' : 'var(--text-mute)' }}>
-                              {c.line} {c.colorName}
+                              {lineKr(c.line)} {c.colorName}
                             </div>
                           </button>
                         );
@@ -1271,10 +1383,13 @@ ${c.spec}`}
                   <div className="label">
                     함께 놓을 제품{' '}
                     <span style={{ color: 'var(--text-mute)', fontWeight: 400 }}>
-                      — 한 컷에 2~3종. 위치를 지정해야 형태·색이 안 섞입니다.
+                      {comboSheet
+                        ? `— ${comboLabelKr(comboSheet.comboLines ?? [])} 조합은 ③에서 컬러를 고릅니다.`
+                        : '— 한 컷에 2~3종. 위치를 지정해야 형태·색이 안 섞입니다.'}
                     </span>
                   </div>
-                  {extraProducts.length < 2 && (
+                  {/* 조합 중에는 추가 칸을 막는다 — 여기서 더한 제품은 ③에 안 보여 유령이 된다 */}
+                  {!comboSheet && extraProducts.length < 2 && (
                     <button className="chip shrink-0"
                             onClick={() => setExtraProducts((c) => [...c, { line: '', colorKey: '', placement: '', sheet: null }])}>
                       + 제품 추가
@@ -1284,12 +1399,14 @@ ${c.spec}`}
 
                 {extraProducts.length > 0 && !mainPlacement && (
                   <div className="text-[10.5px] mb-2" style={{ color: 'var(--warn)' }}>
-                    ① {line} 의 배치가 자동입니다 — 위 제품 섹션에서 위치를 정해야 제품끼리 섞이지 않습니다.
+                    ① {lineKr(line)} 의 배치가 자동입니다 — 위 제품 섹션에서 위치를 정해야 제품끼리 섞이지 않습니다.
                   </div>
                 )}
 
                 {extraProducts.map((ex, i) => {
                   const exProd = p.products.find((x) => x.line === ex.line);
+                  // 조합으로 자동으로 들어온 파트너는 ③ 안에서 컬러를 고른다 — 여기 두 번 보이면 헷갈린다
+                  if (comboSheet) return null;
                   return (
                     <div key={i} className="mb-2">
                       <div className="flex items-center gap-2">
@@ -1299,11 +1416,11 @@ ${c.spec}`}
                                   c.map((x, j) => (j === i ? { ...x, line: e.target.value, colorKey: '', sheet: e.target.value ? defaultSheetPick(e.target.value) : null } : x)))}>
                           <option value="">— 제품 선택 —</option>
                           <optgroup label="빈백">
-                            {beanBags.map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line}</option>)}
+                            {beanBags.map((x) => <option key={x.line} value={x.line}>{x.emoji} {lineKr(x.line)}</option>)}
                           </optgroup>
                           {/* 메이트 인형·필로우·소품 — youtube 제품 데이터에서 끌어온 것들 */}
                           <optgroup label="메이트 · 소품">
-                            {p.products.filter((x) => !!x.accessory).map((x) => <option key={x.line} value={x.line}>{x.emoji} {x.line}</option>)}
+                            {p.products.filter((x) => !!x.accessory).map((x) => <option key={x.line} value={x.line}>{x.emoji} {lineKr(x.line)}</option>)}
                           </optgroup>
                         </select>
                         <select className="input py-1 text-[11px]" style={{ width: 110 }} value={ex.placement}

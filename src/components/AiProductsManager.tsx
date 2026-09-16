@@ -2,20 +2,23 @@
 
 import { useMemo, useState } from 'react';
 import { thumbUrl } from '@/lib/thumb';
-import { KIND_LABEL, STATUS_LABEL, type AiProductSheet, type SheetKind } from '@/lib/ai-products';
+import { KIND_LABEL, STATUS_LABEL, isComboSheet, comboLabelKr, lineKr, type AiProductSheet } from '@/lib/ai-products';
 
-/** 제품 라인 한글 이름 — DB 에는 영문 라인명이 들어 있다 */
-const LINE_KR: Record<string, string> = {
-  Max: '맥스', Midi: '미디', Mini: '미니', Slim: '슬림', Drop: '드롭', Lounger: '라운저',
-  Pyramid: '피라미드', Pod: '팟', Double: '더블', Support: '서포트',
-};
-const lineName = (l: string) => LINE_KR[l] ?? (l || '기타');
+const lineName = (l: string) => lineKr(l) || '기타';
 
-/** 상단 탭 — 빈 제품만 찍은 컷과 앉은/눌린 컷을 따로 본다 */
-const TABS: { kind: SheetKind; label: string }[] = [
-  { kind: 'shape', label: '제품컷' },
-  { kind: 'usage', label: '앉은컷' },
+/**
+ * 상단 탭 — 빈 제품만 찍은 컷 / 앉은·눌린 컷 / 두 제품을 겹쳐 놓은 조합.
+ * 조합을 따로 뺀 이유(사용자 지시 2026-09-16): 조합 시트는 칸마다 품질이 크게 달라
+ * 어느 칸을 쓰고 어느 칸을 뺄지 사람이 직접 고르는 자리가 필요하다.
+ */
+type View = 'shape' | 'usage' | 'combo';
+const TABS: { view: View; label: string }[] = [
+  { view: 'shape', label: '제품컷' },
+  { view: 'usage', label: '앉은컷' },
+  { view: 'combo', label: '조합' },
 ];
+/** 탭이 맡는 시트인지 — 조합은 kind 와 상관없이 조합 탭으로 모은다 */
+const inView = (s: AiProductSheet, v: View) => (v === 'combo' ? isComboSheet(s) : !isComboSheet(s) && s.kind === v);
 
 /**
  * AI 생성 제품 시트 목록.
@@ -29,10 +32,10 @@ export default function AiProductsManager({ initial }: { initial: AiProductSheet
   const [zoom, setZoom] = useState('');
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
-  const [tab, setTab] = useState<SheetKind>('shape');
+  const [tab, setTab] = useState<View>('shape');
   const [line, setLine] = useState('');   // '' = 전체
 
-  const inTab = useMemo(() => sheets.filter((s) => s.kind === tab), [sheets, tab]);
+  const inTab = useMemo(() => sheets.filter((s) => inView(s, tab)), [sheets, tab]);
 
   // 탭 안에 있는 제품만 칩으로 — 없는 제품 칩을 누르면 빈 화면이 된다
   const lines = useMemo(() => {
@@ -73,6 +76,28 @@ export default function AiProductsManager({ initial }: { initial: AiProductSheet
     }
   }
 
+  /**
+   * 칸 하나를 생성에 쓸지 말지 바꾼다.
+   * 칸 배열을 통째로 보내지 않고 키 하나만 보낸다 — 서버가 현재 배열 위에 그 칸만 고친다.
+   */
+  async function togglePanel(s: AiProductSheet, key: string, off: boolean) {
+    setBusy(s.id); setErr('');
+    try {
+      const res = await fetch('/api/ai-products', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: s.id, panel: { key, off } }),
+      });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error || '바꾸지 못했습니다.');
+      setSheets((prev) => prev.map((x) => (x.id === s.id ? j.sheet : x)));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function remove(s: AiProductSheet) {
     if (!confirm(`${s.title || s.line} 시트를 목록에서 뺄까요?`)) return;
     setBusy(s.id); setErr('');
@@ -101,10 +126,10 @@ export default function AiProductsManager({ initial }: { initial: AiProductSheet
       {/* 상단 탭 */}
       <div className="flex gap-1 mb-3 border-b" style={{ borderColor: 'var(--line)' }}>
         {TABS.map((t) => {
-          const on = tab === t.kind;
-          const n = sheets.filter((s) => s.kind === t.kind).length;
+          const on = tab === t.view;
+          const n = sheets.filter((s) => inView(s, t.view)).length;
           return (
-            <button key={t.kind} onClick={() => setTab(t.kind)}
+            <button key={t.view} onClick={() => setTab(t.view)}
                     className="px-4 py-2 text-[13px] font-bold -mb-px"
                     style={{
                       borderBottom: `2px solid ${on ? 'var(--accent)' : 'transparent'}`,
@@ -156,6 +181,12 @@ export default function AiProductsManager({ initial }: { initial: AiProductSheet
                     <span className="text-[10.5px] px-1.5 py-0.5 rounded" style={{ background: 'var(--surface-2)', color: 'var(--text-dim)' }}>
                       {KIND_LABEL[s.kind]}
                     </span>
+                    {isComboSheet(s) && (
+                      <span className="text-[10.5px] px-1.5 py-0.5 rounded font-bold"
+                            style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+                        🧩 {comboLabelKr(s.comboLines ?? [])}
+                      </span>
+                    )}
                     <span className="text-[10.5px] px-1.5 py-0.5 rounded font-bold ml-auto"
                           style={{ background: approved ? 'var(--ok)' : 'var(--surface-2)', color: approved ? '#0b1a10' : 'var(--warn)' }}>
                       {STATUS_LABEL[s.status]}
@@ -179,17 +210,38 @@ export default function AiProductsManager({ initial }: { initial: AiProductSheet
                   {/* 칸별로 자른 것 — flex 로 두면 원본 폭 아래로 안 줄어 카드를 넘친다 */}
                   {s.panels.length > 0 && (
                     <div className="grid gap-1.5 mt-2" style={{ gridTemplateColumns: `repeat(${Math.min(s.panels.length, 6)}, minmax(0, 1fr))` }}>
-                      {s.panels.map((p) => (
-                        <button key={p.url} onClick={() => setZoom(p.url)} className="min-w-0 block text-left" style={{ padding: 0 }}
-                                title={`크게 보기 — ${p.label}`}>
-                          {/* 4칸 시트는 칸당 200px 넘게 커진다 — 256 이면 고해상도 화면에서 흐리다 */}
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={thumbUrl(p.url, 384)} alt={p.label} loading="lazy"
-                               className="w-full rounded border object-contain"
-                               style={{ aspectRatio: '1/1', background: '#fff', borderColor: 'var(--line)' }} />
-                          <div className="text-[10px] mt-0.5 truncate text-center" style={{ color: 'var(--text-dim)' }}>{p.label}</div>
-                        </button>
-                      ))}
+                      {s.panels.map((p) => {
+                        const off = !!p.off;
+                        return (
+                          <div key={p.url} className="min-w-0">
+                            <button onClick={() => setZoom(p.url)} className="min-w-0 block text-left w-full" style={{ padding: 0 }}
+                                    title={`크게 보기 — ${p.label}`}>
+                              {/* 4칸 시트는 칸당 200px 넘게 커진다 — 256 이면 고해상도 화면에서 흐리다 */}
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={thumbUrl(p.url, 384)} alt={p.label} loading="lazy"
+                                   className="w-full rounded border object-contain"
+                                   style={{
+                                     aspectRatio: '1/1', background: '#fff',
+                                     borderColor: off ? 'var(--line)' : 'var(--ok)',
+                                     opacity: off ? 0.32 : 1,
+                                     filter: off ? 'grayscale(1)' : 'none',
+                                   }} />
+                              <div className="text-[10px] mt-0.5 truncate text-center" style={{ color: off ? 'var(--text-mute)' : 'var(--text-dim)' }}>{p.label}</div>
+                            </button>
+                            {/* 이 칸을 생성에 넣을지 — 끈 칸은 참조로도, 배치 각도 후보로도 안 들어간다 */}
+                            <button onClick={() => togglePanel(s, p.key, !off)} disabled={busy === s.id}
+                                    className="w-full mt-0.5 rounded text-[10px] py-0.5 border"
+                                    title={off ? '생성에 다시 쓰기' : '생성에서 빼기'}
+                                    style={{
+                                      borderColor: off ? 'var(--line)' : 'var(--ok)',
+                                      color: off ? 'var(--text-mute)' : 'var(--ok)',
+                                      background: 'transparent',
+                                    }}>
+                              {off ? '제외됨' : '사용중'}
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 

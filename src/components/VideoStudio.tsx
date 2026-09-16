@@ -255,7 +255,7 @@ export default function VideoStudio({
           {product && (
             <select className="input py-1 text-[12px] mb-1.5" value={colorKey} onChange={(e) => setColorKey(e.target.value)}>
               <option value="">컬러 선택</option>
-              {product.colors.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
+              {(product.colors ?? []).map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
             </select>
           )}
           <select className="input py-1 text-[12px]" value={model} onChange={(e) => setModel(e.target.value)}>

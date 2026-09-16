@@ -15,11 +15,12 @@ import { generateImageGpt, openaiConfigured, OpenAIImageError } from '@/lib/open
 import { uploadBuffer, dailySubpath, ftpConfigured } from '@/lib/ftp';
 import { cropToSize, measureProductColor } from '@/lib/image-post';
 import { planAspect } from '@/lib/aspect';
-import { toSheet, supportPanels, panelAngleEn, TOP_FORM_LINES, type AiProductSheet } from '@/lib/ai-products';
+import { toSheet, supportPanels, panelAngleEn, isComboSheet, comboStaging, TOP_FORM_LINES, type AiProductSheet } from '@/lib/ai-products';
 import { recoloredPanelUrl, normalizeHex } from '@/lib/sheet-recolor';
 import { ObjectId } from 'mongodb';
 import { measureSceneTone } from '@/lib/scene-tone';
 import { scrubReferenceUrl, guardOutput } from '@/lib/logo-guard';
+import { checkFaces } from '@/lib/face-guard';
 
 /**
  * POST /api/generate — 자산 조합 → 프롬프트 → 나노바나나 → 크롭 → FTP → DB.
@@ -292,6 +293,20 @@ export async function POST(req: Request) {
       });
     }
 
+    /*
+     * 결과물 얼굴 대조에 쓸 참조 — 각도가 여러 장인 얼굴 시트가 대표컷보다 낫다
+     * (생성된 얼굴이 정면이 아닐 때 대표컷 하나로는 각도 차이를 동일인 아님으로 오판한다).
+     * 자유 서술 인물(freeform)은 지킬 얼굴이 없으므로 검사하지 않는다.
+     */
+    const faceRefs = talents
+      .filter((t) => !t.freeform)
+      .map((t) => {
+        const doc = talentDocs.find((d) => String(d.code) === t.code);
+        const url = String(doc?.sheets?.face || doc?.rep || '');
+        return url ? { code: t.code, faceUrl: url } : null;
+      })
+      .filter((x): x is { code: string; faceUrl: string } => !!x);
+
     const uploadedRefs: UploadedRefSpec[] = (body.uploadedRefs ?? []).map((u) => ({
       url: u.url,
       title: u.title,
@@ -502,6 +517,21 @@ export async function POST(req: Request) {
     const hasEditBase = uploadedRefs.some((u) => u.role === 'base') || (!!baseCut && body.baseCutUsage !== 'pose');
     const sceneTone = toneSource && !hasEditBase ? await measureSceneTone(toneSource.url) : null;
 
+    /*
+     * 제품 조합 — 고른 칸이 조합 시트면, 그 시트가 두 제품을 다 들고 있다.
+     * 칸 자체는 위에서 이미 제품 참조로 들어갔다. 여기서는 공식 실사와 배치 지시를 얹는다.
+     * 시트에 적힌 두 제품이 실제로 다 골라져 있을 때만 켠다 — 한쪽만 고른 채 조합 칸을 쓰면
+     * 프롬프트가 화면에 없는 제품을 그리라고 말하게 된다.
+     */
+    const comboSrc = picks
+      .map((x) => (x.sheetPanel ? sheetById.get(x.sheetPanel.sheetId) : undefined))
+      .find((sh): sh is AiProductSheet => !!sh && isComboSheet(sh));
+    const comboLines = comboSrc?.comboLines ?? [];
+    const comboOn = comboLines.length >= 2 && comboLines.every((l) => productSpecs.some((ps) => ps.line === l));
+    const combo = comboOn
+      ? { lines: comboLines, ...(comboSrc?.realRef ? { realRef: comboSrc.realRef } : {}), staging: comboStaging(comboLines) }
+      : undefined;
+
     const spec: GenerationSpec = {
       mode: body.mode || 'thumbnail',
       ...(sceneTone ? { sceneTone: sceneTone.summaryEn } : {}),
@@ -518,6 +548,7 @@ export async function POST(req: Request) {
       ...(usageShot ? { usageShot: { url: usageShot.url, kindEn: usageShot.kindEn, kindKr: usageShot.kindKr } } : {}),
       ...(talents.length ? { talents } : {}),
       ...(productSpecs.length ? { products: productSpecs } : {}),
+      ...(combo ? { combo } : {}),
       // 레퍼런스에 담긴 제품이 지정되면 인물 대비 스케일 앵커를 넣는다 (제품 블록과 무관하게)
       ...(scaleProductDoc
         ? { scaleProduct: { line: scaleProductDoc.line, dims: scaleProductDoc.dims ?? {}, scalePrompt: scaleProductDoc.scalePrompt ?? '' } }
@@ -776,6 +807,12 @@ export async function POST(req: Request) {
         exemptProducts: productSpecs.filter((p) => !TOP_FORM_LINES.has(p.line)).map((p) => `the Yogibo ${p.line}`),
       });
       const cropped = { ...croppedRaw, buffer: guard.buffer };
+      /*
+       * 얼굴 대조 — 로고와 달리 픽셀로 못 고친다. 어긋났다고 알려만 주고 결과는 그대로 둔다
+       * (고치려면 다시 생성해야 하고, 그건 사람이 정할 일이다 — 사용자 지적 2026-09-16 "얼굴 변형 체크").
+       * 로고를 지운 뒤의 버퍼로 검사한다: 사람이 실제로 보게 될 그림이 검사 대상이어야 한다.
+       */
+      const faceCheck = await checkFaces(cropped.buffer, faceRefs);
       const colorCheck = color?.hex ? await measureProductColor(cropped.buffer, color.hex) : null;
 
       const stamp = isoNow.replace(/[-:T]/g, '').slice(0, 14);
@@ -802,6 +839,7 @@ export async function POST(req: Request) {
         topFold: guard.topFold,
         refsCleaned: originalOf.size,
         ...(guard.usage ? { usage: guard.usage } : {}),
+        face: { checked: faceCheck.checked, verdicts: faceCheck.verdicts, ...(faceCheck.usage ? { usage: faceCheck.usage } : {}) },
       };
 
       const doc = {
@@ -883,7 +921,10 @@ export async function POST(req: Request) {
         deltaE: colorCheck?.deltaE ?? null,
         measuredHex: colorCheck?.hex ?? null,
         elapsedMs: gen.elapsedMs,
-        qc: { checked: qc.checked, logoErased: qc.logoErased, topFold: qc.topFold, refsCleaned: qc.refsCleaned },
+        qc: {
+          checked: qc.checked, logoErased: qc.logoErased, topFold: qc.topFold, refsCleaned: qc.refsCleaned,
+          face: { checked: faceCheck.checked, verdicts: faceCheck.verdicts },
+        },
       });
     }
 

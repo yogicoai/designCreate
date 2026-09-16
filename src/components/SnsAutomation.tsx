@@ -86,7 +86,7 @@ export default function SnsAutomation({ pool, models, products, mode }: Props) {
 
   /** 제품컷용 랜덤 제품·컬러 — 배경만 있는 사진에 얹을 빈백을 매번 다르게 고른다 */
   const randProduct = () => {
-    const withColor = products.filter((p) => p.colors.length);
+    const withColor = products.filter((p) => p.colors?.length);
     if (!withColor.length) return null;
     const p = withColor[Math.floor(Math.random() * withColor.length)];
     const c = p.colors[Math.floor(Math.random() * p.colors.length)];
