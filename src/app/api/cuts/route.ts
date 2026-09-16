@@ -41,7 +41,8 @@ export async function DELETE(req: Request) {
     }
 
     // 다른 생성 컷이 이 컷을 베이스/입력으로 썼으면 기록이 깨진다 — 확인받는다
-    const usedIn = await cuts.countDocuments({ _id: { $ne: _id }, 'inputImages.url': cut.url, hidden: { $ne: true } });
+    // 태그 지운 사본을 보낸 컷은 원래 주소를 originalUrl 에 둔다 (logo-guard) — 둘 다 "쓰임" 으로 센다
+    const usedIn = await cuts.countDocuments({ _id: { $ne: _id }, $or: [{ 'inputImages.url': cut.url }, { 'inputImages.originalUrl': cut.url }], hidden: { $ne: true } });
     if (usedIn > 0 && !body.force) {
       return NextResponse.json(
         { ok: false, needsForce: true, usedIn, error: `이 컷은 다른 생성 컷 ${usedIn}개의 베이스/입력으로 쓰였습니다. 삭제하면 그 기록의 미리보기가 깨집니다.` },
@@ -52,15 +53,18 @@ export async function DELETE(req: Request) {
     // FTP 파일 — 우리 생성 폴더(/web/design/<날짜>/) 것만 지운다
     let fileDeleted = false;
     const base = (process.env.FTP_PUBLIC_BASE || '').replace(/\/$/, '');
-    if (base && String(cut.url).startsWith(`${base}/`)) {
-      const rel = String(cut.url).slice(base.length + 1); // '2026-08-31/Max_olive_...jpg'
+    // 태그를 지운 컷은 지우기 전 원본(qc.rawUrl)도 날짜 폴더에 있다 — 같이 정리한다 (실패해도 삭제는 진행)
+    const rawUrl = typeof cut.qc?.rawUrl === 'string' ? cut.qc.rawUrl : '';
+    for (const u of [String(cut.url), rawUrl].filter(Boolean)) {
+      if (!base || !u.startsWith(`${base}/`)) continue;
+      const rel = u.slice(base.length + 1); // '2026-08-31/Max_olive_...jpg'
       const slash = rel.lastIndexOf('/');
       const subpath = slash >= 0 ? rel.slice(0, slash) : '';
       const filename = slash >= 0 ? rel.slice(slash + 1) : rel;
       // 레퍼런스 폴더(update/)나 자산 폴더(assets/)는 이 경로로 지우지 않는다
       if (filename && subpath && /^\d{4}-\d{2}-\d{2}$/.test(subpath)) {
-        await deleteRemote(subpath, filename);
-        fileDeleted = true;
+        await deleteRemote(subpath, filename).catch(() => {});
+        if (u === String(cut.url)) fileDeleted = true;
       }
     }
 

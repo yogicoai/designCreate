@@ -15,11 +15,11 @@ import { generateImageGpt, openaiConfigured, OpenAIImageError } from '@/lib/open
 import { uploadBuffer, dailySubpath, ftpConfigured } from '@/lib/ftp';
 import { cropToSize, measureProductColor } from '@/lib/image-post';
 import { planAspect } from '@/lib/aspect';
-import { toSheet, supportPanels, panelAngleEn, type AiProductSheet } from '@/lib/ai-products';
+import { toSheet, supportPanels, panelAngleEn, TOP_FORM_LINES, type AiProductSheet } from '@/lib/ai-products';
 import { recoloredPanelUrl, normalizeHex } from '@/lib/sheet-recolor';
 import { ObjectId } from 'mongodb';
 import { measureSceneTone } from '@/lib/scene-tone';
-import { scrubReferenceUrl, guardOutput, FOLD_EXEMPT_LINES } from '@/lib/logo-guard';
+import { scrubReferenceUrl, guardOutput } from '@/lib/logo-guard';
 
 /**
  * POST /api/generate — 자산 조합 → 프롬프트 → 나노바나나 → 크롭 → FTP → DB.
@@ -550,6 +550,25 @@ export async function POST(req: Request) {
     });
 
     /*
+     * ── 사진 참조의 태그를 먼저 지운다 (logo-guard.ts) ─────
+     * 글로 "로고 없음" 이라고 해도 참조 사진에 태그가 보이면 그대로 옮겨 그린다(실측 2026-09-15).
+     * 사진류(포즈 소스·베이스·배경·스타일·형태·연출·공식 제품 사진)만 — 모델 시트·의상 크롭·AI 제품 칸·스와치는
+     * 태그가 없는 자산이라 검사하지 않는다. URL 만 바뀌고 순서·역할은 그대로라 프롬프트는 다시 쓸 필요가 없다.
+     * 힉스필드도, 대화로 넘기는 기록(handoff)도 이 URL 을 받으므로 모든 경로가 지운 사본을 본다.
+     * 단순 미리보기(dryRun, 넘기기 아님)는 무과금이어야 해서 검사하지 않는다.
+     */
+    const SCRUB_KINDS = new Set<RefSlot['kind']>(['base', 'background', 'style', 'shape', 'pose', 'usage', 'product']);
+    const originalOf = new Map<string, string>();
+    const doScrub = !body.dryRun || !!body.handoff;
+    const refsToLoad: RefSlot[] = await Promise.all(written.refs.map(async (r) => {
+      if (!doScrub || !r.url || r.swatchHex || !SCRUB_KINDS.has(r.kind)) return r;
+      const s = await scrubReferenceUrl(r.url);
+      if (!s.cleaned) return r;
+      originalOf.set(s.url, r.url);
+      return { ...r, url: s.url };
+    }));
+
+    /*
      * 넘기기 기록 — 프롬프트 + 참조 순서 + 화면에서 고른 값 원본을 통째로 남긴다.
      * 배포에서는 남기지 않는다: MD 용 기능이 아니고, 쌓아둘 이유도 없다.
      */
@@ -559,8 +578,9 @@ export async function POST(req: Request) {
         createdAt: new Date(),
         prompt: written.prompt,
         promptMode: written.mode,
-        refs: written.refs.map((x) => ({
+        refs: refsToLoad.map((x) => ({
           kind: x.kind, title: x.title, url: x.url ?? '', swatchHex: x.swatchHex ?? '', role: x.role,
+          ...(x.url && originalOf.has(x.url) ? { originalUrl: originalOf.get(x.url) } : {}),
         })),
         aspect: size.genAspect,
         target: { width: size.width, height: size.height },
@@ -593,7 +613,7 @@ export async function POST(req: Request) {
         dryRun: true,
         prompt: written.prompt,
         promptMode: written.mode,
-        refs: written.refs.map((r) => ({ kind: r.kind, title: r.title, url: r.url, swatchHex: r.swatchHex })),
+        refs: refsToLoad.map((r) => ({ kind: r.kind, title: r.title, url: r.url, swatchHex: r.swatchHex })),
         aspect: size.genAspect,
         target: { width: size.width, height: size.height },
         elementId: color?.elementId ?? null,
@@ -650,33 +670,25 @@ export async function POST(req: Request) {
       );
     }
 
-    /*
-     * ── 5-0) 사진 참조의 태그를 먼저 지운다 (logo-guard.ts) ─────
-     * 글로 "로고 없음" 이라고 해도 참조 사진에 태그가 보이면 그대로 옮겨 그린다(실측 2026-09-15).
-     * 사진류(포즈 소스·베이스·배경·스타일·형태·연출·공식 제품 사진)만 — 모델 시트·의상 크롭·AI 제품 칸·스와치는
-     * 태그가 없는 자산이라 검사하지 않는다. URL 만 바뀌고 순서·역할은 그대로라 프롬프트는 다시 쓸 필요가 없다.
-     * 힉스필드도 이 URL 을 받아 가므로 세 엔진 모두 지운 사본을 본다.
-     */
-    const SCRUB_KINDS = new Set<RefSlot['kind']>(['base', 'background', 'style', 'shape', 'pose', 'usage', 'product']);
-    const originalOf = new Map<string, string>();
-    const refsToLoad: RefSlot[] = await Promise.all(written.refs.map(async (r) => {
-      if (!r.url || r.swatchHex || !SCRUB_KINDS.has(r.kind)) return r;
-      const s = await scrubReferenceUrl(r.url);
-      if (!s.cleaned) return r;
-      originalOf.set(s.url, r.url);
-      return { ...r, url: s.url };
-    }));
 
     // ── 5) 참조 이미지 적재 (순서가 프롬프트와 일치해야 한다) ─────
     const inline: InlineImage[] = [];
     const usedRefs: RefSlot[] = [];
-    for (const r of refsToLoad) {
+    for (const slot of refsToLoad) {
+      let r = slot;
       // 모델 시트는 다패널이라 덜 줄인다 — 1024 로 줄이면 얼굴이 판독 불가 크기가 된다
-      const img = r.swatchHex
+      let img = r.swatchHex
         ? await colorSwatch(r.swatchHex)
         : r.url
           ? await loadReference(r.url, r.kind === 'talent' ? 1600 : 1024)
           : null;
+      // 태그 지운 사본을 못 받으면 원래 사진으로 — 참조가 통째로 빠지는 것보다 태그 있는 사진이 낫다(결과 검사가 한 번 더 막는다)
+      if (!img && r.url && originalOf.has(r.url)) {
+        const orig = originalOf.get(r.url)!;
+        console.warn('[generate] 태그 지운 사본 로딩 실패 — 원본 사진으로:', r.url);
+        img = await loadReference(orig, 1024);
+        if (img) { originalOf.delete(r.url); r = { ...r, url: orig }; }
+      }
       if (!img) {
         console.warn('[generate] 참조 로딩 실패 — 건너뜀:', r.title, r.url);
         continue;
@@ -755,12 +767,13 @@ export async function POST(req: Request) {
        * 남은 태그는 그 자리만 주변 원단으로 메운다(다시 생성하지 않으니 얼굴·구도는 그대로).
        * 피라미드가 아닌 빈백의 윗부분 말림은 지우는 게 아니라 다시 뽑아야 하는 문제라 표시만 한다.
        */
-      const foldTargets = productSpecs.filter((p) => !FOLD_EXEMPT_LINES.has(p.line));
+      // 프롬프트 TOP FORM 과 같은 목록 (ai-products.ts TOP_FORM_LINES) — 둘이 어긋나면 안 된다
+      const foldTargets = productSpecs.filter((p) => TOP_FORM_LINES.has(p.line));
       const guard = await guardOutput(croppedRaw.buffer, {
         topFold: foldTargets.length > 0,
         // 정답 형태를 같이 줘야 "꽉 찬 물방울이라 정상" 같은 오판을 안 한다
         expectedShapes: foldTargets.map((p) => `Yogibo ${p.line}: ${p.shape}`),
-        exemptProducts: productSpecs.filter((p) => FOLD_EXEMPT_LINES.has(p.line)).map((p) => `the Yogibo ${p.line}`),
+        exemptProducts: productSpecs.filter((p) => !TOP_FORM_LINES.has(p.line)).map((p) => `the Yogibo ${p.line}`),
       });
       const cropped = { ...croppedRaw, buffer: guard.buffer };
       const colorCheck = color?.hex ? await measureProductColor(cropped.buffer, color.hex) : null;
@@ -783,6 +796,7 @@ export async function POST(req: Request) {
       const qc = {
         checked: guard.checked,
         model: guard.model,
+        logoFound: guard.found,
         logoErased: guard.erased.length,
         ...(guard.erased.length ? { logoBoxes: guard.erased, rawUrl } : {}),
         topFold: guard.topFold,

@@ -95,7 +95,8 @@ export async function POST(req: Request) {
         const base = (process.env.FTP_PUBLIC_BASE || '').replace(/\/$/, '');
         const prefix = `${base}/${REF_SUBPATH}/`;
         if (replaceUrl.startsWith(prefix)) {
-          const usedIn = await db.collection('cuts').countDocuments({ 'inputImages.url': replaceUrl });
+          // 태그 지운 사본을 보낸 컷은 원래 주소를 originalUrl 에 둔다 (logo-guard) — 둘 다 "쓰임" 으로 센다
+          const usedIn = await db.collection('cuts').countDocuments({ $or: [{ 'inputImages.url': replaceUrl }, { 'inputImages.originalUrl': replaceUrl }] });
           const oldName = replaceUrl.slice(prefix.length);
           if (!usedIn && oldName && !oldName.includes('/')) await deleteRemote(REF_SUBPATH, oldName);
         }

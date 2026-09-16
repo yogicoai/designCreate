@@ -82,6 +82,14 @@ export function toSheet(r: Record<string, unknown>): AiProductSheet {
  * 형태 보조로 붙인다. 한 시트의 칸은 같은 물건이라 섞여도 형태가 평균나지 않는다.
  */
 
+/**
+ * 윗부분이 "둥글게 꽉 찬 채로 끝나야" 하는 빈백 — 프롬프트의 TOP FORM 줄과 결과물 말림 검사가 같은 목록을 쓴다.
+ * 빠진 것: Pyramid(짧게 뾰족한 끝이 정상) · Lounger(높게 솟은 등받이가 정상 — 검사가 물방울로 오판)
+ *          · Support·메이트 인형·소품(빈백 윗면 개념이 없다).
+ * 사용자 지시 2026-09-15: "피라미드 제품이 아니면 뒤쪽 저런 식으로 말리는 것도 막아줘".
+ */
+export const TOP_FORM_LINES = new Set(['Max', 'Slim', 'Midi', 'Mini', 'Double', 'Drop', 'Pod']);
+
 /** 칸 키 → 프롬프트 각도 표기 (시트마다 키 이름이 조금씩 다르다) */
 export const PANEL_ANGLE_EN: Record<string, string> = {
   front: 'front view',

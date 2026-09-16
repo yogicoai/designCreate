@@ -1,7 +1,7 @@
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import { loadReference, colorSwatch } from './gemini';
-import { PANEL_ANGLE_EN } from './ai-products';
+import { PANEL_ANGLE_EN, TOP_FORM_LINES } from './ai-products';
 import { NO_LOGO_RULE, withNoLogo } from './no-logo';
 
 /**
@@ -718,19 +718,26 @@ function productBlock(spec: GenerationSpec): string[] {
      * 부정문만으로는 안 먹혔다(drop-peak 기록: "NOT a teardrop with a pointed tip" 이 들어간 33장 중 다수에서 꼭지) —
      * 먼저 "어떤 모양이어야 하는지"를 긍정문으로 그리고, 금지는 마지막 한 줄로만 둔다.
      */
-    if (p.line !== 'Pyramid') {
+    if (TOP_FORM_LINES.has(p.line)) {
       /*
        * 둥근 빈백(Drop·Pod)은 "위로 갈수록 좁아지는 물방울" 이 가장 흔한 불량이다
        * (비전 검사 실측 2026-09-15: 최근 Drop 인물컷 4장 모두 물방울 꼭지) — 공 윗면처럼 넓게 끝난다고 따로 그린다.
+       * 편집 베이스는 사진 속 빈백 형태를 그대로 지키는 게 원칙이라, "새로 그리거나 다시 그리는 빈백" 에만 건다
+       * (실제 사진 속 빈백은 말려 있지 않다 — 베이스에 빈백이 없어 새로 그리는 경우가 이 규칙의 대상).
        */
       const ball = p.line === 'Drop' || p.line === 'Pod';
+      const scope = baseEdit
+        ? 'Wherever this bean bag is drawn or re-rendered (a bean bag already photographed in the base keeps its photographed shape), its upper part stays FULL and ROUNDED'
+        : 'The upper part of this bean bag stays FULL and ROUNDED';
       L.push(
-        '  TOP FORM: the upper part of this bean bag stays FULL and ROUNDED — its top edge is one smooth, continuous convex arc held up by the filling, ' +
+        `  TOP FORM: ${scope} — its top edge is one smooth, continuous convex arc held up by the filling, ` +
           (ball
             ? 'as broad and round as the top of a ball: the silhouette keeps nearly its full width all the way up and closes in a wide, rounded crown. '
             : 'like the top of a well-stuffed pillow. ') +
-          'Where a person leans back, only the fabric directly under their back compresses; ' +
-          'the part above and behind their shoulders stays a plump, upright, rounded dome. It never narrows into a teardrop, folds over, flops backwards, curls, rolls or bends into a tip.',
+          (noPeople && !baseEdit
+            ? 'The whole top stays a plump, upright, rounded dome. '
+            : 'Where a person leans back, only the fabric directly under their back compresses; the part above and behind their shoulders stays a plump, upright, rounded dome. ') +
+          'It never narrows into a teardrop, folds over, flops backwards, curls, rolls or bends into a tip.',
       );
     }
     if (baseEdit) {
@@ -1287,7 +1294,9 @@ function specToBrief(spec: GenerationSpec, refs: RefSlot[]): string {
   if (spec.baseCut) {
     L.push(
       spec.baseCut.usage === 'pose'
-        ? `포즈 소스(우리 승인 컷) — 포즈·앵글·눌림만 가져오고 제품/컬러/모델/의상은 아래 지정을 따른다: ${spec.baseCut.spec}`
+        ? (spec.talents?.length
+          ? `포즈 소스(우리 승인 컷) — 몸 포즈·팔다리 배치·앵글·프레이밍·몸이 가라앉는 깊이만 가져온다. 제품 자체(형태·실루엣·윗선·주름·태그·컬러)와 모델/의상은 이 컷에서 아무것도 가져오지 않고 아래 지정을 따른다: ${spec.baseCut.spec}`
+          : `포즈 소스(우리 승인 컷) — 앵글·프레이밍·제품의 화면 속 위치만 가져온다. 눌림·찌그러짐·태그는 가져오지 않는다(빈 제품은 빵빵하게). 제품/컬러는 아래 지정을 따른다: ${spec.baseCut.spec}`)
         : `베이스 컷 원문 스펙: ${spec.baseCut.spec}`,
     );
   }
@@ -1340,11 +1349,9 @@ const OPUS_SYSTEM = `너는 요기보(빈백 소파 브랜드) 자사몰의 AI �
 5. 편집 지시(EDIT)가 있으면 "이것만 바꾸고 나머지는 원본 그대로"를 가장 앞에, 가장 강하게 써라.
 6. 전 컷 공통 규칙은 빠짐없이 반영하라.
 7. 텍스트·로고·워터마크 금지 문장을 마지막에 반드시 넣어라.
-7-2. 베이스에 요기보 봉제 태그·케어라벨이 찍혀 있으면, 태그 자체는 그대로 두되
-   **로고 글자는 조건부**로 지시하라. 그 크기에서 깨끗하게 읽힐 수 있으면 살리고,
-   글자꼴이 무너질 만큼 작으면 글자 없이 비우게 하라.
-   절대 나오면 안 되는 건 뭉개지거나 틀린 글자다 — 없는 것보다 나쁘다.
-   태그를 통째로 지우라고는 하지 마라. 태그가 있어야 제품이 진짜로 보인다.
+7-2. 로고·태그는 어떤 경우에도 그리지 않는다 (필수, 2026-09-15 확정). 베이스·참조 사진에 요기보 봉제 태그·
+   케어라벨·로고가 보여도 "그 자리를 같은 색의 매끈한 원단으로 비워라" 고 지시하라. 태그를 살리거나
+   새로 붙이라는 문장은 절대 쓰지 마라 — 제미나이는 태그 글자를 뭉개거나 없던 태그를 붙인다.
 7-1. 인물마다 지정된 EXPRESSION 은 MD 가 직접 고른 값이다. 전 컷 공통 규칙에
    "항상 자연스러운 미소" 같은 문장이 있어도, **지정된 표정이 우선**이다.
    놀람·무표정·진지함·슬픔·찡그림이 지정됐다면 그대로 살리고 미소로 바꾸지 마라.

@@ -158,7 +158,8 @@ export async function DELETE(req: Request) {
     }
 
     // 완전 삭제 — 생성 이력이 이 URL 을 참조하면 경고
-    const usedIn = await db.collection('cuts').countDocuments({ 'inputImages.url': url, hidden: { $ne: true } });
+    // 태그 지운 사본을 보낸 컷은 원래 주소를 originalUrl 에 둔다 (logo-guard) — 둘 다 "쓰임" 으로 센다
+    const usedIn = await db.collection('cuts').countDocuments({ $or: [{ 'inputImages.url': url }, { 'inputImages.originalUrl': url }], hidden: { $ne: true } });
     if (usedIn > 0 && !body.force) {
       return NextResponse.json(
         {

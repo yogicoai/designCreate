@@ -3,6 +3,7 @@ import PageHeader from '@/components/PageHeader';
 import Zoomable from '@/components/Zoomable';
 import TalentOutfits from '@/components/TalentOutfits';
 import { getTalents, getCuts, getExpressions } from '@/lib/queries';
+import { isRecent } from '@/lib/recent';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +66,11 @@ export default async function TalentsPage() {
                       >
                         {cat} {t.slot}
                       </span>
+                      {/* 새로 등록된 전속 모델 — 하루 동안 N (사이드바 배지와 같은 기준) */}
+                      {isRecent(t.createdAt) && (
+                        <span className="text-[10px] font-bold leading-none px-1.5 py-[3px] rounded-full"
+                              style={{ background: 'var(--accent)', color: '#fff' }} title="최근 하루 안에 등록">N</span>
+                      )}
                       <span className="text-[12.5px]" style={{ color: 'var(--text-dim)' }}>{t.name}</span>
                       <span className="chip" style={{ color: 'var(--info)' }}>{t.size}</span>
                     </div>

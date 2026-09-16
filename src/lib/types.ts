@@ -153,6 +153,8 @@ export interface TalentDoc {
   exprSheet: string;
   /** 표정 시트를 칸별로 잘라둔 표정컷 — { 표정id: url }. 생성 시 요청 표정 한 장만 참조로 쓴다. */
   expressionCrops?: Record<string, string>;
+  /** 등록 시각 — 하루 동안 "N" 표시 (2026-09-15 여성E·남성B 부터 기록, 그 전 모델은 없음) */
+  createdAt?: Date | string;
   /** MD 지정 의상 컨셉 (레퍼 이미지 포함) */
   outfits: Outfit[];
   status: string;
