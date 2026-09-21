@@ -133,6 +133,12 @@ export const PANEL_ANGLE_EN: Record<string, string> = {
   top: 'top-down view from directly above',
   upright: 'standing upright on its end',
   tips: 'view from the arm-tip end',
+  /*
+   * 조합 사용컷 — 사람이 앉은 실사다. "어느 각도" 가 아니라 "어떤 상태" 라
+   * POSTURE_KEYS(prompt-writer) 에도 같이 넣어 문장이 "seen from the ~" 로 안 붙게 한다.
+   * 사람이 찍혀 있으므로 인물을 가져오지 말라는 경고를 문구 안에 함께 넣는다.
+   */
+  real: 'as it is actually used, with a person sitting in it — copy only how the products fit together around a body, never the person, the room or the lighting',
 };
 
 /**
@@ -236,12 +242,20 @@ export const COMBO_STAGING: Record<string, string[]> = {
     'SIZE — measured from the official photograph, not guessed: seen square-on from the front, the Support spans about 0.45x the visible width of the flat Max (the Max shows its 170cm length across frame; the Support is only 76cm wide). In an angled three-quarter view it reads larger, about 0.7x. Front-to-back the Support is about 1.34x the Max\'s 70cm width, so its arm tips overhang the front edge. The Support adds roughly 30cm of height above the Max\'s top surface.',
     'The Support is a thick, densely filled cushion — each arm is a plump tube whose diameter is about 0.4x the Support\'s overall width, and the gap between the arms is only about 0.21x that width. It must never look thin, flat, deflated or like a folded towel.',
   ],
+  /*
+   * 2026-09-16 실측으로 전면 수정. 이전 문구는 "서포트가 팟 윗면에 올라타 걸터앉는다" 였는데,
+   * 그대로 네 번 생성해 네 번 다 실패했다 — 팟은 둥근 공이라 올라탈 평평한 면이 없다.
+   * 결과는 매번 둘 중 하나였다: 서포트가 옆·뒤로 미끄러지거나, 팟 윗면에 홈을 파고 그 안에 들어앉는다
+   * (등록돼 있던 팟 조합 시트가 바로 그 상태였고, 그게 참조로 들어가 생성마다 눌림이 따라왔다).
+   * 사람이 앉으면 서포트가 등과 옆구리를 감싸며 제자리를 잡는다 — 그게 이 제품의 실제 사용법이다.
+   */
   'Pod+Support': [
-    'The Yogibo Pod stands on the floor in its normal upright seat shape — it is the base and the seat.',
-    'The Yogibo Support sits ON TOP of the Pod, straddling its upper edge as the backrest and armrests, its underside pressing into and denting the Pod. It is never on the floor beside the Pod.',
-    'The U-shaped opening faces the camera and the sitter; the two arms curve forward on either side of the sitter so the round cut end of each arm points toward the camera.',
-    'SIZE — measured from the official photograph: the Support spans about 0.89x the visible width of the Pod, and the Pod plus Support together stand roughly 115-125cm tall.',
-    'The Support is thick and densely filled — each arm is a plump tube about 0.4x the Support\'s overall width across, with only a narrow gap between the arms. It must never look thin, flat or deflated.',
+    'The Yogibo Pod stands upright on the floor as the seat — a big soft egg-shaped bean bag, taller than it is wide, spreading where it meets the floor.',
+    'THE SUPPORT IS NOT BALANCED ON TOP OF THE POD. The Pod is round, so there is no flat top to perch anything on. The Support is a thick horseshoe that leans INTO the upper front of the Pod: its curved spine rests back against the high part of the Pod, and its two fat arms come forward and down across the shoulders of the Pod on the left and right, so between them the front face of the Pod shows as an open seat. The pair reads at a glance as one armchair — the Pod is the seat, the Support is the backrest and armrests.',
+    'IF A PERSON IS IN THE SHOT this is easy and natural: they sit down into the Pod, which takes their weight and deforms deeply around them, and the Support settles around their body — spine behind their lower back where the Pod rises up, one arm along each side passing under their forearms. Draw that compression; it is correct and expected.',
+    'IF NOBODY IS IN THE SHOT the Support still leans into the upper front of the Pod with its arms reaching down the front sides. It never sits in a pressed-in hollow on the crown of the Pod, never drapes over the back like a scarf, and never tips off to one side.',
+    'SIZE — measured from the official photograph: the Support spans about 0.89x the visible width of the Pod, so the shoulders of the Pod show on both sides beyond it, and the Pod plus Support together stand roughly 115-125cm tall.',
+    'The Support is thick and densely filled — each arm is a plump round tube roughly as thick as the cushion is tall, holding that fullness almost to its rounded end, with an open channel running between the two arms. It must never look thin, flat, deflated, or like a flat ring pressed into the Pod.',
   ],
 };
 

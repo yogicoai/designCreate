@@ -532,7 +532,11 @@ const ANGLE_EN: Record<string, string> = {
 };
 
 /** 보는 방향이 아니라 제품 자세가 바뀐 칸 */
-const POSTURE_KEYS = new Set(['upright']);
+/*
+ * 각도가 아니라 '상태' 인 칸 — "seen from the ~" 로 이어 붙이면 비문이 된다.
+ * real = 조합 사용컷(사람이 앉은 실사).
+ */
+const POSTURE_KEYS = new Set(['upright', 'real']);
 
 /** 카메라·놓임새를 정하는 포즈 소스가 있는가 — 있으면 AI 제품 칸은 형태만 맡는다 */
 function hasPoseSource(spec: GenerationSpec): boolean {

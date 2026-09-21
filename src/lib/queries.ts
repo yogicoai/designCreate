@@ -133,12 +133,20 @@ export async function getExpressions(): Promise<WithId<ExpressionDoc>[]> {
 }
 
 /**
- * 이미지 생성에서 고를 수 있는 AI 생성 제품 시트 — 승인된 형태 시트만.
+ * 이미지 생성에서 고를 수 있는 AI 생성 제품 시트.
  * 검증중 시트는 화면에 안 띄운다: 고를 수 있으면 승인 절차가 의미를 잃는다.
+ *
+ * 형태 시트(shape)가 기본이지만 **조합 시트는 kind 와 무관하게** 가져온다 —
+ * 팟+서포트처럼 사람이 앉아야 형태가 성립하는 조합은 제품컷이 아니라 사용컷이 기준이다
+ * (실측 2026-09-16: 사람 없이 서포트를 둥근 팟 위에 올리면 네 번 다 미끄러지거나 홈을 판다).
  */
 export async function getApprovedShapeSheets(): Promise<AiProductSheet[]> {
   const col = await collection(COLLECTIONS.aiProducts);
-  const docs = await col.find({ kind: 'shape', status: 'approved', hidden: { $ne: true } }).sort({ line: 1, approvedAt: -1, createdAt: -1 }).toArray();
+  const docs = await col.find({
+    status: 'approved',
+    hidden: { $ne: true },
+    $or: [{ kind: 'shape' }, { comboLines: { $exists: true, $ne: [] } }],
+  }).sort({ line: 1, approvedAt: -1, createdAt: -1 }).toArray();
   return docs.map((d) => toSheet(d)).filter((s) => s.panels.length > 0);
 }
 
@@ -183,6 +191,12 @@ export function normalizeRefCategory(cat: string | null | undefined): string | n
   // SNS 자동화 소스 — 인물 교체용(사람 있는 컷)과 제품 배치용(사람 없는 공간)을 폴더로 나눈다
   if (cat === 'sns-person') return 'sns-person';
   if (cat === 'sns-scene') return 'sns-scene';
+  /*
+   * 'dropbox' 는 여기 없다 — 드롭박스에서 가져온 제품사진은 references 가 아니라
+   * 별도 컬렉션 dropbox_assets 에 산다 (사용자 결정 2026-09-21).
+   * 레퍼런스가 이미 4,600장인데 드롭박스 9,565장을 섞으면 기존 작업이 묻히기 때문.
+   * 아래 getDropboxAssets() 참고.
+   */
   return null;
 }
 
@@ -200,6 +214,112 @@ export async function getReferences(limit = 300): Promise<ReferenceDoc[]> {
     source: d.source ?? 'upload',
     createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : null,
   }));
+}
+
+/* ── 드롭박스 파일 ─────────────────────────────────────────────────────────
+ *
+ * 팀 드롭박스 `1. 디자인/2.7 제품사진` 에서 복사해 온 제품사진. 원본은 읽기만 한다.
+ *
+ * 왜 references 가 아니라 별도 컬렉션인가 (사용자 결정 2026-09-21):
+ *   레퍼런스가 이미 4,600장인데 드롭박스에는 9,565장이 있다. 한 컬렉션에 섞으면
+ *   촬영 1,072장·모델컷 1,257장 같은 기존 작업이 그대로 묻힌다. 화면도 따로 둔다.
+ *
+ * 왜 제품 라벨(sub)이 비어 있는가:
+ *   드롭박스 폴더명이 정확하다는 보장이 없다. 실측 결과 '슬림' 폴더의 41장이 파일명에
+ *   midi 를 달고 있었고 '롤 닷' 6장은 전부 miniroll 이었다. 게다가 파일명에 단서가 있는
+ *   것은 전체의 7%뿐이고, 한 장에 여러 제품이 나오는 사진도 흔하다.
+ *   그래서 확정 라벨은 비워두고 근거(folderHint·filenameHint·labelStatus)만 남긴다.
+ *   검수 화면에서 conflict 부터 훑어 sub 를 채우면 그때 라벨이 확정된다.
+ */
+export interface DropboxAssetDoc {
+  url: string;
+  /** 원본 파일명(확장자 제외) */
+  title: string;
+  width: number;
+  height: number;
+  /** 확정 제품 라벨 — 사람이 검수해서 채운다. null = 아직 미확정 */
+  sub: string | null;
+  /** 근거① 드롭박스 폴더명. 분류로 쓰지 말 것 — 틀린 폴더가 실제로 있다 */
+  folderHint: string;
+  /** 근거② 파일명에서 찾은 제품 토큰 */
+  filenameHint: string[];
+  /** agree=폴더와 파일명 일치 / folder-only=파일명 단서 없음 / conflict=둘이 다름 */
+  labelStatus: 'agree' | 'folder-only' | 'conflict';
+  /** 드롭박스 원본 상대경로 — 멱등 키이자 되돌아갈 수 있는 근거 */
+  sourcePath: string;
+  sourceName: string;
+  createdAt: string | null;
+}
+
+/** 폴더별·검수상태별 개수 — 화면 상단의 필터 칩에 쓴다 */
+export interface DropboxSummary {
+  total: number;
+  labeled: number;
+  byFolder: { folder: string; total: number; labeled: number; conflict: number }[];
+  byStatus: Record<string, number>;
+}
+
+export async function getDropboxAssets(limit = 300, skip = 0): Promise<DropboxAssetDoc[]> {
+  const col = await collection<DropboxAssetDoc & { active?: boolean; createdAt?: unknown }>('dropbox_assets');
+  const docs = await col
+    .find({ active: { $ne: false } })
+    .sort({ folderHint: 1, sourcePath: 1 })
+    .skip(skip)
+    .limit(limit)
+    .toArray();
+  return docs.map(toDropboxAsset);
+}
+
+/** DB 문서 한 건을 화면이 쓰는 평범한 JSON 으로 — API 라우트도 같은 함수를 쓴다 */
+export function toDropboxAsset(d: Record<string, unknown>): DropboxAssetDoc {
+  const status = String(d.labelStatus ?? 'folder-only');
+  return {
+    url: String(d.url ?? ''),
+    title: String(d.title ?? ''),
+    width: Number(d.width) || 0,
+    height: Number(d.height) || 0,
+    sub: (d.sub as string | null) ?? null,
+    folderHint: String(d.folderHint ?? ''),
+    filenameHint: Array.isArray(d.filenameHint) ? (d.filenameHint as string[]) : [],
+    labelStatus: (status === 'agree' || status === 'conflict' ? status : 'folder-only'),
+    sourcePath: String(d.sourcePath ?? ''),
+    sourceName: String(d.sourceName ?? ''),
+    createdAt: d.createdAt ? new Date(d.createdAt as string).toISOString() : null,
+  };
+}
+
+/**
+ * 폴더별 현황. 수천 장이라 목록을 다 받아서 세면 안 된다 — DB 에서 집계한다.
+ * labeled = 사람이 sub 를 채운 것, conflict = 폴더와 파일명이 어긋나 먼저 봐야 할 것.
+ */
+export async function getDropboxSummary(): Promise<DropboxSummary> {
+  const col = await collection<Record<string, unknown>>('dropbox_assets');
+  const base = { active: { $ne: false } };
+  const [rows, statusRows, total, labeled] = await Promise.all([
+    col.aggregate<{ _id: string; total: number; labeled: number; conflict: number }>([
+      { $match: base },
+      {
+        $group: {
+          _id: '$folderHint',
+          total: { $sum: 1 },
+          labeled: { $sum: { $cond: [{ $in: ['$sub', [null, '']] }, 0, 1] } },
+          conflict: { $sum: { $cond: [{ $eq: ['$labelStatus', 'conflict'] }, 1, 0] } },
+        },
+      },
+      { $sort: { total: -1 } },
+    ]).toArray(),
+    col.aggregate<{ _id: string; n: number }>([
+      { $match: base }, { $group: { _id: '$labelStatus', n: { $sum: 1 } } },
+    ]).toArray(),
+    col.countDocuments(base),
+    col.countDocuments({ ...base, sub: { $nin: [null, ''] } }),
+  ]);
+  return {
+    total,
+    labeled,
+    byFolder: rows.map((r) => ({ folder: r._id || '(없음)', total: r.total, labeled: r.labeled, conflict: r.conflict })),
+    byStatus: Object.fromEntries(statusRows.map((r) => [r._id || 'folder-only', r.n])),
+  };
 }
 
 /**

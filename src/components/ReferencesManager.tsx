@@ -39,6 +39,7 @@ const CATEGORY_KR: Record<string, string> = {
 /** 등록·변경 시 고르는 분류 (구 값 정규화는 서버 getReferences·API 에서 처리) */
 const CATEGORY_OPTIONS: { value: string; label: string; desc: string }[] = [
   { value: 'shoot', label: '촬영', desc: '실제 촬영·연출 컷' },
+  // 드롭박스 제품사진은 여기 없다 — 별도 메뉴 「드롭박스」(/dropbox, dropbox_assets 컬렉션)에 산다
   { value: 'banner', label: '배너', desc: '자사몰·스마트스토어·모바일 배너 규격' },
   { value: 'sns', label: 'SNS', desc: '인스타 정사각·스토리·릴스' },
   { value: 'interior', label: '인테리어', desc: '빈 공간·인테리어 컷 — 생성 시 「배경으로 사용」 소스' },
