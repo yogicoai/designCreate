@@ -184,7 +184,12 @@ const REMOTE_ROOT = (env.FTP_REMOTE_DIR || '').replace(/\/$/, '');
 // ── 수집 ────────────────────────────────────────────────────────────────────
 /** 폴더를 재귀로 훑어 이미지 파일 경로를 모은다. 읽기만 한다. */
 function walk(dir, out = [], depth = 0) {
-  if (depth > 4) return out;
+  /*
+   * 깊이 제한은 무한 루프(링크 순환) 방지용 안전장치일 뿐이다 — 실제 폴더 구조를 자르면 안 된다.
+   * 예전엔 4 였는데, 2.6 촬영/2024촬영 이 6단계까지 들어가 있어 94장이 조용히 빠질 뻔했다
+   * (2026-09-21, scripts/audit-dropbox-coverage.mjs 로 확인). 드롭박스 폴더는 이만큼 깊지 않다.
+   */
+  if (depth > 20) { console.log(`⚠ 폴더가 20단계보다 깊어 더 내려가지 않음: ${dir}`); return out; }
   let ents;
   try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
   for (const e of ents) {
