@@ -181,6 +181,14 @@ export interface GenerationSpec {
   preservation?: { value: string; label: string; instruction: string };
   /** 업로드 base 에서 무엇을 바꿀지 */
   editTargets?: EditTarget[];
+  /**
+   * 배경 합성 (「모델과 함께」 ⑥ 배경 변경 — 사용자 요청 2026-09-21).
+   * base 업로드(② 레퍼런스)에서는 인물·포즈·제품만 가져오고, background 업로드(⑥)의 공간에 옮겨 놓는다.
+   * base 와 background 가 둘 다 있을 때만 켜진다(서버가 확인한다).
+   * 켜지면 "베이스를 그대로 재현하라 — 같은 배경·같은 조명" 문장과 보존 강도 지시가 배경까지 붙잡지 않도록
+   * 범위를 인물·제품으로 좁힌다 — 그대로 두면 두 지시가 정면으로 부딪힌다.
+   */
+  backgroundSwap?: boolean;
 
   /**
    * 레퍼런스(베이스)에 담긴 제품 — 인물 대비 스케일을 못박기 위한 것.
@@ -276,20 +284,29 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
         : 'the base photograph — reproduce its camera angle, pose, product shape and compression, lighting and framing exactly',
     });
   }
+  /*
+   * 배경 합성이면 두 사진의 역할을 칼같이 나눈다. 실측(2026-09-21): 참조 사진에 방이 있으면
+   * "배경은 따로" 라고 해도 그 방이 통째로 따라온다 — 무엇을 가져오고 무엇을 버릴지를 사진마다 적어야 막힌다.
+   */
+  const swap = !!spec.backgroundSwap && bases.length > 0 && backgrounds.length > 0;
   for (const u of bases) {
     slots.push({
       kind: 'base',
-      title: `베이스 · ${u.title}`,
+      title: `${swap ? '인물·제품 소스' : '베이스'} · ${u.title}`,
       url: u.url,
-      role: 'the base photograph to edit — keep it as-is and change only what is specified below',
+      role: swap
+        ? 'the SOURCE photograph for the people and the products ONLY — take from it the people (their exact pose, limb placement and position relative to each other and to the products) and the products (their shape, size and how they are compressed). Take NOTHING of its environment: its room, walls, floor, windows, props, lighting and colour grade are all replaced by the background image'
+        : 'the base photograph to edit — keep it as-is and change only what is specified below',
     });
   }
   for (const u of backgrounds) {
     slots.push({
       kind: 'background',
-      title: `배경 · ${u.title}`,
+      title: `${swap ? '새 배경' : '배경'} · ${u.title}`,
       url: u.url,
-      role: 'the background and setting to reproduce — same space, architecture, lighting direction and colour temperature',
+      role: swap
+        ? 'the NEW ENVIRONMENT — the people and products from the source photograph are placed into THIS space. Reproduce its architecture, walls, floor, props, camera height, perspective, lighting direction and colour temperature'
+        : 'the background and setting to reproduce — same space, architecture, lighting direction and colour temperature',
     });
   }
   for (const u of styles) {
@@ -1238,11 +1255,51 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
   return L;
 }
 
+/** 배경 합성이 실제로 켜졌는가 — base 와 background 가 둘 다 있어야 한다 */
+function isBackgroundSwap(spec: GenerationSpec): boolean {
+  const u = spec.uploadedRefs ?? [];
+  return !!spec.backgroundSwap && u.some((r) => r.role === 'base') && u.some((r) => r.role === 'background');
+}
+
+/**
+ * 배경 합성 지시 — 두 사진을 한 장으로.
+ * 합성 티가 나는 지점은 오늘까지의 실측으로 셋이다: 조명 방향이 어긋남, 카메라 높이·원근이 어긋남,
+ * 바닥에 닿은 그림자가 없음. 셋을 하나씩 못박는다. 인물의 포즈와 제품의 형태는 소스 그대로다.
+ */
+function compositeBlock(): string[] {
+  return [
+    'COMPOSITE — two photographs become one photograph.',
+    '  From the SOURCE photograph keep the people exactly as posed (same body pose, limb placement and positions relative to each other) and the products exactly as shaped and compressed.',
+    '  From the BACKGROUND image take the whole environment — the room, walls, floor, windows, props and light.',
+    '  Re-stage the people and products inside that environment: match the background\'s camera height and perspective so they stand or sit on its floor at a natural, true-to-life scale.',
+    '  RE-LIGHT the people and products from the background\'s own light direction and colour temperature, so they look photographed in that room rather than pasted into it.',
+    '  Ground them with soft contact shadows on the background\'s floor where the bodies and products meet it.',
+    '  Nothing of the source photograph\'s room, walls, floor, props, lighting or colour grade remains in the result.',
+  ];
+}
+
 /** 업로드 base 편집 지시 */
 function editBlock(spec: GenerationSpec): string[] {
   const targets = spec.editTargets ?? [];
   if (!targets.length) return [];
   const L: string[] = [];
+  /*
+   * 배경 합성에서는 "나머지는 베이스와 픽셀까지 똑같이" 가 틀린 말이 된다 — 조명·원근·배경이 바뀌어야 하기 때문.
+   * 그래서 보존 대상을 인물의 포즈와 제품의 형태로 좁히고, 배경 항목은 새 배경 사진을 가리키게 한다.
+   */
+  if (isBackgroundSwap(spec)) {
+    L.push('EDIT — apply the following to the people and products taken from the source photograph:');
+    for (const t of targets) {
+      L.push(`  - ${t === 'background'
+        ? 'place them into the environment of the background image instead of their original surroundings (see COMPOSITE)'
+        : (EDIT_TARGET_EN[t] ?? t)}`);
+    }
+    L.push(
+      'Keep each person\'s pose, limb placement and relative position, and each product\'s shape and compression, exactly as in the source photograph. ' +
+        'Their lighting, perspective and scale in frame follow the background image.',
+    );
+    return L;
+  }
   L.push('EDIT — change ONLY the following, and leave everything else pixel-faithful to the base image:');
   for (const t of targets) L.push(`  - ${EDIT_TARGET_EN[t] ?? t}`);
   /*
@@ -1277,6 +1334,10 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
         'do not inherit them from that image.',
     );
     L.push('');
+  } else if (isBackgroundSwap(spec)) {
+    // 배경 합성 — 아래 "베이스를 그대로 재현(같은 배경·같은 조명)" 과 정면으로 부딪히므로 그 문장 대신 합성 지시를 쓴다
+    L.push(...compositeBlock());
+    L.push('');
   } else if (spec.baseCut || hasUploadBase) {
     L.push(
       'Reproduce the base photograph EXACTLY — same camera angle, same poses, same body positions and limb placement, ' +
@@ -1299,6 +1360,13 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
 
   if (spec.preservation?.instruction) {
     L.push(spec.preservation.instruction.trim());
+    /*
+     * 보존 강도 지시는 "원본의 조명·구도·장면을 유지하라" 는 내용이라 배경 합성과 부딪힌다.
+     * 합성일 때는 적용 범위를 인물·제품으로 한정한다.
+     */
+    if (isBackgroundSwap(spec)) {
+      L.push('This preservation level applies ONLY to the people and the products taken from the source photograph. The environment, lighting and colour come from the background image.');
+    }
     L.push('');
   }
 
@@ -1415,8 +1483,16 @@ function specToBrief(spec: GenerationSpec, refs: RefSlot[]): string {
     );
   }
   const eb = editBlock(spec);
-  if (eb.length) { L.push(''); L.push('편집 지시 (이것만 바꾸고 나머지는 원본 그대로 — 가장 강하게 반영할 것):'); L.push(...eb.map((x) => '  ' + x)); }
-  if (spec.preservation) { L.push(''); L.push(`레퍼런스 보존 강도: ${spec.preservation.label}`); L.push(spec.preservation.instruction); }
+  if (isBackgroundSwap(spec)) {
+    L.push('');
+    L.push('배경 합성 (가장 강하게 반영할 것) — 인물·제품 소스 사진에서는 인물의 포즈와 제품만, 새 배경 사진에서는 공간 전체를 가져온다. 조명 방향·색온도·카메라 높이·원근을 새 배경에 맞추고, 새 바닥에 접지 그림자를 넣는다:');
+    L.push(...compositeBlock().map((x) => '  ' + x));
+  }
+  if (eb.length) { L.push(''); L.push(isBackgroundSwap(spec) ? '편집 지시:' : '편집 지시 (이것만 바꾸고 나머지는 원본 그대로 — 가장 강하게 반영할 것):'); L.push(...eb.map((x) => '  ' + x)); }
+  if (spec.preservation) {
+    L.push(''); L.push(`레퍼런스 보존 강도: ${spec.preservation.label}${isBackgroundSwap(spec) ? ' — 인물·제품에만 적용 (배경·조명은 새 배경 사진을 따른다)' : ''}`);
+    L.push(spec.preservation.instruction);
+  }
 
   const pb = productBlock(spec);
   if (pb.length) { L.push(''); L.push('제품 정보 (실측으로 확립된 값 — 그대로 써야 함):'); L.push(...pb.map((x) => '  ' + x)); }

@@ -299,9 +299,30 @@ export default function CreateStudio(p: Props) {
   const dbxLib = useMemo(() => library.filter(isDropboxRef), [library]);
   /** 지금 열린 보관함이 보여줄 몫 */
   const libItems = libKind === 'dropbox' ? dbxLib : refLib;
-  const openLib = (kind: 'ref' | 'dropbox') => {
-    setLibKind(kind); setLibOpen(true); setLibCat(''); setLibSub(''); setLibSearch(''); setLibPage(1);
+  /**
+   * 보관함에서 고른 사진이 어디로 가는가 — ② 레퍼런스(uploads) 또는 ⑥ 배경 변경(bgSwap).
+   * 같은 팝업을 두 곳에서 연다.
+   */
+  const [libTarget, setLibTarget] = useState<'uploads' | 'bgSwap'>('uploads');
+  const openLib = (kind: 'ref' | 'dropbox', target: 'uploads' | 'bgSwap' = 'uploads') => {
+    setLibKind(kind); setLibTarget(target); setLibOpen(true); setLibSub(''); setLibSearch(''); setLibPage(1);
+    /*
+     * 배경을 고를 때는 인테리어(빈 공간 컷)를 먼저 보여준다 (사용자 요청 2026-09-21).
+     * 인테리어가 한 장도 없으면 전체로 연다 — 빈 탭이 열리면 고장난 것처럼 보인다.
+     */
+    setLibCat(target === 'bgSwap' && kind === 'ref' && refLib.some((r) => refCatOf(r.category) === 'interior') ? 'interior' : '');
   };
+
+  /*
+   * ⑥ 배경 변경 (「모델과 함께」 전용, 선택 — 사용자 요청 2026-09-21).
+   * ② 레퍼런스에서는 모델·포즈·제품만 가져오고, 여기 고른 사진의 공간으로 옮겨 합성한다.
+   * ② 가 비어 있으면 이 배경 안에 우리 모델·제품을 새로 배치한다(기존 「배경으로 사용」 과 같다).
+   */
+  const [bgSwap, setBgSwap] = useState<{ url: string; title: string } | null>(null);
+  // 업로드는 몇 초 걸린다 — 끝났을 때 배경이 있는지를 봐야 새 레퍼런스의 역할을 맞게 정한다
+  const bgSwapRef = useRef<{ url: string; title: string } | null>(null);
+  const [bgUploading, setBgUploading] = useState(false);
+  const bgFileInput = useRef<HTMLInputElement>(null);
   const LIB_PAGE = 20;
   /*
    * 드롭박스 자산 이어받기 — 수천 장이라 서버는 첫 묶음만 싣는다.
@@ -338,6 +359,28 @@ export default function CreateStudio(p: Props) {
   };
   const [preservation, setPreservation] = useState('similar');
   const [editTargets, setEditTargets] = useState<EditTarget[]>([]);
+
+  /*
+   * ⑥ 배경을 넣으면 ② 레퍼런스의 쓰임을 합성에 맞게 바꾼다:
+   *   - ② 사진은 전부 「이 사진을 편집」(base) — 모델·포즈·제품을 꺼내 올 원본이 된다
+   *   - 편집 대상에 「배경만 교체」 를 켠다
+   *   - 보존 강도 「원본 그대로(텍스트만)」 는 "아무것도 바꾸지 마라" 라서 배경 교체와 함께 못 쓴다 → 「원본 최대한 살리기」
+   * 빼면 「배경만 교체」 만 되돌린다 — ② 의 역할은 사람이 다시 고르게 둔다(말없이 두 번 바꾸면 헷갈린다).
+   */
+  const applyBgSwap = (ref: { url: string; title: string }) => {
+    setBgSwap(ref);
+    bgSwapRef.current = ref;
+    setUploads((cur) => cur.map((u) => ({ ...u, role: 'base' as const })));
+    setEditTargets((cur) => (cur.includes('background') ? cur : [...cur, 'background']));
+    setPreservation((p) => (p === 'overlay-only' ? 'strict' : p));
+    setDry(null);
+  };
+  const clearBgSwap = () => {
+    setBgSwap(null);
+    bgSwapRef.current = null;
+    setEditTargets((cur) => cur.filter((t) => t !== 'background'));
+    setDry(null);
+  };
   // 레퍼런스에 담긴 제품 — 인물 대비 스케일용 (사진 속 빈백이 무엇인지)
   const [refProduct, setRefProduct] = useState('');
   const [direction, setDirection] = useState('');
@@ -480,6 +523,16 @@ export default function CreateStudio(p: Props) {
   const effectiveEngine: 'gemini' | 'gpt' = gptAllowed ? engine : 'gemini';
   const withPeople = flow === 'model';
   const uploadsForFlow = flow === 'model' ? uploads : uploads.filter((u) => u.role !== 'base');
+  /**
+   * 실제로 보내는 레퍼런스 — ② 에 더해 ⑥ 배경(모델과 함께 전용)을 「배경」 역할로 뒤에 붙인다.
+   * 서버·프롬프트는 base(②) 와 background(⑥) 가 둘 다 있으면 합성으로 읽는다.
+   */
+  const refsToSend: UploadedRef[] = [
+    ...uploadsForFlow,
+    ...(withPeople && bgSwap && !uploadsForFlow.some((u) => u.url === bgSwap.url)
+      ? [{ url: bgSwap.url, title: bgSwap.title, role: 'background' as const }]
+      : []),
+  ];
   /** 형태 보조 칸 수 — 서버(route.ts)와 같은 규칙: 여러 종이면 0, 모델 컷 1, 제품만 2 */
   const supportCount = extraProducts.some((x) => x.line) ? 0 : withPeople ? 1 : 2;
 
@@ -545,9 +598,42 @@ export default function CreateStudio(p: Props) {
     });
   }
 
-  /** 보관함에서 현재 작업으로 가져오기 (중복 제외) */
+  /**
+   * 새로 들어오는 ② 레퍼런스의 기본 쓰임.
+   * ⑥ 배경이 이미 있으면 「이 사진을 편집」 — 모델·포즈·제품을 꺼내 올 원본이어야 합성이 된다.
+   */
+  const newRefRole = (): RefRole =>
+    flowRef.current === 'model' ? (bgSwapRef.current ? 'base' : 'style') : 'background';
+
+  /** 보관함에서 현재 작업으로 가져오기 (중복 제외). ⑥ 에서 열었으면 배경으로 */
   function addFromLibrary(r: ReferenceDoc) {
-    setUploads((cur) => (cur.some((u) => u.url === r.url) ? cur : [...cur, { url: r.url, title: r.title, role: flowRef.current === 'model' ? 'style' : 'background' }]));
+    if (libTarget === 'bgSwap') {
+      applyBgSwap({ url: r.url, title: r.title });
+      setLibOpen(false);   // 배경은 한 장 — 고르면 바로 닫는다
+      return;
+    }
+    setUploads((cur) => (cur.some((u) => u.url === r.url) ? cur : [...cur, { url: r.url, title: r.title, role: newRefRole() }]));
+  }
+
+  /** ⑥ 배경 사진을 직접 올린다 — 이번 작업에만 쓰고 보관함에는 쌓지 않는다(② 와 같은 규칙) */
+  async function onBgFile(files: FileList | null) {
+    const f = files?.[0];
+    if (!f) return;
+    setBgUploading(true); setErr('');
+    try {
+      const shrunk = await shrinkForUpload(f);
+      const fd = new FormData();
+      fd.append('file', shrunk.file);
+      fd.append('title', f.name);
+      fd.append('register', '0');
+      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (json.ok) applyBgSwap({ url: json.url, title: json.title });
+      else setErr(json.error || '배경 업로드 실패');
+    } finally {
+      setBgUploading(false);
+      if (bgFileInput.current) bgFileInput.current.value = '';
+    }
   }
 
   /** 직접 지정 규격을 '내 규격' 프리셋으로 저장 */
@@ -669,9 +755,11 @@ export default function CreateStudio(p: Props) {
       ...(withPeople && baseTab === 'pose' && shapeRefKey ? { shapeRefKey } : {}),
       // 제품만 노출 탭에서는 편집 베이스를 보내지 않는다 (모델과 함께에서 base 로 두고 탭을 바꾼 경우)
       // 보존 강도는 화면에 조절 칩이 보일 때만 — 제품만 노출은 분위기 참고 사진이 있을 때만 칩이 나온다
-      ...(uploadsForFlow.length
-        ? { uploadedRefs: uploadsForFlow, ...(flow === 'model' || uploadsForFlow.some((u) => u.role === 'style') ? { preservation } : {}) }
+      ...(refsToSend.length
+        ? { uploadedRefs: refsToSend, ...(flow === 'model' || refsToSend.some((u) => u.role === 'style') ? { preservation } : {}) }
         : {}),
+      // ⑥ 배경 합성 — ② 에 편집 원본이 있을 때만. ② 가 비어 있으면 ⑥ 은 평범한 「배경으로 사용」 이다
+      ...(withPeople && bgSwap && hasBaseUpload ? { backgroundSwap: true } : {}),
       ...(hasBaseUpload && editTargets.length ? { editTargets } : {}),
       ...(withPeople && refProduct ? { refProduct } : {}),
       engine: effectiveEngine,
@@ -743,7 +831,7 @@ export default function CreateStudio(p: Props) {
         const res = await fetch('/api/upload', { method: 'POST', body: fd });
         const json = await res.json();
         if (json.ok) {
-          setUploads((u) => [...u, { url: json.url, title: json.title, role: flowRef.current === 'model' ? 'style' : 'background' }]);
+          setUploads((u) => [...u, { url: json.url, title: json.title, role: newRefRole() }]);
         } else setErr(json.error || '업로드 실패');
       }
     } finally {
@@ -1536,9 +1624,60 @@ ${c.spec}`}
             )}
           </Section>
 
+          {/*
+            ⑥ 배경 변경 (선택) — 「모델과 함께」 전용 (사용자 요청 2026-09-21).
+            ② 레퍼런스에서는 모델·포즈·제품만 가져오고 여기 고른 사진의 공간으로 옮겨 합성한다.
+            보관함에서 고를 때는 인테리어(빈 공간 컷)가 먼저 열린다.
+          */}
+          {withPeople && (
+          <Section n="6" title="배경 변경 (선택)"
+                   hint="② 레퍼런스의 모델·포즈·제품을 이 배경 안으로 옮겨 합성합니다. 레퍼런스와 비슷한 높이·각도에서 찍은 배경일수록 자연스럽습니다.">
+            <input ref={bgFileInput} type="file" accept="image/*" hidden onChange={(e) => onBgFile(e.target.files)} />
+            {bgSwap ? (
+              <div className="flex gap-2.5 p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                <Zoomable src={bgSwap.url} alt={bgSwap.title} caption={bgSwap.title}
+                          className="w-[96px] h-[72px] object-cover rounded-lg shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] truncate" style={{ color: 'var(--text-dim)' }}>새 배경 · {bgSwap.title}</div>
+                    <button onClick={clearBgSwap}
+                            className="text-[11px] shrink-0" style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                      빼기
+                    </button>
+                  </div>
+                  {/* 지금 이 배경이 어떻게 쓰이는지 — ② 가 있으면 합성, 없으면 이 공간에 새로 배치 */}
+                  <div className="text-[10.5px] mt-1 leading-relaxed" style={{ color: hasBaseUpload ? 'var(--ok)' : 'var(--text-mute)' }}>
+                    {hasBaseUpload
+                      ? `② 레퍼런스 ${uploads.filter((u) => u.role === 'base').length}장에서 모델·포즈·제품만 가져와 이 배경에 합성합니다.`
+                      : '② 레퍼런스가 없어서, 이 공간에 고른 모델·제품을 새로 배치합니다.'}
+                  </div>
+                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                    <button className="chip" onClick={() => openLib('ref', 'bgSwap')}>다른 배경 고르기</button>
+                    <button className="chip" onClick={() => bgFileInput.current?.click()} disabled={bgUploading}>
+                      {bgUploading ? '업로드 중…' : '사진 바꾸기'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2 flex-wrap items-start">
+                <button className="btn" onClick={() => bgFileInput.current?.click()} disabled={bgUploading}>
+                  {bgUploading ? '업로드 중…' : '＋ 배경 사진 올리기'}
+                </button>
+                <button className="btn btn-ghost text-[11px]" onClick={() => openLib('ref', 'bgSwap')}>
+                  레퍼런스 보관함에서 (인테리어 먼저)
+                </button>
+                <button className="btn btn-ghost text-[11px]" onClick={() => openLib('dropbox', 'bgSwap')}>
+                  드롭박스 보관함에서
+                </button>
+              </div>
+            )}
+          </Section>
+          )}
+
           {/* 모델 — 전속 모델. 클릭 순서 = 사진 왼쪽부터 */}
           {withPeople && (
-          <Section n="6" title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다.">
+          <Section n="7" title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다.">
             <div className="flex flex-wrap gap-2 mb-3">
               {p.talents.map((t) => {
                 const idx = picks.findIndex((x) => x.code === t.code);
@@ -1678,7 +1817,7 @@ ${c.spec}`}
           */}
 
           {/* 배경 · 연출 (글) — 배경 사진이 없으면 여기 적은 글이 배경을 정한다 */}
-          <Section n={withPeople ? '7' : '5'} title="배경 · 연출" hint="배경 공간·조명·분위기를 한글로 편하게 적으면 됩니다. 배경 사진을 올렸다면 그 공간에 더할 것만 적으세요.">
+          <Section n={withPeople ? '8' : '5'} title="배경 · 연출" hint="배경 공간·조명·분위기를 한글로 편하게 적으면 됩니다. 배경 사진을 올렸다면 그 공간에 더할 것만 적으세요.">
             {/*
               광각 배너(21:9·16:9) 힌트 — 넓게 뽑으면 한쪽을 비워야 글자가 들어간다.
               애초에 빈 쪽이 없으면 배너 스튜디오의 자동 배치도 놓을 자리가 없다.
@@ -2039,7 +2178,7 @@ ${hint}` : hint))}>
                onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-2 mb-3">
               <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>
-                {libKind === 'dropbox' ? '드롭박스 보관함' : '레퍼런스 보관함'} · {libItems.length.toLocaleString()}개
+                {libTarget === 'bgSwap' ? '⑥ 배경 고르기 · ' : ''}{libKind === 'dropbox' ? '드롭박스 보관함' : '레퍼런스 보관함'} · {libItems.length.toLocaleString()}개
               </h2>
               <button className="chip" onClick={() => setLibOpen(false)}>닫기</button>
             </div>
@@ -2130,7 +2269,14 @@ ${hint}` : hint))}>
                   (!libCat || refCatOf(r.category) === libCat) &&
                   (!libSub || r.sub === libSub) &&
                   (!q || (r.title || '').toLowerCase().includes(q));
-                const list = libItems.filter(match);
+                /*
+                 * ⑥ 배경을 고를 때는 인테리어(빈 공간 컷)를 맨 앞에 — 탭을 「전체」로 바꿔도 먼저 보이게.
+                 * 정렬은 안정 정렬이라 나머지 순서(최근 등록순)는 그대로다.
+                 */
+                const matched = libItems.filter(match);
+                const list = libTarget === 'bgSwap'
+                  ? [...matched].sort((a, b) => Number(refCatOf(b.category) === 'interior') - Number(refCatOf(a.category) === 'interior'))
+                  : matched;
                 if (!list.length) {
                   return (
                     <div className="text-[12px] py-10 text-center" style={{ color: 'var(--text-mute)' }}>
@@ -2150,7 +2296,7 @@ ${hint}` : hint))}>
                   <div>
                     <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
                       {items.map((r) => {
-                        const used = uploads.some((u) => u.url === r.url);
+                        const used = libTarget === 'bgSwap' ? bgSwap?.url === r.url : uploads.some((u) => u.url === r.url);
                         const catLabel = REF_CATS.find((c) => c.value === refCatOf(r.category))?.label;
                         return (
                           <div key={r.url} className="rounded-lg overflow-hidden border relative"
@@ -2166,7 +2312,7 @@ ${hint}` : hint))}>
                               <div className="text-[10.5px] truncate mb-1" style={{ color: 'var(--text-dim)' }}>{r.title}</div>
                               <button className={`btn w-full py-0.5 text-[11px] ${used ? '' : 'btn-primary'}`}
                                       disabled={used} onClick={() => addFromLibrary(r)}>
-                                {used ? '추가됨 ✓' : '＋ 추가'}
+                                {libTarget === 'bgSwap' ? (used ? '지금 배경 ✓' : '배경으로 쓰기') : (used ? '추가됨 ✓' : '＋ 추가')}
                               </button>
                             </div>
                           </div>

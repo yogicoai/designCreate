@@ -84,6 +84,8 @@ interface Body {
   preservation?: string;
   /** 업로드 base 에서 무엇을 바꿀지 */
   editTargets?: EditTarget[];
+  /** ⑥ 배경 변경 — base 에서 인물·포즈·제품만, background 업로드의 공간으로 합성 */
+  backgroundSwap?: boolean;
   shapeRefKey?: string;
   poseRefKey?: string;
   usageShotId?: string;
@@ -540,6 +542,15 @@ export async function POST(req: Request) {
         : {}),
       uploadedRefs,
       ...(body.editTargets?.length ? { editTargets: body.editTargets } : {}),
+      /*
+       * 배경 합성은 두 사진이 다 있을 때만 켠다 — 화면이 플래그만 보내고 사진 한쪽이 빠지면
+       * 프롬프트가 "배경 사진" 을 가리키는데 그 사진이 없는 상태가 된다.
+       */
+      ...(body.backgroundSwap
+        && uploadedRefs.some((u) => u.role === 'base')
+        && uploadedRefs.some((u) => u.role === 'background')
+        ? { backgroundSwap: true }
+        : {}),
       ...(preservation
         ? { preservation: { value: preservation.value, label: preservation.label, instruction: preservation.instruction } }
         : {}),
