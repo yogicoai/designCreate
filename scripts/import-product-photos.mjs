@@ -25,10 +25,26 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { MongoClient } from 'mongodb';
 import { Client } from 'basic-ftp';
+import sharp from 'sharp';
+
+/*
+ * sharp 메모리 고삐 — 이걸 안 잡으면 프로세스가 조용히 죽는다.
+ *
+ * 실측 2026-09-21: 미디 폴더의 46~52MB 사진 3장을 연달아 축소하다가 세 번째에서
+ * 종료 코드만 남기고 사라졌다. 원본이 12,769×9,579(122메가픽셀)라 raw 로 펴면
+ * 장당 약 367MB 인데, libvips 가 기본적으로 디코딩 결과를 캐시에 쥐고 있어
+ * 연속 처리에서 쌓인다. (인수인계 문서의 "exit 127 로 죽음" 도 같은 증상으로 보인다.)
+ *
+ * cache(false)   디코딩 버퍼를 붙들지 않는다 — 한 장씩 처리하는 이 스크립트엔 캐시가 무의미하다
+ * concurrency(1) 동시 스레드 1 — 큰 이미지에서 스레드당 버퍼가 곱절로 든다
+ */
+sharp.cache(false);
+sharp.concurrency(1);
 
 // ── 설정 ────────────────────────────────────────────────────────────────────
 const SRC_ROOT = 'C:/Users/Yogibo Design/Yogicorporation Dropbox/요기코퍼레이션_포워드/1. 디자인/2.7 제품사진';
@@ -218,6 +234,42 @@ async function withFtp(fn, attempts = 4) {
   }
 }
 
+/** cafe24 가 용량으로 거부할 때의 응답 — 552 Transfer aborted. File too large */
+const TOO_LARGE = /\b552\b|File too large/i;
+
+/**
+ * 한 장 업로드 — 원본 그대로 보내고, 서버가 용량으로 거부하면 그때만 줄여서 다시 보낸다.
+ *
+ * 왜 미리 안 줄이나: 한계값을 모른다. 실측(2026-09-21, 팟 폴더) 16.6MB 는 통과했고
+ * 53.5MB / 54.3MB 는 552 로 거부됐다. 그 사이 어딘가라서, 미리 자르면 멀쩡한 사진까지
+ * 손해를 본다. 1차 배치 1,687장 중 18MB 초과는 14장(0.8%)뿐이라 "막히면 줄인다" 가 맞다.
+ *
+ * 줄이는 방식: 긴 변 4500px. 생성 참조로 쓰기에 충분하고 50MB 가 3~5MB 가 된다.
+ * 확장자와 내용이 어긋나지 않게 원본 포맷을 그대로 유지한다(png 는 png 로).
+ * 드롭박스 원본은 건드리지 않는다 — 여기서도 읽기만 한다.
+ */
+async function uploadOne(abs, dest) {
+  const originalBytes = fs.statSync(abs).size;
+  try {
+    await withFtp((c) => c.uploadFrom(abs, dest));
+    return { resized: false, originalBytes, uploadedBytes: originalBytes };
+  } catch (e) {
+    if (!TOO_LARGE.test(`${e.code || ''} ${e.message || ''}`)) throw e;
+    const isPng = /\.png$/i.test(abs);
+    /*
+     * sequentialRead: 큰 JPEG 을 줄에 따라 흘려 읽는다 — 전체를 메모리에 펴지 않는다.
+     * limitInputPixels: 기본 한계(268MP)를 넘는 것도 받아들이되, 위 cache(false) 와 함께라야 안전하다.
+     */
+    const img = sharp(abs, { sequentialRead: true, limitInputPixels: 500_000_000, failOn: 'none' })
+      .rotate()
+      .resize(4500, 4500, { fit: 'inside', withoutEnlargement: true });
+    const buf = await (isPng ? img.png({ compressionLevel: 9 }) : img.jpeg({ quality: 88 })).toBuffer();
+    await withFtp((c) => c.uploadFrom(Readable.from(buf), dest));
+    console.log(`   ⤓ 용량 초과 — 줄여서 올림 ${(originalBytes / 1048576).toFixed(1)}MB → ${(buf.length / 1048576).toFixed(1)}MB  ${path.basename(abs)}`);
+    return { resized: true, originalBytes, uploadedBytes: buf.length };
+  }
+}
+
 await connect();
 
 let done = 0, failed = 0;
@@ -235,7 +287,7 @@ for (const folder of targets) {
     try {
       // 절대경로로 올린다 — 재연결로 cwd 가 초기화돼도 엉뚱한 곳에 안 떨어진다.
       // (폴더는 위에서 한 번 만들어뒀고, 재연결해도 서버에 그대로 남아 있다)
-      await withFtp((c) => c.uploadFrom(r.abs, `${remoteDir}/${r.remoteName}`));   // ← 원본은 읽기만 한다
+      const up = await uploadOne(r.abs, `${remoteDir}/${r.remoteName}`);   // ← 원본은 읽기만 한다
       await col.updateOne(
         { sourcePath: r.sourcePath },
         {
@@ -252,6 +304,9 @@ for (const folder of targets) {
             sourcePath: r.sourcePath,
             sourceName: r.sourceName,
             source: 'dropbox-product',
+            // 용량 때문에 줄여 올린 건 그 사실을 남긴다 — 나중에 원본이 필요하면
+            // sourcePath 로 드롭박스에서 다시 가져올 수 있어야 한다
+            ...(up.resized ? { resized: true, originalBytes: up.originalBytes, uploadedBytes: up.uploadedBytes } : {}),
             active: true,
             createdAt: new Date(),
           },

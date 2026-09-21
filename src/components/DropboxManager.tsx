@@ -21,7 +21,13 @@ import type { DropboxAssetDoc, DropboxSummary } from '@/lib/queries';
  * 지우기도 숨김뿐이다 — sourcePath 로 언제든 원본에 되돌아갈 수 있다.
  */
 
-const PAGE = 200;
+/*
+ * 한 페이지 50장, 게시판식으로 넘긴다 (사용자 요청 2026-09-21).
+ * 수천 장을 이어붙이며 쌓으면 스크롤이 길어져 어디까지 봤는지 알 수 없고,
+ * 브라우저에 쌓인 이미지 요소만으로도 화면이 무거워진다. 검수는 "이 페이지를 끝냈다"
+ * 가 분명해야 진도가 나가는 일이라 페이지로 끊는 쪽이 맞다.
+ */
+const PAGE = 50;
 
 const STATUS_KR: Record<string, { label: string; desc: string; tone: string }> = {
   conflict: { label: '어긋남', desc: '폴더명과 파일명이 다르다 — 먼저 봐야 할 것', tone: 'var(--danger, #e5484d)' },
@@ -45,6 +51,7 @@ export default function DropboxManager({
   const [summary, setSummary] = useState<DropboxSummary>(initialSummary);
   const [total, setTotal] = useState(initialSummary.total);
   const [filters, setFilters] = useState<Filters>({ folder: '', status: '', labeled: '', q: '' });
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState('');
@@ -57,8 +64,8 @@ export default function DropboxManager({
     return () => clearTimeout(t);
   }, [qInput]);
 
-  const qs = useCallback((skip: number, withSummary = false) => {
-    const p = new URLSearchParams({ skip: String(skip), limit: String(PAGE) });
+  const qs = useCallback((skip: number, withSummary = false, limit = PAGE) => {
+    const p = new URLSearchParams({ skip: String(skip), limit: String(limit) });
     if (filters.folder) p.set('folder', filters.folder);
     if (filters.status) p.set('status', filters.status);
     if (filters.labeled) p.set('labeled', filters.labeled);
@@ -67,13 +74,19 @@ export default function DropboxManager({
     return p.toString();
   }, [filters]);
 
-  // 필터가 바뀌면 처음부터 다시 받는다. 선택은 비운다 — 안 보이는 것이 선택된 채로 남으면
-  // "3장 선택"이라 써 있는데 화면에 한 장도 없는 상태가 된다
+  // 필터를 바꾸면 1페이지로 돌아간다 — 3페이지를 보던 중에 조건을 좁히면 그 페이지가 비어 있을 수 있다
+  useEffect(() => { setPage(0); }, [filters]);
+
+  /*
+   * 페이지를 받는다. 이어붙이지 않고 갈아끼운다 — 게시판이므로 화면에는 이 페이지 50장만 산다.
+   * 선택도 페이지가 바뀌면 비운다: 안 보이는 것이 선택된 채로 남으면
+   * "3장 선택"이라 써 있는데 화면에 한 장도 없는 상태가 된다.
+   */
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setPicked(new Set());
-    fetch(`/api/dropbox?${qs(0, true)}`, { cache: 'no-store' })
+    fetch(`/api/dropbox?${qs(page * PAGE, true)}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => {
         if (!alive || !j?.ok) return;
@@ -84,19 +97,10 @@ export default function DropboxManager({
       .catch(() => setMsg('목록을 불러오지 못했습니다.'))
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [qs]);
-
-  const loadMore = async () => {
-    setLoading(true);
-    try {
-      const r = await fetch(`/api/dropbox?${qs(items.length)}`, { cache: 'no-store' });
-      const j = await r.json();
-      if (j?.ok) setItems((prev) => [...prev, ...(j.assets ?? [])]);
-    } finally { setLoading(false); }
-  };
+  }, [qs, page]);
 
   const refreshSummary = async () => {
-    const r = await fetch(`/api/dropbox?${qs(0, true)}&limit=1`, { cache: 'no-store' });
+    const r = await fetch(`/api/dropbox?${qs(0, true, 1)}`, { cache: 'no-store' });
     const j = await r.json();
     if (j?.summary) setSummary(j.summary);
   };
@@ -140,11 +144,16 @@ export default function DropboxManager({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ urls }),
       });
-      setItems((prev) => prev.filter((it) => !picked.has(it.url)));
-      setTotal((t) => Math.max(0, t - urls.length));
       setMsg(`${urls.length}장을 숨겼습니다. 원본은 드롭박스에 그대로 있습니다.`);
       setPicked(new Set());
-      refreshSummary();
+      // 숨기면 뒤 페이지가 한 칸씩 당겨진다 — 이 쪽을 다시 받아야 빈 자리가 안 생긴다
+      const r2 = await fetch(`/api/dropbox?${qs(page * PAGE, true)}`, { cache: 'no-store' });
+      const j2 = await r2.json();
+      if (j2?.ok) {
+        setItems(j2.assets ?? []);
+        setTotal(j2.total ?? 0);
+        if (j2.summary) setSummary(j2.summary);
+      }
     } finally { setLoading(false); }
   };
 
@@ -160,6 +169,29 @@ export default function DropboxManager({
     color: active ? 'var(--accent)' : 'var(--text-dim)',
     border: `1px solid ${active ? 'var(--accent)' : 'var(--line)'}`,
   });
+
+  const pageBtn = (active: boolean, disabled: boolean): React.CSSProperties => ({
+    background: active ? 'var(--accent)' : 'var(--surface-2)',
+    color: active ? '#fff' : 'var(--text-dim)',
+    border: `1px solid ${active ? 'var(--accent)' : 'var(--line)'}`,
+    borderRadius: 'var(--radius)',
+    padding: '5px 10px',
+    fontSize: 12,
+    fontWeight: active ? 700 : 500,
+    opacity: disabled ? 0.4 : 1,
+    cursor: disabled ? 'default' : 'pointer',
+    minWidth: 32,
+  });
+
+  const pageCount = Math.ceil(total / PAGE);
+  /* 쪽 번호는 현재 쪽 주변 7개만 — 서포트 683장이면 14쪽, 전체 1,687장이면 34쪽이라 다 그리면 줄이 넘친다 */
+  const pageWindow = useMemo(() => {
+    const span = 7;
+    let from = Math.max(0, page - Math.floor(span / 2));
+    const to = Math.min(pageCount, from + span);
+    from = Math.max(0, to - span);
+    return Array.from({ length: to - from }, (_, i) => from + i);
+  }, [page, pageCount]);
 
   const pct = summary.total ? Math.round((summary.labeled / summary.total) * 100) : 0;
 
@@ -272,12 +304,15 @@ export default function DropboxManager({
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-mute)' }}>
-        <span>{total.toLocaleString()}장 중 {items.length.toLocaleString()}장 표시</span>
+      <div className="flex items-center gap-3 text-[12px]" style={{ color: 'var(--text-mute)' }}>
+        <span>
+          전체 {total.toLocaleString()}장 · <b>{pageCount ? page + 1 : 0} / {pageCount.toLocaleString()}</b>쪽
+          {items.length > 0 && ` (${(page * PAGE + 1).toLocaleString()}–${(page * PAGE + items.length).toLocaleString()}번)`}
+        </span>
         {items.length > 0 && (
           <button onClick={() => setPicked(new Set(items.map((i) => i.url)))}
                   className="underline" style={{ cursor: 'pointer' }}>
-            보이는 것 전부 선택
+            이 쪽 전부 선택
           </button>
         )}
       </div>
@@ -337,14 +372,18 @@ export default function DropboxManager({
         })}
       </div>
 
-      {items.length < total && (
-        <div className="flex justify-center pt-2">
-          <button onClick={loadMore} disabled={loading}
-                  className="text-[13px] px-4 py-2 rounded-lg"
-                  style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--text-dim)', cursor: 'pointer' }}>
-            {loading ? '불러오는 중…' : `${Math.min(PAGE, total - items.length)}장 더 보기`}
-          </button>
-        </div>
+      {pageCount > 1 && (
+        <nav className="flex items-center justify-center gap-1 pt-3 flex-wrap" aria-label="쪽 넘기기">
+          <button onClick={() => setPage(0)} disabled={page === 0} style={pageBtn(false, page === 0)}>«</button>
+          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} style={pageBtn(false, page === 0)}>이전</button>
+          {pageWindow.map((p) => (
+            <button key={p} onClick={() => setPage(p)} style={pageBtn(p === page, false)}>{p + 1}</button>
+          ))}
+          <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1}
+                  style={pageBtn(false, page >= pageCount - 1)}>다음</button>
+          <button onClick={() => setPage(pageCount - 1)} disabled={page >= pageCount - 1}
+                  style={pageBtn(false, page >= pageCount - 1)}>»</button>
+        </nav>
       )}
 
       {!loading && items.length === 0 && (
