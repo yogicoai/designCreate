@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { toDropboxAsset } from '@/lib/queries';
+import { toDropboxAsset, dropboxSectionMatch, type DropboxSection } from '@/lib/queries';
+
+/** ?section=brand 면 브랜드 정리, 그 외에는 제품사진 */
+function sectionOf(sp: URLSearchParams): DropboxSection {
+  return sp.get('section') === 'brand' ? 'brand' : 'product';
+}
 
 /**
  * 드롭박스 파일 보관함 (`dropbox_assets`).
@@ -27,7 +32,7 @@ const COL = 'dropbox_assets';
 
 /** 화면의 필터 칩 → Mongo 조건. 세 축(폴더·검수상태·라벨유무)은 서로 겹칠 수 있다 */
 function buildQuery(sp: URLSearchParams): Record<string, unknown> {
-  const q: Record<string, unknown> = { active: { $ne: false } };
+  const q: Record<string, unknown> = { active: { $ne: false }, ...dropboxSectionMatch(sectionOf(sp)) };
   const folder = sp.get('folder');
   const status = sp.get('status');
   const labeled = sp.get('labeled');
@@ -39,7 +44,14 @@ function buildQuery(sp: URLSearchParams): Record<string, unknown> {
   if (text) {
     // 파일명·원본경로로 찾는다. 정규식 특수문자가 들어와도 터지지 않게 이스케이프한다
     const safe = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    q.$or = [{ title: { $regex: safe, $options: 'i' } }, { sourcePath: { $regex: safe, $options: 'i' } }];
+    /*
+     * 브랜드 정리는 제목·캠페인으로만 찾는다 — 원본 경로까지 보면 드롭박스에서 다른 캠페인 폴더
+     * 안에 들어 있는 것이 딸려 나온다 (실측: 「09월 (chic vibes)」가 「스페셜에디션(스타워즈)」 안에 있어서
+     * 「스타워즈」 검색에 9월 6장이 섞였다). 제품사진은 원본 파일명·경로 검색이 쓸모 있어서 그대로 둔다.
+     */
+    q.$or = sectionOf(sp) === 'brand'
+      ? [{ title: { $regex: safe, $options: 'i' } }, { campaign: { $regex: safe, $options: 'i' } }]
+      : [{ title: { $regex: safe, $options: 'i' } }, { sourcePath: { $regex: safe, $options: 'i' } }];
   }
   return q;
 }
@@ -55,7 +67,7 @@ export async function GET(req: Request) {
 
     const [docs, total] = await Promise.all([
       col.find(q)
-        .project({ url: 1, title: 1, width: 1, height: 1, sub: 1, folderHint: 1, filenameHint: 1, labelStatus: 1, sourcePath: 1, sourceName: 1, createdAt: 1 })
+        .project({ section: 1, group: 1, url: 1, title: 1, width: 1, height: 1, sub: 1, folderHint: 1, filenameHint: 1, labelStatus: 1, sourcePath: 1, sourceName: 1, createdAt: 1 })
         // 폴더 안에서 원본 순서대로 — 검수할 때 같은 촬영분이 붙어 있어야 판단이 빠르다
         .sort({ folderHint: 1, sourcePath: 1 })
         .skip(skip)
@@ -74,7 +86,7 @@ export async function GET(req: Request) {
     // 필터 칩의 개수 — 목록과 같이 받으면 화면이 한 번에 그려진다
     if (sp.get('summary') === '1') {
       const { getDropboxSummary } = await import('@/lib/queries');
-      body.summary = await getDropboxSummary();
+      body.summary = await getDropboxSummary(sectionOf(sp));
     }
 
     return NextResponse.json(body, {

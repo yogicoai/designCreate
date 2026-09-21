@@ -2,12 +2,13 @@ import CreateStudio from '@/components/CreateStudio';
 import {
   getProducts, getTalents, getPoseRefs, getSizePresets,
   getPreservationModes, getExpressions, getCuts, getReferences, getApprovedShapeSheets,
+  getDropboxAsRefs,
 } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CreatePage() {
-  const [products, talents, poses, sizes, preservations, expressions, recentCuts, references, aiSheets] = await Promise.all([
+  const [products, talents, poses, sizes, preservations, expressions, recentCuts, references, aiSheets, dropboxRefs, brandRefs] = await Promise.all([
     getProducts(),
     getTalents(),
     getPoseRefs(),
@@ -17,6 +18,13 @@ export default async function CreatePage() {
     getCuts({ limit: 400 }),
     getReferences(4000),
     getApprovedShapeSheets(),
+    /*
+     * 드롭박스 자산도 보관함에서 바로 쓴다 (사용자 요청 2026-09-21).
+     * 수천 장이라 첫 묶음만 싣는다 — 나머지는 보관함의 「드롭박스」 탭에서 이어 받는다.
+     */
+    getDropboxAsRefs(1500, 'product'),
+    // 브랜드 정리는 수십 장이라 전부 싣는다 — 「브랜드」 탭, 캠페인 이름이 하위 칩
+    getDropboxAsRefs(500, 'brand'),
   ]);
 
   /*
@@ -72,7 +80,8 @@ export default async function CreatePage() {
       expressions={expressions}
       baseCuts={baseCuts}
       aiSheets={aiSheets}
-      references={[...bannerRefs, ...references]}
+      references={[...bannerRefs, ...references, ...dropboxRefs, ...brandRefs]}
+      dropboxTotal={dropboxRefs.length}
       promptMode={(process.env.PROMPT_MODE || 'opus') === 'opus' && process.env.ANTHROPIC_API_KEY ? 'opus' : 'local'}
       /* 넘기기 버튼은 로컬 전용 — MD 화면에 나올 기능이 아니다 */
       gptEnabled={Boolean(process.env.OPENAI_API_KEY)}

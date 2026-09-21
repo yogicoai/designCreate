@@ -26,6 +26,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { MongoClient } from 'mongodb';
@@ -47,10 +48,67 @@ sharp.cache(false);
 sharp.concurrency(1);
 
 // ── 설정 ────────────────────────────────────────────────────────────────────
-const SRC_ROOT = 'C:/Users/Yogibo Design/Yogicorporation Dropbox/요기코퍼레이션_포워드/1. 디자인/2.7 제품사진';
+const DESIGN = 'C:/Users/Yogibo Design/Yogicorporation Dropbox/요기코퍼레이션_포워드/1. 디자인';
+
+/*
+ * 어느 드롭박스 폴더에서 가져오는가. 기본은 제품사진이고, `--root=촬영2022` 처럼 별칭으로 바꾼다.
+ * 촬영 아카이브(2.6 촬영)는 12만 장·1TB 라 통째로는 못 넣는다 — 필요한 하위 폴더만 집어서 쓴다
+ * (사용자 결정 2026-09-21: 스퀴지보·메이트·서포트·더블).
+ */
+const ROOTS = {
+  제품사진: `${DESIGN}/2.7 제품사진`,
+  촬영2022: `${DESIGN}/2.6 촬영/2022촬영 (본사 스튜디오 제품촬영)`,
+  촬영: `${DESIGN}/2.6 촬영`,
+  누끼: `${DESIGN}/2.7_2 누끼`,
+  브랜드: `${DESIGN}/0. 브랜드 이미지 (2025 월별 글로벌 에셋 정리)`,
+};
+const rootArg = process.argv.find((a) => a.startsWith('--root='))?.slice(7) || '제품사진';
+const SRC_ROOT = ROOTS[rootArg] || rootArg;   // 별칭이 없으면 경로를 그대로 받는다
+
+/*
+ * 브랜드 정리 (사용자 요청 2026-09-21) — 제품사진과 다르게 다룬다.
+ *   · 폴더명이 곧 캠페인 이름(「04월 (PASTEL LOVE)」, 「#1_Winter (12~2월)」)이라 **그대로 믿는다.**
+ *     제품사진처럼 파일명과 대조하지 않고, 폴더명을 확정 라벨(sub)로 바로 넣는다.
+ *   · 라벨은 파일이 들어 있는 **맨 안쪽 폴더** — `기존/04월 (PASTEL LOVE)/x.jpg` 면 「04월 (PASTEL LOVE)」.
+ *   · 상위 묶음(group)은 「시즌」(#1~#4) 또는 「월별」(기존/…) — 화면에서 칩을 두 줄로 나눈다.
+ *   · FTP 는 /brand/ 아래 — 제품사진(/product/)과 섞이지 않게.
+ */
+const SECTION = rootArg === '브랜드' ? 'brand' : 'product';
+const FTP_BASE = SECTION === 'brand' ? 'brand' : 'product';
+/** 브랜드 정리의 칩은 하나다 — 캠페인은 제목으로 간다 */
+const BRAND_BUCKET = '브랜드 정리';
+function brandLabel(abs) {
+  const rel = path.relative(SRC_ROOT, abs).replace(/\\/g, '/').split('/');
+  const leaf = rel.length > 1 ? rel[rel.length - 2] : '(분류없음)';
+  const group = rel[0].startsWith('#') ? '시즌' : '월별';
+  return { leaf, group };
+}
+
+/*
+ * 원격 파일명 = `<슬러그>_<출처>_<원본경로 해시>`.
+ *
+ * ⚠ 예전에는 `<슬러그>_<폴더 안 정렬 순번>` 이었다. 그러면 드롭박스 폴더에 파일이 하나 끼어드는
+ *   순간 그 뒤 번호가 전부 한 칸씩 밀려, **새 파일이 이미 올라간 다른 사진의 FTP 파일을 덮어쓰고**
+ *   두 문서가 같은 URL 을 가리키게 된다 (2026-09-21 적대적 검토에서 확인). 제품사진(표시 없음)과
+ *   촬영2022(s22 없이 올라간 3,865장)의 `support_NNNN.jpg` 가 겹칠 수 있었던 것도 같은 원인이다.
+ *   멱등 키(sourcePath)의 해시로 지으면 같은 원본은 늘 같은 이름, 다른 원본은 절대 같은 이름이
+ *   될 수 없다. 옛 이름(`_NNNN`, `_NNNN_r2`, `_s22_NNNN`, `_br_NNNN`)과도 모양이 달라 안 겹친다.
+ *   이미 올라간 문서의 URL 은 DB 에 저장돼 있고 재실행 때 건너뛰므로 바뀌지 않는다.
+ */
+const ROOT_TAG = { 제품사진: 'p', 촬영2022: 's22', 촬영: 'sh', 누끼: 'nk', 브랜드: 'br' };
+const TAG = ROOT_TAG[rootArg] ?? 'x';
+const fileBase = (slug, sourcePath) =>
+  `${slug}_${TAG}_${createHash('sha1').update(sourcePath).digest('hex').slice(0, 12)}`;
 
 /** 1차 배치 — 파일명 대조에서 신뢰도가 확인된 폴더만. 슬림·롤닷·롤맥스·인물은 검수 후에. */
 const BATCH1 = ['미디', '허기보', '더블', '피라미드', '팟', '버블', '라운저', '서포트'];
+
+/*
+ * 2차 배치 — 제품 DB 에 치수가 등록돼 있어 나중에 라벨을 확정할 근거가 있는 것만 (사용자 결정 2026-09-21).
+ * 도기보 754 · 모듀 63 · 프라임 26 · 오토만 24 는 "필요 없는 제품" 이라 올리지 않는다.
+ * 메이트 46 은 치수가 있으나 사용자가 우선순위에서 뺐다 — 나중에 따로.
+ */
+const BATCH2 = ['맥스', '미니', '드롭'];
 
 /** 폴더명 → FTP 폴더 슬러그 (한글 경로는 FTP 에서 사고가 잦다) */
 const SLUG = {
@@ -76,12 +134,41 @@ const TOKENS = [
 ].sort((a, b) => b[0].length - a[0].length);
 
 const IMG = /\.(jpe?g|png|webp)$/i;
+/*
+ * macOS 리소스 포크(AppleDouble) — 맥에서 만든 파일 옆에 `._이름.jpg` 로 남는 메타데이터 껍데기다.
+ * 확장자가 .jpg 라 IMG 를 통과하지만 이미지가 아니다 (sharp: "unsupported image format").
+ * 실측 2026-09-21: 더블 폴더에서 10개가 딸려 들어왔다.
+ */
+const APPLE_DOUBLE = /(^|[\\/])\._/;
+const isImage = (name) => IMG.test(name) && !APPLE_DOUBLE.test(name);
 
 // ── 인자 ────────────────────────────────────────────────────────────────────
 const GO = process.argv.includes('--go');
 const UNPIN = process.argv.includes('--unpin');
 const folderArg = process.argv.find((a) => a.startsWith('--folder='))?.slice(9);
-const targets = folderArg ? [folderArg] : BATCH1;
+const BATCH = process.argv.includes('--batch2') ? BATCH2 : BATCH1;
+/*
+ * 브랜드 정리는 폴더가 85장뿐이고 전부 가져온다 — 제품사진용 배치 목록(BATCH1/2)은 폴더명이
+ * 맞지 않으므로, 루트 바로 아래 폴더를 전부 대상으로 삼는다.
+ */
+const targets = folderArg
+  ? [folderArg]
+  : SECTION === 'brand'
+    ? fs.readdirSync(SRC_ROOT, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
+    : BATCH;
+
+/*
+ * 브랜드 루트 바로 아래(폴더 없이)에 놓인 사진은 위 대상에 안 잡힌다 — 조용히 빠지지 않게 알린다.
+ * 캠페인 이름을 폴더명에서 가져오는 구조라, 폴더 밖 사진은 사람이 캠페인 폴더에 넣어야 한다.
+ */
+if (SECTION === 'brand' && !folderArg) {
+  const loose = fs.readdirSync(SRC_ROOT, { withFileTypes: true })
+    .filter((e) => e.isFile() && isImage(e.name)).map((e) => e.name);
+  if (loose.length) {
+    console.log(`⚠ 브랜드 루트에 폴더 없이 놓인 사진 ${loose.length}장은 캠페인을 알 수 없어 건너뜁니다 — 캠페인 폴더에 넣은 뒤 다시 돌리세요:`);
+    loose.slice(0, 10).forEach((n) => console.log(`   ${n}`));
+  }
+}
 
 function readEnv(p) {
   return Object.fromEntries(
@@ -103,7 +190,7 @@ function walk(dir, out = [], depth = 0) {
   for (const e of ents) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) walk(p, out, depth + 1);
-    else if (IMG.test(e.name)) out.push(p);
+    else if (isImage(e.name)) out.push(p);
   }
   return out;
 }
@@ -127,23 +214,51 @@ const plan = [];
 for (const folder of targets) {
   const dir = path.join(SRC_ROOT, folder);
   if (!fs.existsSync(dir)) { console.log(`⚠ 폴더 없음: ${folder} — 건너뜀`); continue; }
-  const slug = SLUG[folder];
-  if (!slug) { console.log(`⚠ 슬러그 미정: ${folder} — 건너뜀`); continue; }
+  /*
+   * FTP 폴더 이름. 표에 없으면 폴더명을 로마자 안전 문자열로 만들어 쓴다 —
+   * 촬영 아카이브의 폴더명(맥스_롤맥스_서포트 등)은 SLUG 표에 없는 것이 많고,
+   * 한글 경로는 FTP 에서 사고가 잦다.
+   */
+  const slug = SLUG[folder] || `x${Buffer.from(folder).toString('hex').slice(0, 16)}`;
   const files = walk(dir).sort();
   files.forEach((abs, i) => {
     const base = path.basename(abs);
-    const ext = (path.extname(base).slice(1) || 'jpg').toLowerCase();
-    const rel = path.relative(SRC_ROOT, abs).replace(/\\/g, '/');
+    /*
+     * sourcePath 는 멱등 키(unique)다. 루트 별칭을 앞에 붙여야 다른 드롭박스 폴더의
+     * 같은 상대경로와 안 겹친다 — 제품사진에도 `서포트/`, 촬영2022 에도 `서포트/` 가 있다.
+     * (2026-09-21: 이 접두사 없이 촬영2022 를 한 번 넣었고, 하위 폴더 구조가 달라 우연히
+     *  안 겹쳤다. scripts/migrate-dropbox-sourcepath.mjs 가 그 문서들에 접두사를 채웠다.)
+     */
+    const rel = `${rootArg}/${path.relative(SRC_ROOT, abs).replace(/\\/g, '/')}`;
     plan.push({
       folder, slug, abs,
       sourcePath: rel,
       sourceName: base,
-      remoteName: `${slug}_${String(i + 1).padStart(4, '0')}.${ext}`,
-      url: `${PUBLIC}/product/${slug}/${slug}_${String(i + 1).padStart(4, '0')}.${ext}`,
+      remoteName: `${fileBase(slug, rel)}.jpg`,
+      url: `${PUBLIC}/${FTP_BASE}/${slug}/${fileBase(slug, rel)}.jpg`,
       size: (() => { try { return fs.statSync(abs).size; } catch { return 0; } })(),
-      ...judge(folder, base),
+      // 브랜드 정리는 폴더명을 믿으므로 파일명 대조를 하지 않는다 — 전부 '일치' 로 둔다
+      ...(SECTION === 'brand'
+        ? { filenameHint: [], labelStatus: 'agree', brand: brandLabel(abs) }
+        : judge(folder, base)),
     });
   });
+}
+
+/*
+ * 브랜드 정리의 제목 — 캠페인 이름 + 캠페인 안 번호 ('04월 (PASTEL LOVE) 01').
+ * 번호는 캠페인 안에서 원본 경로 순으로 매긴다 — scripts/migrate-brand-titles.mjs 와 같은 순서라
+ * 이미 들어간 85장과 번호가 맞는다. 나중에 캠페인 중간에 파일이 끼어들면 새 파일의 번호가
+ * 기존 것과 겹칠 수 있지만 제목은 키가 아니라(sourcePath 가 키) 표시만 겹친다.
+ */
+if (SECTION === 'brand') {
+  const seq = new Map();
+  for (const p of [...plan].sort((a, b) => a.sourcePath.localeCompare(b.sourcePath))) {
+    const c = p.brand.leaf;
+    const n = (seq.get(c) || 0) + 1;
+    seq.set(c, n);
+    p.brandTitle = `${c.replace(/\s+/g, ' ').trim()} ${String(n).padStart(2, '0')}`;
+  }
 }
 
 // ── 이미 등록된 것 제외 ──────────────────────────────────────────────────────
@@ -234,39 +349,39 @@ async function withFtp(fn, attempts = 4) {
   }
 }
 
-/** cafe24 가 용량으로 거부할 때의 응답 — 552 Transfer aborted. File too large */
-const TOO_LARGE = /\b552\b|File too large/i;
+const MAX_EDGE = 2000;
+const QUALITY = 82;
 
 /**
- * 한 장 업로드 — 원본 그대로 보내고, 서버가 용량으로 거부하면 그때만 줄여서 다시 보낸다.
+ * 한 장 올리고 **검증한다.**
  *
- * 왜 미리 안 줄이나: 한계값을 모른다. 실측(2026-09-21, 팟 폴더) 16.6MB 는 통과했고
- * 53.5MB / 54.3MB 는 552 로 거부됐다. 그 사이 어딘가라서, 미리 자르면 멀쩡한 사진까지
- * 손해를 본다. 1차 배치 1,687장 중 18MB 초과는 14장(0.8%)뿐이라 "막히면 줄인다" 가 맞다.
+ * 원본을 그대로 올리지 않는다 — 이건 웹용 라이브러리이고 원본 화질은 드롭박스에 그대로 있다.
+ * 긴 변 2000px 로 줄이면 원본 8.19GB 가 265MB(3.2%)가 되고, 목록 썸네일 생성이
+ * 장당 4,481ms 에서 44~236ms 로 떨어진다(실측 2026-09-21). 552(용량 한계)도 사라진다.
  *
- * 줄이는 방식: 긴 변 4500px. 생성 참조로 쓰기에 충분하고 50MB 가 3~5MB 가 된다.
- * 확장자와 내용이 어긋나지 않게 원본 포맷을 그대로 유지한다(png 는 png 로).
- * 드롭박스 원본은 건드리지 않는다 — 여기서도 읽기만 한다.
+ * 그리고 올린 뒤 **원격 크기를 대조한다.** 이게 없어서 1차 배치 1,687장 중 1,122장(66.8%)이
+ * 잘린 채 "성공" 으로 남았다 — cafe24 가 전송 중 소켓을 끊어도 basic-ftp 가 항상 예외를
+ * 던지지는 않기 때문이다. 잘린 JPEG 도 HTTP 200 을 주므로 접근 확인으로는 못 잡는다.
  */
-async function uploadOne(abs, dest) {
-  const originalBytes = fs.statSync(abs).size;
-  try {
-    await withFtp((c) => c.uploadFrom(abs, dest));
-    return { resized: false, originalBytes, uploadedBytes: originalBytes };
-  } catch (e) {
-    if (!TOO_LARGE.test(`${e.code || ''} ${e.message || ''}`)) throw e;
-    const isPng = /\.png$/i.test(abs);
-    /*
-     * sequentialRead: 큰 JPEG 을 줄에 따라 흘려 읽는다 — 전체를 메모리에 펴지 않는다.
-     * limitInputPixels: 기본 한계(268MP)를 넘는 것도 받아들이되, 위 cache(false) 와 함께라야 안전하다.
-     */
-    const img = sharp(abs, { sequentialRead: true, limitInputPixels: 500_000_000, failOn: 'none' })
-      .rotate()
-      .resize(4500, 4500, { fit: 'inside', withoutEnlargement: true });
-    const buf = await (isPng ? img.png({ compressionLevel: 9 }) : img.jpeg({ quality: 88 })).toBuffer();
+async function uploadOne(abs, dest, tries = 3) {
+  const srcBytes = fs.statSync(abs).size;
+  const buf = await sharp(abs, { sequentialRead: true, limitInputPixels: 500_000_000, failOn: 'none' })
+    .rotate()
+    .resize(MAX_EDGE, MAX_EDGE, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: QUALITY })
+    .toBuffer();
+  const meta = await sharp(buf).metadata();
+
+  for (let i = 1; i <= tries; i++) {
     await withFtp((c) => c.uploadFrom(Readable.from(buf), dest));
-    console.log(`   ⤓ 용량 초과 — 줄여서 올림 ${(originalBytes / 1048576).toFixed(1)}MB → ${(buf.length / 1048576).toFixed(1)}MB  ${path.basename(abs)}`);
-    return { resized: true, originalBytes, uploadedBytes: buf.length };
+    let remote = -1;
+    try { remote = await withFtp((c) => c.size(dest)); } catch { /* size 미지원 서버 대비 */ }
+    if (remote === buf.length) {
+      return { ok: true, srcBytes, uploadedBytes: buf.length, width: meta.width ?? 0, height: meta.height ?? 0 };
+    }
+    if (i === tries) return { ok: false, srcBytes, uploadedBytes: buf.length, width: 0, height: 0 };
+    console.log(`   ⟳ 크기 불일치 (보낸 ${buf.length} / 원격 ${remote}) — 재업로드 ${i}/${tries - 1}`);
+    await connect();
   }
 }
 
@@ -277,36 +392,47 @@ const failures = [];
 for (const folder of targets) {
   const rows = todo.filter((p) => p.folder === folder);
   if (!rows.length) continue;
-  const slug = SLUG[folder];
-  const remoteDir = `${REMOTE_ROOT}/product/${slug}`;
+  // 수집 단계에서 이미 정한 슬러그를 그대로 쓴다 — SLUG 표에 없는 폴더도 있다
+  const slug = rows[0].slug;
+  const remoteDir = `${REMOTE_ROOT}/${FTP_BASE}/${slug}`;
   // ensureDir 은 멱등이라 재연결 후 다시 불러도 안전하다.
   await withFtp((c) => c.ensureDir(remoteDir));
-  console.log(`\n▶ ${folder} (${rows.length}장) → /product/${slug}/`);
+  console.log(`\n▶ ${folder} (${rows.length}장) → /${FTP_BASE}/${slug}/`);
 
   for (const r of rows) {
     try {
       // 절대경로로 올린다 — 재연결로 cwd 가 초기화돼도 엉뚱한 곳에 안 떨어진다.
       // (폴더는 위에서 한 번 만들어뒀고, 재연결해도 서버에 그대로 남아 있다)
       const up = await uploadOne(r.abs, `${remoteDir}/${r.remoteName}`);   // ← 원본은 읽기만 한다
+      if (!up.ok) { failed++; failures.push(`${r.sourcePath}: 업로드 크기 검증 실패`); continue; }
       await col.updateOne(
         { sourcePath: r.sourcePath },
         {
           $setOnInsert: {
             url: r.url,
-            title: r.sourceName.replace(/\.[^.]+$/, ''),
-            width: 0, height: 0,
+            // 브랜드 정리는 캠페인 이름 + 캠페인 안 번호 ('04월 (PASTEL LOVE) 01'), 제품사진은 원본 파일명
+            title: r.brandTitle || r.sourceName.replace(/\.[^.]+$/, ''),
+            width: up.width, height: up.height,
             // category/tags 는 없다 — 컬렉션 자체가 '드롭박스 파일'이라 분류 칸이 필요 없고,
             // 폴더명을 태그로 넣으면 분류처럼 보여서 오히려 해롭다 (아래 folderHint 참고)
-            sub: null,                 // 확정 라벨 — 검수 후에 채운다
-            folderHint: r.folder,
+            section: SECTION,
+            /*
+             * 제품사진: 확정 라벨은 검수 후에 채운다(null). 폴더명은 근거일 뿐이다.
+             * 브랜드 정리: 캠페인별로 칩을 나누지 않고 한 묶음('브랜드 정리')에 둔다 —
+             *   캠페인 이름은 제목(title)과 campaign 필드로 간다 (사용자 요청 2026-09-21,
+             *   scripts/migrate-brand-titles.mjs 와 같은 규칙).
+             */
+            sub: SECTION === 'brand' ? BRAND_BUCKET : null,
+            group: SECTION === 'brand' ? r.brand.group : '',
+            ...(SECTION === 'brand' ? { campaign: r.brand.leaf, originalTitle: r.sourceName.replace(/\.[^.]+$/, '') } : {}),
+            folderHint: SECTION === 'brand' ? BRAND_BUCKET : r.folder,
             filenameHint: r.filenameHint,
             labelStatus: r.labelStatus,
             sourcePath: r.sourcePath,
             sourceName: r.sourceName,
-            source: 'dropbox-product',
-            // 용량 때문에 줄여 올린 건 그 사실을 남긴다 — 나중에 원본이 필요하면
-            // sourcePath 로 드롭박스에서 다시 가져올 수 있어야 한다
-            ...(up.resized ? { resized: true, originalBytes: up.originalBytes, uploadedBytes: up.uploadedBytes } : {}),
+            source: SECTION === 'brand' ? 'dropbox-brand' : 'dropbox-product',
+            // 웹용으로 줄여 올린 크기 — 원본 화질이 필요하면 sourcePath 로 드롭박스에서 가져온다
+            srcBytes: up.srcBytes, uploadedBytes: up.uploadedBytes, maxEdge: MAX_EDGE,
             active: true,
             createdAt: new Date(),
           },

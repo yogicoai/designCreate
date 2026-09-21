@@ -26,6 +26,8 @@ interface Props {
   references: ReferenceDoc[];
   /** 자산관리 > AI 생성 제품 — 승인된 형태 시트만. 제품을 고르면 이 칸들 중에서 배치 각도를 고른다 */
   aiSheets: AiProductSheet[];
+  /** references 안에 이미 실려 온 드롭박스 자산 수 — 「더 불러오기」가 여기서부터 이어 받는다 */
+  dropboxTotal?: number;
   /** 프롬프트 작성 모드 — local(템플릿·무과금) / opus(라이브, 확인에도 소액 과금) */
   promptMode: 'local' | 'opus';
   /** 로컬 개발 여부. 대화로 넘기는 버튼은 여기서만 보인다 */
@@ -120,6 +122,10 @@ const REF_CATS: { value: string; label: string }[] = [
   { value: 'interior', label: '인테리어' },
   { value: 'instagram', label: '인스타그램' },
   { value: 'model', label: '모델컷' },
+  // 드롭박스에서 가져온 제품사진 — 하위 칩이 폴더명(또는 확정 라벨)이라 제품별로 골라 쓴다
+  { value: 'dropbox', label: '드롭박스' },
+  // 브랜드 정리(시즌·월별 캠페인 비주얼) — 하위 칩이 「04월 (PASTEL LOVE)」 같은 캠페인 이름이다
+  { value: 'brand', label: '브랜드' },
   { value: '__none', label: '미분류' },
 ];
 function refCatOf(cat: string | null | undefined): string {
@@ -129,6 +135,8 @@ function refCatOf(cat: string | null | undefined): string {
   if (cat === 'interior') return 'interior';
   if (cat === 'instagram') return 'instagram';
   if (cat === 'model') return 'model';
+  if (cat === 'dropbox') return 'dropbox';
+  if (cat === 'brand') return 'brand';
   return '__none';
 }
 
@@ -272,6 +280,12 @@ export default function CreateStudio(p: Props) {
   const [library, setLibrary] = useState<ReferenceDoc[]>(p.references);
   // 보관함 팝업 — 전체 레퍼런스를 분류별로 보고 고른다
   const [libOpen, setLibOpen] = useState(false);
+  /*
+   * 보관함은 두 개로 나눠 연다 (사용자 요청 2026-09-21) — 레퍼런스 / 드롭박스.
+   * 한 팝업에 레퍼런스 4,600장과 드롭박스 6,700장을 분류로 섞어두면 원하는 쪽을 찾기 어렵다.
+   * 데이터는 한 배열(library)에 그대로 두고, 여는 버튼에 따라 팝업이 보여줄 몫만 거른다.
+   */
+  const [libKind, setLibKind] = useState<'ref' | 'dropbox'>('ref');
   const [libCat, setLibCat] = useState<string>(''); // '' = 전체
   const [libSearch, setLibSearch] = useState('');
   // 하위 분류(sub) — '22 맥스' 같은 촬영 2022 폴더 단위. 분류 탭을 고르면 한 줄 더 나뉜다
@@ -279,7 +293,49 @@ export default function CreateStudio(p: Props) {
   // 분류별 표시 개수 — 인스타 백필로 2천 장이 넘어서, 한 번에 다 그리면 팝업이 무거워진다
   // 게시판식 페이지 — 한 번에 다 그리면 이미지 수천 장이 동시에 로딩돼 빈 카드만 보인다
   const [libPage, setLibPage] = useState(1);
+  /** 드롭박스에서 온 것(제품사진·브랜드 정리)인가 */
+  const isDropboxRef = (r: ReferenceDoc) => { const c = refCatOf(r.category); return c === 'dropbox' || c === 'brand'; };
+  const refLib = useMemo(() => library.filter((r) => !isDropboxRef(r)), [library]);
+  const dbxLib = useMemo(() => library.filter(isDropboxRef), [library]);
+  /** 지금 열린 보관함이 보여줄 몫 */
+  const libItems = libKind === 'dropbox' ? dbxLib : refLib;
+  const openLib = (kind: 'ref' | 'dropbox') => {
+    setLibKind(kind); setLibOpen(true); setLibCat(''); setLibSub(''); setLibSearch(''); setLibPage(1);
+  };
   const LIB_PAGE = 20;
+  /*
+   * 드롭박스 자산 이어받기 — 수천 장이라 서버는 첫 묶음만 싣는다.
+   * 「드롭박스」 탭에서 더 필요할 때만 받아 보관함 배열에 붙인다.
+   */
+  const [dbxLoaded, setDbxLoaded] = useState(p.dropboxTotal ?? 0);
+  const [dbxTotal, setDbxTotal] = useState<number | null>(null);
+  const [dbxLoading, setDbxLoading] = useState(false);
+  const loadMoreDropbox = async () => {
+    setDbxLoading(true);
+    try {
+      /*
+       * 앞 40장을 겹쳐서 받는다 — 화면을 연 뒤 누가 드롭박스 사진을 숨기면 서버 쪽 순서가 당겨져서
+       * 딱 dbxLoaded 부터 받으면 그만큼을 건너뛴다(2026-09-21 검토). 겹친 몫은 아래에서 주소로 걸러진다.
+       */
+      const skip = Math.max(0, dbxLoaded - 40);
+      const r = await fetch(`/api/dropbox?skip=${skip}&limit=1000&summary=1`, { cache: 'no-store' });
+      const j = await r.json();
+      if (!j?.ok) return;
+      const more: ReferenceDoc[] = (j.assets ?? []).map((a: { url: string; title: string; width: number; height: number; sub: string | null; folderHint: string; createdAt: string | null }) => ({
+        url: a.url, title: a.title, width: a.width, height: a.height,
+        category: 'dropbox', sub: a.sub || a.folderHint || null,
+        tags: [], source: 'dropbox', createdAt: a.createdAt,
+      }));
+      // 이미 있는 주소는 거른다 — 두 번 받아도 목록이 중복되지 않게
+      setLibrary((prev) => {
+        const seen = new Set(prev.map((x) => x.url));
+        return [...prev, ...more.filter((x) => !seen.has(x.url))];
+      });
+      // 서버 목록에서의 위치 — 겹쳐 받은 만큼을 빼고 센다
+      setDbxLoaded(skip + more.length);
+      setDbxTotal(j.total ?? null);
+    } finally { setDbxLoading(false); }
+  };
   const [preservation, setPreservation] = useState('similar');
   const [editTargets, setEditTargets] = useState<EditTarget[]>([]);
   // 레퍼런스에 담긴 제품 — 인물 대비 스케일용 (사진 속 빈백이 무엇인지)
@@ -404,6 +460,17 @@ export default function CreateStudio(p: Props) {
     if (next === 'product') setUploads((cur) => cur.map((u) => (u.role === 'base' ? { ...u, role: 'background' } : u)));
     // 탭이 바뀌면 참조 구성이 달라진다 — 이전 탭의 프롬프트·참조 목록은 번호가 안 맞는다
     setDry(null); setPromptText(''); setPromptEdited(false);
+    /*
+     * 엔진도 탭을 따라간다 (사용자 지시 2026-09-15, 재확인 2026-09-21).
+     *   제품만 노출 → GPT : 사람이 없으니 GPT 의 약점(얼굴 유지 실패)이 문제 되지 않고,
+     *                       제미나이 월 한도(Dong 앱과 공유)를 모델 컷에 아껴둔다.
+     *                       GPT 는 4K 가 없어 화질도 2K 로 맞춘다.
+     *   모델과 함께 → 제미나이 : GPT 는 전속 모델 얼굴을 못 지킨다(실측).
+     * 주석으로만 약속돼 있고 이 줄이 빠져 있어서, 탭을 바꿔도 엔진이 제미나이에 머물러 있었다.
+     * GPT 키가 없으면 effectiveEngine 이 제미나이로 되돌리므로 여기서 GPT 를 골라도 안전하다.
+     */
+    if (next === 'product') { setEngine('gpt'); setImageSize('2K'); }
+    else setEngine('gemini');
   }
   /*
    * GPT 는 제품 컷에도 고를 수 있다 (사용자 지시 2026-09-15 — 제미나이가 월 지출 한도에 걸리면 GPT 로 만들어야 한다).
@@ -955,9 +1022,14 @@ export default function CreateStudio(p: Props) {
           <Section n="2" title="레퍼런스 이미지"
                    hint="새로 올리거나 보관함에서 가져옵니다. 여기서 올린 이미지는 이번 작업에만 쓰이고 보관함에는 쌓이지 않습니다 — 계속 쓸 사진은 자산관리 > 레퍼런스에서 등록하세요."
                    right={
-                     <button className="btn btn-ghost text-[11px]" onClick={() => { setLibOpen(true); setLibCat(''); setLibSub(''); setLibSearch(''); setLibPage(1); }}>
-                       보관함 열기 ({library.length})
-                     </button>
+                     <span className="flex gap-1.5 flex-wrap justify-end">
+                       <button className="btn btn-ghost text-[11px]" onClick={() => openLib('ref')}>
+                         레퍼런스 보관함 열기 ({refLib.length.toLocaleString()})
+                       </button>
+                       <button className="btn btn-ghost text-[11px]" onClick={() => openLib('dropbox')}>
+                         드롭박스 보관함 열기 ({dbxLib.length.toLocaleString()})
+                       </button>
+                     </span>
                    }>
             <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} />
             <div className="flex gap-2 flex-wrap items-start mb-1">
@@ -1082,9 +1154,14 @@ export default function CreateStudio(p: Props) {
           <Section n="2" title="배경 이미지 (선택)"
                    hint="제품을 놓을 공간 사진을 올리거나 보관함에서 가져옵니다. 사진이 없으면 아래 「배경 · 연출」에 글로 적으면 됩니다. 여기서 올린 사진은 이번 작업에만 쓰이고 보관함에는 쌓이지 않습니다."
                    right={
-                     <button className="btn btn-ghost text-[11px]" onClick={() => { setLibOpen(true); setLibCat(''); setLibSub(''); setLibSearch(''); setLibPage(1); }}>
-                       보관함 열기 ({library.length})
-                     </button>
+                     <span className="flex gap-1.5 flex-wrap justify-end">
+                       <button className="btn btn-ghost text-[11px]" onClick={() => openLib('ref')}>
+                         레퍼런스 보관함 열기 ({refLib.length.toLocaleString()})
+                       </button>
+                       <button className="btn btn-ghost text-[11px]" onClick={() => openLib('dropbox')}>
+                         드롭박스 보관함 열기 ({dbxLib.length.toLocaleString()})
+                       </button>
+                     </span>
                    }>
             <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} />
             <div className="flex gap-2 flex-wrap items-start mb-1">
@@ -1962,7 +2039,7 @@ ${hint}` : hint))}>
                onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-2 mb-3">
               <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>
-                레퍼런스 보관함 · {library.length}개
+                {libKind === 'dropbox' ? '드롭박스 보관함' : '레퍼런스 보관함'} · {libItems.length.toLocaleString()}개
               </h2>
               <button className="chip" onClick={() => setLibOpen(false)}>닫기</button>
             </div>
@@ -1971,9 +2048,9 @@ ${hint}` : hint))}>
             <div className="flex items-center gap-1.5 flex-wrap mb-3">
               <button className="chip"
                       style={libCat === '' ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
-                      onClick={() => { setLibCat(''); setLibSub(''); setLibPage(1); }}>전체 ({library.length})</button>
+                      onClick={() => { setLibCat(''); setLibSub(''); setLibPage(1); }}>전체 ({libItems.length})</button>
               {REF_CATS.map((c) => {
-                const n = library.filter((r) => refCatOf(r.category) === c.value).length;
+                const n = libItems.filter((r) => refCatOf(r.category) === c.value).length;
                 if (!n) return null;
                 return (
                   <button key={c.value} className="chip"
@@ -1988,7 +2065,7 @@ ${hint}` : hint))}>
               {picks.map((pk) => {
                 const t = p.talents.find((x) => x.code === pk.code);
                 const label = t ? `${t.category}${t.slot ?? ''}` : '';
-                const n = label ? library.filter((r) => refCatOf(r.category) === 'model' && r.sub === label).length : 0;
+                const n = label ? libItems.filter((r) => refCatOf(r.category) === 'model' && r.sub === label).length : 0;
                 if (!label || !n) return null;
                 const on = libCat === 'model' && libSub === label;
                 return (
@@ -2010,7 +2087,7 @@ ${hint}` : hint))}>
 
             {/* 하위 분류 — 촬영 2022(22 맥스…) 처럼 sub 가 있는 탭에서만 한 줄 더 */}
             {libCat && (() => {
-              const subs = ([...new Set(library
+              const subs = ([...new Set(libItems
                 .filter((r) => refCatOf(r.category) === libCat && r.sub)
                 .map((r) => r.sub))] as string[]).sort();
               if (!subs.length) return null;
@@ -2023,12 +2100,27 @@ ${hint}` : hint))}>
                     <button key={s} className="chip"
                             style={libSub === s ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}
                             onClick={() => { setLibSub(s === libSub ? '' : s); setLibPage(1); }}>
-                      {s} ({library.filter((r) => refCatOf(r.category) === libCat && r.sub === s).length})
+                      {s} ({libItems.filter((r) => refCatOf(r.category) === libCat && r.sub === s).length})
                     </button>
                   ))}
                 </div>
               );
             })()}
+
+            {/* 드롭박스 탭 — 서버는 첫 묶음만 싣는다. 더 필요하면 여기서 이어 받는다 */}
+            {libKind === 'dropbox' && (
+              <div className="flex items-center gap-2 mb-3 text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
+                <span>
+                  드롭박스 {libItems.filter((r) => refCatOf(r.category) === 'dropbox').length.toLocaleString()}장 불러옴
+                  {dbxTotal !== null && ` / 전체 ${dbxTotal.toLocaleString()}장`}
+                </span>
+                {(dbxTotal === null || dbxLoaded < dbxTotal) && (
+                  <button className="chip px-2 py-0.5" disabled={dbxLoading} onClick={loadMoreDropbox}>
+                    {dbxLoading ? '불러오는 중…' : '＋ 1,000장 더 불러오기'}
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* 목록 — 전체면 분류별 섹션, 특정 분류면 단일 그리드 */}
             <div className="overflow-y-auto pr-1 flex-1" style={{ minHeight: 220 }}>
@@ -2038,11 +2130,11 @@ ${hint}` : hint))}>
                   (!libCat || refCatOf(r.category) === libCat) &&
                   (!libSub || r.sub === libSub) &&
                   (!q || (r.title || '').toLowerCase().includes(q));
-                const list = library.filter(match);
+                const list = libItems.filter(match);
                 if (!list.length) {
                   return (
                     <div className="text-[12px] py-10 text-center" style={{ color: 'var(--text-mute)' }}>
-                      {library.length ? '해당 조건의 레퍼런스가 없습니다.' : '보관함이 비어 있습니다. 자산관리 > 레퍼런스에서 등록하거나 위에서 이미지를 추가하세요.'}
+                      {libItems.length ? '해당 조건의 레퍼런스가 없습니다.' : '보관함이 비어 있습니다. 자산관리 > 레퍼런스에서 등록하거나 위에서 이미지를 추가하세요.'}
                     </div>
                   );
                 }

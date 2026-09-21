@@ -231,7 +231,23 @@ export async function getReferences(limit = 300): Promise<ReferenceDoc[]> {
  *   그래서 확정 라벨은 비워두고 근거(folderHint·filenameHint·labelStatus)만 남긴다.
  *   검수 화면에서 conflict 부터 훑어 sub 를 채우면 그때 라벨이 확정된다.
  */
+/*
+ * 드롭박스 자산의 두 갈래 (사용자 요청 2026-09-21).
+ *   product = 제품사진. 폴더명을 못 믿어서 사람이 검수로 라벨을 확정한다.
+ *   brand   = 브랜드 정리(0. 브랜드 이미지). 폴더명이 곧 캠페인 이름(「04월 PASTEL LOVE」,
+ *             「#1_Winter」)이라 그대로 믿는다 — 검수 없이 시즌·월별로 묶어 보여준다.
+ * section 필드가 없는 옛 문서는 전부 제품사진이다 — 그래서 조회는 "brand 가 아니면 product" 로 건다.
+ */
+export type DropboxSection = 'product' | 'brand';
+export function dropboxSectionMatch(section: DropboxSection): Record<string, unknown> {
+  return section === 'brand' ? { section: 'brand' } : { section: { $ne: 'brand' } };
+}
+
 export interface DropboxAssetDoc {
+  /** 제품사진 / 브랜드 정리 */
+  section: DropboxSection;
+  /** 브랜드 정리의 상위 묶음 — 「시즌」 또는 「월별」. 제품사진은 빈 문자열 */
+  group: string;
   url: string;
   /** 원본 파일명(확장자 제외) */
   title: string;
@@ -255,14 +271,15 @@ export interface DropboxAssetDoc {
 export interface DropboxSummary {
   total: number;
   labeled: number;
-  byFolder: { folder: string; total: number; labeled: number; conflict: number }[];
+  /** group = 브랜드 정리의 상위 묶음(시즌/월별). 제품사진은 빈 문자열 */
+  byFolder: { folder: string; group: string; total: number; labeled: number; conflict: number }[];
   byStatus: Record<string, number>;
 }
 
-export async function getDropboxAssets(limit = 300, skip = 0): Promise<DropboxAssetDoc[]> {
+export async function getDropboxAssets(limit = 300, skip = 0, section: DropboxSection = 'product'): Promise<DropboxAssetDoc[]> {
   const col = await collection<DropboxAssetDoc & { active?: boolean; createdAt?: unknown }>('dropbox_assets');
   const docs = await col
-    .find({ active: { $ne: false } })
+    .find({ active: { $ne: false }, ...dropboxSectionMatch(section) })
     .sort({ folderHint: 1, sourcePath: 1 })
     .skip(skip)
     .limit(limit)
@@ -274,6 +291,8 @@ export async function getDropboxAssets(limit = 300, skip = 0): Promise<DropboxAs
 export function toDropboxAsset(d: Record<string, unknown>): DropboxAssetDoc {
   const status = String(d.labelStatus ?? 'folder-only');
   return {
+    section: d.section === 'brand' ? 'brand' : 'product',
+    group: String(d.group ?? ''),
     url: String(d.url ?? ''),
     title: String(d.title ?? ''),
     width: Number(d.width) || 0,
@@ -289,18 +308,58 @@ export function toDropboxAsset(d: Record<string, unknown>): DropboxAssetDoc {
 }
 
 /**
+ * 드롭박스 자산을 생성 화면 보관함이 쓰는 모양(ReferenceDoc)으로 꺼낸다.
+ *
+ * 보관함은 분류 탭 + 하위 칩으로 거르는 구조라, 여기에 얹으면 `category: 'dropbox'` 가
+ * 탭이 되고 `sub`(확정 라벨 또는 드롭박스 폴더명)이 하위 칩이 된다 — 별도 UI 없이
+ * 폴더별로 골라 쓸 수 있다.
+ *
+ * 왜 전부 안 보내나: 드롭박스 자산은 수천 장이고 생성 화면은 이미 레퍼런스 4,000장을
+ * 싣고 있다. 첫 묶음만 서버에서 보내고 나머지는 화면에서 /api/dropbox 로 이어 받는다.
+ */
+export async function getDropboxAsRefs(limit = 1500, section: DropboxSection = 'product'): Promise<ReferenceDoc[]> {
+  const col = await collection<Record<string, unknown>>('dropbox_assets');
+  const docs = await col
+    .find({ active: { $ne: false }, ...dropboxSectionMatch(section) })
+    .project({ section: 1, url: 1, title: 1, width: 1, height: 1, sub: 1, folderHint: 1, createdAt: 1 })
+    .sort({ folderHint: 1, sourcePath: 1 })
+    .limit(limit)
+    .toArray();
+  return docs.map(dropboxToRef);
+}
+
+/** 드롭박스 문서 → 보관함 항목. API 로 이어 받을 때 화면도 같은 변환을 쓴다 */
+export function dropboxToRef(d: Record<string, unknown>): ReferenceDoc {
+  return {
+    url: String(d.url ?? ''),
+    title: String(d.title ?? ''),
+    width: Number(d.width) || 0,
+    height: Number(d.height) || 0,
+    // 브랜드 정리는 보관함에서도 따로 — 제품사진 수천 장에 묻히지 않게 탭을 나눈다
+    category: d.section === 'brand' ? 'brand' : 'dropbox',
+    // 확정 라벨이 있으면 그것을, 없으면 폴더명을 하위 칩으로 — 어느 쪽이든 골라 쓸 수 있어야 한다
+    // (브랜드 정리는 폴더명이 곧 캠페인 이름이라 「04월 (PASTEL LOVE)」 가 그대로 칩이 된다)
+    sub: (d.sub as string | null) || String(d.folderHint ?? '') || null,
+    tags: [],
+    source: 'dropbox',
+    createdAt: d.createdAt ? new Date(d.createdAt as string).toISOString() : null,
+  };
+}
+
+/**
  * 폴더별 현황. 수천 장이라 목록을 다 받아서 세면 안 된다 — DB 에서 집계한다.
  * labeled = 사람이 sub 를 채운 것, conflict = 폴더와 파일명이 어긋나 먼저 봐야 할 것.
  */
-export async function getDropboxSummary(): Promise<DropboxSummary> {
+export async function getDropboxSummary(section: DropboxSection = 'product'): Promise<DropboxSummary> {
   const col = await collection<Record<string, unknown>>('dropbox_assets');
-  const base = { active: { $ne: false } };
+  const base = { active: { $ne: false }, ...dropboxSectionMatch(section) };
   const [rows, statusRows, total, labeled] = await Promise.all([
-    col.aggregate<{ _id: string; total: number; labeled: number; conflict: number }>([
+    col.aggregate<{ _id: string; group: string; total: number; labeled: number; conflict: number }>([
       { $match: base },
       {
         $group: {
           _id: '$folderHint',
+          group: { $first: '$group' },
           total: { $sum: 1 },
           labeled: { $sum: { $cond: [{ $in: ['$sub', [null, '']] }, 0, 1] } },
           conflict: { $sum: { $cond: [{ $eq: ['$labelStatus', 'conflict'] }, 1, 0] } },
@@ -314,10 +373,20 @@ export async function getDropboxSummary(): Promise<DropboxSummary> {
     col.countDocuments(base),
     col.countDocuments({ ...base, sub: { $nin: [null, ''] } }),
   ]);
+  const byFolder = rows.map((r) => ({
+    folder: r._id || '(없음)', group: r.group || '', total: r.total, labeled: r.labeled, conflict: r.conflict,
+  }));
+  /*
+   * 브랜드 정리는 장수가 아니라 달력 순서로 — 「#1_Winter → #4_Fall」, 「01월 → 12월」.
+   * 폴더명이 번호로 시작해서 숫자 인식 정렬이면 그대로 맞는다.
+   */
+  if (section === 'brand') {
+    byFolder.sort((a, b) => (a.group.localeCompare(b.group, 'ko')) || a.folder.localeCompare(b.folder, 'ko', { numeric: true }));
+  }
   return {
     total,
     labeled,
-    byFolder: rows.map((r) => ({ folder: r._id || '(없음)', total: r.total, labeled: r.labeled, conflict: r.conflict })),
+    byFolder,
     byStatus: Object.fromEntries(statusRows.map((r) => [r._id || 'folder-only', r.n])),
   };
 }
