@@ -133,6 +133,34 @@ export async function deleteRemote(subpath: string | undefined, filename: string
 }
 
 /**
+ * 여러 파일을 연결 하나로 지운다. 경로는 ROOT 기준 상대경로('product/max/x.jpg').
+ * 없는 파일(550)은 이미 지워진 것으로 치고, 그 밖의 오류만 failed 로 돌려준다 —
+ * 부른 쪽이 "실제로 지워졌는지" 를 알아야 DB 에 삭제로 기록할 수 있다.
+ */
+export async function deleteRemoteFiles(relPaths: string[]): Promise<{ removed: string[]; failed: string[] }> {
+  const removed: string[] = [];
+  const failed: string[] = [];
+  if (!relPaths.length) return { removed, failed };
+  try {
+    await withClient(async (c) => {
+      for (const rel of relPaths) {
+        try {
+          await c.remove(`${ROOT}/${rel.replace(/^\/+/, '')}`);
+          removed.push(rel);
+        } catch (e) {
+          if ((e as { code?: number }).code === 550) removed.push(rel);
+          else failed.push(rel);
+        }
+      }
+    });
+  } catch {
+    // 접속 자체가 안 됨 — 아직 처리 안 한 것은 전부 실패
+    for (const rel of relPaths) if (!removed.includes(rel) && !failed.includes(rel)) failed.push(rel);
+  }
+  return { removed, failed };
+}
+
+/**
  * 생성물이 들어갈 그날 날짜 폴더. 루트(/web/design) 아래 `YYYY-MM-DD` 로 나뉜다.
  * 한 폴더에 수천 장이 쌓이면 FTP 목록 조회가 느려지고 사람이 못 찾는다.
  *

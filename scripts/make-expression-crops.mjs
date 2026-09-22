@@ -12,7 +12,9 @@
  * 업로드: /web/design/assets/expressions/<모델코드>_<표정id>.jpg
  * 기록:   talents.expressionCrops = { <표정id>: url }
  *
- * 사용: node scripts/make-expression-crops.mjs
+ * 사용: node scripts/make-expression-crops.mjs [--codes=W_F,M_C]
+ *   --codes 를 주면 그 모델만 자른다. 안 주면 전원을 다시 자르는데, 같은 이름으로 덮어쓰므로
+ *   cafe24 7일 캐시 때문에 화면에는 옛 조각이 한동안 남는다 — 새 모델을 넣을 때는 꼭 --codes 로.
  */
 import fs from 'node:fs';
 import sharp from 'sharp';
@@ -42,7 +44,13 @@ if (exprs.length !== COLS * ROWS) {
   console.error(`expressions 컬렉션이 ${exprs.length}건 — ${COLS * ROWS}칸 시트와 맞지 않음`);
   process.exit(1);
 }
-const talents = await db.collection('talents').find({}).sort({ order: 1 }).toArray();
+const onlyCodes = process.argv.find((a) => a.startsWith('--codes='))?.slice(8).split(',').filter(Boolean);
+const talents = await db.collection('talents')
+  .find(onlyCodes?.length ? { code: { $in: onlyCodes } } : {})
+  .sort({ order: 1 }).toArray();
+if (onlyCodes?.length && talents.length !== onlyCodes.length) {
+  console.log(`⚠ 찾은 모델 ${talents.map((t) => t.code).join(',') || '없음'} — 요청 ${onlyCodes.join(',')}`);
+}
 
 const ftp = new Client(30000);
 await ftp.access({

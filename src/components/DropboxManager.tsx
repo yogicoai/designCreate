@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { thumbUrl } from '@/lib/thumb';
 import type { DropboxAssetDoc, DropboxSummary, DropboxSection } from '@/lib/queries';
+import { PRODUCT_LABELS, UNSORTED } from '@/lib/dropbox-products';
 
 /**
  * 자산 관리 > 드롭박스 — 팀 드롭박스에서 복사해 온 사진 보관함.
@@ -15,8 +16,8 @@ import type { DropboxAssetDoc, DropboxSummary, DropboxSection } from '@/lib/quer
  * 사람이 라벨을 확정하는 화면으로 만들었지만, 쓰는 사람에게는 보관함이 더 맞다고 봤다.
  * 근거 데이터(labelStatus·filenameHint)는 DB 에 그대로 있다 — 필요하면 다시 꺼낼 수 있다.
  *
- * 원본(드롭박스)은 읽기 전용이다. 이 화면에는 원본을 건드리는 동작이 없고,
- * 지우기도 숨김뿐이다 — sourcePath 로 언제든 원본에 되돌아갈 수 있다.
+ * 원본(드롭박스)은 읽기 전용이다. 이 화면에는 원본을 건드리는 동작이 없다.
+ * 숨기기는 목록에서만 빼고, 삭제는 웹 사본 파일까지 지운다 — 둘 다 드롭박스 원본은 그대로다.
  */
 
 /*
@@ -41,7 +42,8 @@ function pageSizeFor(width: number): number {
   return cols * Math.max(1, Math.round(PAGE / cols));
 }
 
-type Filters = { folder: string; status: string; labeled: string; q: string };
+type Filters = { folder: string; status: string; labeled: string; q: string; product: string };
+const NO_FILTERS: Filters = { folder: '', status: '', labeled: '', q: '', product: '' };
 
 export default function DropboxManager({
   initial,
@@ -58,7 +60,21 @@ export default function DropboxManager({
   const [items, setItems] = useState<DropboxAssetDoc[]>(initial);
   const [summary, setSummary] = useState<DropboxSummary>(initialSummary);
   const [total, setTotal] = useState(initialSummary.total);
-  const [filters, setFilters] = useState<Filters>({ folder: '', status: '', labeled: '', q: '' });
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  /** 제품 칩 장수 — 지금 폴더·검색 안에서. 라벨이 하나도 없으면 칩 줄을 숨긴다 */
+  const [productCounts, setProductCounts] = useState<{ product: string; total: number }[]>([]);
+  /*
+   * 제품 정리 모드 (사용자 요청 2026-09-22) — 켜야만 보인다. 팀원 화면은 그대로 두려는 것
+   * ("검수 도구가 있으면 팀원들이 헷갈린다", 2026-09-21).
+   * 켜면: 사진 클릭 = 선택, Shift+클릭 = 구간 선택(쪽이 달라도 된다), 아래 제품 버튼으로 한 번에 라벨.
+   */
+  const [labelMode, setLabelMode] = useState(false);
+  /** 구간의 첫 장 — 마지막으로 그냥 클릭한 사진 */
+  const [anchor, setAnchor] = useState<{ url: string; title: string } | null>(null);
+  /** Shift 로 고른 구간. 서버가 화면과 같은 순서로 사이를 찾아 라벨을 붙인다 */
+  const [range, setRange] = useState<{ from: string; to: string; fromTitle: string; toTitle: string } | null>(null);
+  /** 붙일 제품 버튼들 — 여러 개 고를 수 있다 */
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
   /*
    * 한 쪽 장수 — 그리드 폭을 재기 전에는 null 이다. null 인 동안에는 받지 않는다:
@@ -140,6 +156,7 @@ export default function DropboxManager({
     if (filters.status) p.set('status', filters.status);
     if (filters.labeled) p.set('labeled', filters.labeled);
     if (filters.q) p.set('q', filters.q);
+    if (filters.product) p.set('product', filters.product);
     if (withSummary) p.set('summary', '1');
     if (section === 'brand') p.set('section', 'brand');
     return p.toString();
@@ -153,11 +170,13 @@ export default function DropboxManager({
     if (next === section) return;
     setSection(next);
     setQInput('');
-    setFilters({ folder: '', status: '', labeled: '', q: '' });
+    setFilters(NO_FILTERS);
     setPage(0);
     setMsg('');
     setPicked(new Set());
     setViewUrl(null);
+    setAnchor(null);
+    setRange(null);
   };
 
   /*
@@ -195,6 +214,8 @@ export default function DropboxManager({
           // 요약은 필터와 무관한 갈래 전체 수라 그대로 탭 숫자가 된다
           setCounts((c) => ({ ...c, [sec]: j.summary.total }));
         }
+        setProductCounts(Array.isArray(j.productCounts) ? j.productCounts : []);
+        // 구간(range)은 비우지 않는다 — 첫 장을 고른 뒤 다른 쪽으로 넘어가 마지막 장을 고르는 게 구간 선택이다
         setPicked(new Set());
         setLoadErr('');
         setLoadedKey(reqKey);
@@ -227,6 +248,77 @@ export default function DropboxManager({
       if (!j?.ok) { setMsg(j?.error ?? '숨기지 못했습니다.'); return; }
       setMsg(`${urls.length}장을 숨겼습니다. 원본은 드롭박스에 그대로 있습니다.`);
       // 숨기면 뒤 사진이 한 칸씩 당겨진다 — 이 쪽을 다시 받는다. 받는 일은 위 effect 가 한다
+      setTick((t) => t + 1);
+    } finally { setBusy(false); }
+  };
+
+  /*
+   * 삭제 (사용자 요청 2026-09-22) — 숨김과 달리 되돌릴 수 없다. 지우는 것은 웹 사본(cafe24)과
+   * 목록뿐이고 드롭박스 원본은 그대로다. 생성 컷이 참조로 쓴 사진은 서버가 숨김만 한다.
+   */
+  const deletePicked = async () => {
+    const urls = [...picked];
+    if (!urls.length) return;
+    if (!window.confirm(
+      `선택한 ${urls.length}장을 삭제합니다.\n\n` +
+      '웹 사본 파일과 목록에서 완전히 지워지고 되돌릴 수 없습니다.\n' +
+      '드롭박스 원본 파일은 그대로 남습니다.',
+    )) return;
+    const sec = section;
+    setBusy(true);
+    try {
+      const r = await fetch('/api/dropbox', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ urls, purge: true }),
+      });
+      const j = await r.json().catch(() => null);
+      if (sectionRef.current !== sec) return;
+      if (!j?.ok) { setMsg(j?.error ?? '삭제하지 못했습니다.'); return; }
+      const notes = [
+        j.keptInUse ? `생성 컷에 쓰인 ${j.keptInUse}장은 숨김만` : '',
+        j.failed ? `${j.failed}장은 파일 삭제 실패 — 숨김 처리` : '',
+      ].filter(Boolean);
+      setMsg(`${j.deleted}장을 삭제했습니다.${notes.length ? ` (${notes.join(' · ')})` : ''} 드롭박스 원본은 그대로 있습니다.`);
+      setTick((t) => t + 1);
+    } finally { setBusy(false); }
+  };
+
+  /*
+   * 정리 모드의 사진 클릭. 그냥 클릭 = 한 장 선택/해제(+구간의 첫 장으로 기억),
+   * Shift+클릭 = 첫 장~이 사진까지 구간. 같은 쪽이면 사이를 화면에서도 칠하고, 다른 쪽이면
+   * 끝 두 장만 칠한다 — 실제 사이 사진은 라벨을 붙일 때 서버가 같은 순서로 찾는다.
+   */
+  const tileClick = (e: React.MouseEvent, it: DropboxAssetDoc) => {
+    if (e.shiftKey && anchor && anchor.url !== it.url) {
+      const a = shown.findIndex((x) => x.url === anchor.url);
+      const b = shown.findIndex((x) => x.url === it.url);
+      setPicked(new Set(a >= 0 ? shown.slice(Math.min(a, b), Math.max(a, b) + 1).map((x) => x.url) : [it.url]));
+      setRange({ from: anchor.url, to: it.url, fromTitle: anchor.title, toTitle: it.title });
+      return;
+    }
+    toggle(it.url);
+    setAnchor({ url: it.url, title: it.title });
+    setRange(null);
+  };
+
+  const clearSelection = () => { setPicked(new Set()); setRange(null); setAnchor(null); };
+
+  /** 고른 사진(또는 구간)에 제품 라벨을 붙인다. products 가 빈 배열이면 미분류로 되돌린다 */
+  const applyProducts = async (products: string[]) => {
+    const urls = [...picked];
+    if (!range && !urls.length) return;
+    setBusy(true);
+    try {
+      const body = range
+        ? { range: { from: range.from, to: range.to }, products, filter: { folder: filters.folder, q: filters.q, product: filters.product, section } }
+        : { urls, products };
+      const r = await fetch('/api/dropbox', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const j = await r.json().catch(() => null);
+      if (!j?.ok) { setMsg(j?.error ?? '라벨을 붙이지 못했습니다.'); return; }
+      setMsg(`${(j.count ?? urls.length).toLocaleString()}장 → ${products.length ? products.join(' · ') : UNSORTED}`);
+      clearSelection();
+      setChosen(new Set());
       setTick((t) => t + 1);
     } finally { setBusy(false); }
   };
@@ -316,8 +408,9 @@ export default function DropboxManager({
       */}
       {!isBrand && (
         <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text-mute)' }}>
-          드롭박스 「2.7 제품사진」과 「2.6 촬영」에서 가져온 제품사진 {summary.total.toLocaleString()}장입니다.
-          폴더는 드롭박스 폴더 이름 그대로예요. 사진을 누르면 크게 볼 수 있습니다.
+          드롭박스 「2.7 제품사진」과 「2.6 촬영」에서 가져온 제품사진 {summary.total.toLocaleString()}장을 제품별로 묶었습니다.
+          촬영 폴더 사진은 AI 가 제품을 판별해 넣은 것이라 <b>점선 라벨</b>로 보입니다 — 틀린 건 「제품 정리 모드」에서 고쳐 주세요.
+          사진을 누르면 크게 볼 수 있습니다.
         </p>
       )}
 
@@ -335,20 +428,27 @@ export default function DropboxManager({
           브랜드 정리는 캠페인별로 칩을 나누지 않는다 (사용자 요청 2026-09-21: "폴더로 각각 나눌 필요 없고
           하나로 묶어놓고 파일명만"). 캠페인 이름은 제목에 들어 있어서 검색창에 「04월」「PASTEL」 로 찾는다.
         */}
-        {isBrand ? null : (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="label mr-1">폴더</span>
-          <button onClick={() => changeFilters((f) => ({ ...f, folder: '' }))}
-                  className="text-[12px] px-2.5 py-1 rounded-full" style={chip(!filters.folder)}>
-            전체 {summary.total.toLocaleString()}
-          </button>
-          {summary.byFolder.map((f) => (
-            <button key={f.folder} onClick={() => changeFilters((p) => ({ ...p, folder: f.folder }))}
-                    className="text-[12px] px-2.5 py-1 rounded-full" style={chip(filters.folder === f.folder)}>
-              {f.folder} {f.total}
+        {/*
+          제품사진 탭은 「제품」 칩 한 줄로만 거른다 (사용자 요청 2026-09-22: "제품 폴더링만 남는 게 베스트").
+          예전의 드롭박스 폴더 칩(2018·2021 같은 촬영 연도 폴더 포함)은 없앴다 — 촬영 폴더 사진은 AI 가 제품을 판별해
+          라벨을 넣었고, 원래 제품 폴더(맥스·서포트…)에 있던 사진은 폴더 이름을 라벨로 넣었다. 그래서 같은 사진이
+          연도 칩과 제품 칩에 두 번 나올 이유가 없다. 원래 폴더는 사진 아래 📁 표시와 팝업의 원본 경로로 남는다.
+          한 장에 제품이 여럿이면 각 칩에 한 번씩 센다.
+        */}
+        {!isBrand && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="label mr-1">제품</span>
+            <button onClick={() => changeFilters((f) => ({ ...f, product: '', folder: '' }))}
+                    className="text-[12px] px-2.5 py-1 rounded-full" style={chip(!filters.product)}>
+              전체 {summary.total.toLocaleString()}
             </button>
-          ))}
-        </div>
+            {productCounts.map((p) => (
+              <button key={p.product} onClick={() => changeFilters((f) => ({ ...f, product: p.product }))}
+                      className="text-[12px] px-2.5 py-1 rounded-full" style={chip(filters.product === p.product)}>
+                {p.product} {p.total.toLocaleString()}
+              </button>
+            ))}
+          </div>
         )}
 
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -363,20 +463,66 @@ export default function DropboxManager({
       </section>
 
       {/* 고른 것에 라벨 찍기 — 선택이 있을 때만 나온다 */}
-      {picked.size > 0 && (
-        <section className="rounded-xl p-3 flex items-center gap-2 flex-wrap sticky top-2 z-20"
+      {(picked.size > 0 || range) && (
+        <section className="rounded-xl p-3 space-y-2 sticky top-2 z-20"
                  style={{ background: 'var(--accent-soft)', border: '1px solid var(--accent)' }}>
-          <span className="text-[13px] font-bold" style={{ color: 'var(--accent)' }}>{picked.size}장 선택</span>
+          {/* 정리 모드 — 제품 버튼. 여러 개 골라 [붙이기] */}
+          {labelMode && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[12px] font-bold mr-1" style={{ color: 'var(--accent)' }}>제품</span>
+              {PRODUCT_LABELS.map((p) => {
+                const on = chosen.has(p);
+                return (
+                  <button key={p}
+                          onClick={() => setChosen((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(p)) next.delete(p);
+                            else { if (p === '제품 없음') next.clear(); else next.delete('제품 없음'); next.add(p); }
+                            return next;
+                          })}
+                          className="text-[12px] px-2.5 py-1 rounded-full"
+                          style={{ ...chip(on), cursor: 'pointer', fontWeight: on ? 700 : 500 }}>
+                    {p}
+                  </button>
+                );
+              })}
+              <button onClick={() => applyProducts([...chosen])} disabled={loading || !chosen.size}
+                      className="text-[12px] px-3 py-1.5 rounded-lg font-bold ml-1"
+                      style={{ background: chosen.size ? 'var(--accent)' : 'var(--surface-2)', color: chosen.size ? '#fff' : 'var(--text-mute)', border: 'none', cursor: chosen.size ? 'pointer' : 'default' }}>
+                붙이기
+              </button>
+              <button onClick={() => applyProducts([])} disabled={loading}
+                      className="text-[12px] px-2.5 py-1.5 rounded-lg"
+                      style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--text-mute)', cursor: 'pointer' }}
+                      title="라벨을 지워 미분류로 되돌린다">
+                미분류로
+              </button>
+            </div>
+          )}
+          <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[13px] font-bold" style={{ color: 'var(--accent)' }}>
+            {range ? `구간 선택: ${range.fromTitle} → ${range.toTitle}` : `${picked.size}장 선택`}
+          </span>
+          {range && <span className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>사이의 사진은 붙일 때 모두 포함됩니다 (다른 쪽 포함)</span>}
+          {/* 숨기기·삭제는 눈에 보이는 선택에만 — 구간(다른 쪽까지)으로 지우면 무엇이 지워지는지 안 보인다 */}
+          {!range && (<>
           <button onClick={hidePicked} disabled={loading}
                   className="text-[12px] px-3 py-1.5 rounded-lg"
                   style={{ background: 'var(--surface)', border: '1px solid var(--line)', color: 'var(--text-dim)', cursor: 'pointer' }}>
             숨기기
           </button>
-          <button onClick={() => setPicked(new Set())}
+          <button onClick={deletePicked} disabled={loading}
+                  className="text-[12px] px-3 py-1.5 rounded-lg"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--danger, #e5484d)', color: 'var(--danger, #e5484d)', cursor: 'pointer' }}>
+            삭제
+          </button>
+          </>)}
+          <button onClick={clearSelection}
                   className="text-[12px] px-3 py-1.5 rounded-lg ml-auto"
                   style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--text-mute)', cursor: 'pointer' }}>
             선택 해제
           </button>
+          </div>
         </section>
       )}
 
@@ -397,12 +543,26 @@ export default function DropboxManager({
           {items.length > 0 && ` (${(page * size + 1).toLocaleString()}–${(page * size + items.length).toLocaleString()}번)`}
         </span>
         {items.length > 0 && (
-          <button onClick={() => setPicked(new Set(items.map((i) => i.url)))}
+          <button onClick={() => { setRange(null); setPicked(new Set(items.map((i) => i.url))); }}
                   className="underline" style={{ cursor: 'pointer' }}>
             이 쪽 전부 선택
           </button>
         )}
+        {!isBrand && (
+          <button onClick={() => { setLabelMode((v) => !v); clearSelection(); setChosen(new Set()); }}
+                  className="ml-auto text-[12px] px-2.5 py-1 rounded-lg"
+                  style={{ cursor: 'pointer', background: labelMode ? 'var(--accent)' : 'transparent', color: labelMode ? '#fff' : 'var(--text-mute)', border: `1px solid ${labelMode ? 'var(--accent)' : 'var(--line)'}` }}
+                  title="사진 클릭 = 선택, Shift+클릭 = 구간 선택, 제품 버튼으로 라벨">
+            {labelMode ? '✓ 제품 정리 모드' : '제품 정리 모드'}
+          </button>
+        )}
       </div>
+      {labelMode && (
+        <p className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>
+          사진을 누르면 선택, <b>Shift</b>를 누른 채 다른 사진을 누르면 그 사이 전부(다른 쪽 포함)가 한 구간이 됩니다.
+          위에 뜨는 제품 버튼을 고르고 [붙이기]. 점선 라벨은 AI 가 붙인 것, 채운 실선은 사람이 확정한 것, 빈 실선은 원래 제품 폴더에 있던 것입니다.
+        </p>
+      )}
 
       {/* 목록 */}
       <div ref={gridRef} className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${TILE_MIN}px, 1fr))` }}>
@@ -417,13 +577,20 @@ export default function DropboxManager({
                 선택(라벨·숨기기 대상 고르기)은 아래 줄의 작은 아이콘으로 한다.
               */}
               <div className="relative">
-                <button onClick={() => setViewUrl(it.url)} className="block w-full" style={{ cursor: 'zoom-in' }}
-                        title="크게 보기">
+                {/* 정리 모드에서는 클릭 = 선택(Shift = 구간). 크게 보기는 오른쪽 위 🔍 */}
+                <button onClick={(e) => (labelMode ? tileClick(e, it) : setViewUrl(it.url))} className="block w-full"
+                        style={{ cursor: labelMode ? 'pointer' : 'zoom-in' }}
+                        title={labelMode ? '클릭 = 선택 · Shift+클릭 = 구간' : '크게 보기'}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={thumbUrl(it.url, 256)} alt={it.title} loading="lazy"
-                       className="w-full aspect-square object-cover block"
+                       className="w-full aspect-square object-cover block select-none"
                        style={{ background: 'var(--surface-2)', opacity: on ? 0.75 : 1 }} />
                 </button>
+                {labelMode && (
+                  <button onClick={() => setViewUrl(it.url)} aria-label="크게 보기"
+                          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full text-[12px] flex items-center justify-center"
+                          style={{ cursor: 'zoom-in', background: 'rgba(0,0,0,.55)', color: '#fff', border: 'none' }}>🔍</button>
+                )}
                 {on && (
                   <span className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold pointer-events-none"
                         style={{ background: 'var(--accent)', color: '#fff' }}>✓</span>
@@ -456,6 +623,22 @@ export default function DropboxManager({
                         style={{ background: 'var(--surface-2)', color: 'var(--text-mute)' }} title="드롭박스 폴더">
                     📁 {it.folderHint}
                   </span>
+                  )}
+                  {/* 제품 라벨 — 점선 = AI 1차, 실선 = 사람이 확정 */}
+                  {!isBrand && it.products.map((p) => (
+                    <span key={p} className="text-[9.5px] px-1.5 py-[1px] rounded-full"
+                          style={{
+                            color: 'var(--accent)', background: it.productsSource === 'human' ? 'var(--accent-soft)' : 'transparent',
+                            border: `1px ${it.productsSource === 'ai' ? 'dashed' : 'solid'} var(--accent)`,
+                          }}
+                          title={it.productsSource === 'human' ? '확정' : it.productsSource === 'folder' ? '원래 제품 폴더' : `AI 1차${it.aiConfidence !== null ? ` · 확신도 ${Math.round(it.aiConfidence * 100)}%` : ''}`}>
+                      {p}
+                    </span>
+                  ))}
+                  {!isBrand && labelMode && !it.products.length && (
+                    <span className="text-[9.5px] px-1.5 py-[1px] rounded-full" style={{ color: 'var(--text-mute)', border: '1px dashed var(--line)' }}>
+                      {UNSORTED}
+                    </span>
                   )}
                 </div>
               </div>

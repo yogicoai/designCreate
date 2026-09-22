@@ -265,6 +265,15 @@ export interface DropboxAssetDoc {
   sourcePath: string;
   sourceName: string;
   createdAt: string | null;
+  /**
+   * 제품 라벨(여러 개) — src/lib/dropbox-products.ts 의 PRODUCT_LABELS. 빈 배열 = 미분류.
+   * AI 가 1차로 채우고(productsSource 'ai'), 사람이 정리 모드에서 고치면 'human' 이 된다.
+   */
+  products: string[];
+  /** ai = AI 1차 · human = 정리 모드에서 사람이 확정 · folder = 원래 제품 폴더에 있던 것(폴더 이름 그대로) */
+  productsSource: 'ai' | 'human' | 'folder' | null;
+  /** AI 가 붙였을 때의 확신도(0~1) — 정리 모드에서 낮은 것부터 볼 수 있게 */
+  aiConfidence: number | null;
 }
 
 /** 폴더별·검수상태별 개수 — 화면 상단의 필터 칩에 쓴다 */
@@ -304,7 +313,35 @@ export function toDropboxAsset(d: Record<string, unknown>): DropboxAssetDoc {
     sourcePath: String(d.sourcePath ?? ''),
     sourceName: String(d.sourceName ?? ''),
     createdAt: d.createdAt ? new Date(d.createdAt as string).toISOString() : null,
+    products: Array.isArray(d.products) ? (d.products as string[]) : [],
+    productsSource: d.productsSource === 'human' || d.productsSource === 'ai' || d.productsSource === 'folder'
+      ? (d.productsSource as 'human' | 'ai' | 'folder') : null,
+    aiConfidence: typeof (d.ai as { confidence?: unknown } | undefined)?.confidence === 'number'
+      ? (d.ai as { confidence: number }).confidence : null,
   };
+}
+
+/**
+ * 제품 칩의 장수 — 한 장에 라벨이 여러 개면 각 칩에 한 번씩 센다. 라벨이 없는 것은 「미분류」.
+ * match 에는 폴더 등 지금 화면의 조건이 들어온다(제품 조건은 빼고 — 칩 숫자가 스스로를 거르면 안 된다).
+ */
+export async function getDropboxProductCounts(match: Record<string, unknown>): Promise<{ product: string; total: number }[]> {
+  const col = await collection<Record<string, unknown>>('dropbox_assets');
+  const [rows, unsorted] = await Promise.all([
+    col.aggregate<{ _id: string; n: number }>([
+      { $match: match },
+      { $unwind: '$products' },
+      { $group: { _id: '$products', n: { $sum: 1 } } },
+    ]).toArray(),
+    col.countDocuments({ ...match, $or: [{ products: { $exists: false } }, { products: { $size: 0 } }] }),
+  ]);
+  const { PRODUCT_LABELS, UNSORTED } = await import('./dropbox-products');
+  const order = new Map<string, number>(PRODUCT_LABELS.map((p, i) => [p, i]));
+  const out = rows
+    .map((r) => ({ product: r._id, total: r.n }))
+    .sort((a, b) => (order.get(a.product) ?? 99) - (order.get(b.product) ?? 99));
+  if (unsorted) out.push({ product: UNSORTED, total: unsorted });
+  return out;
 }
 
 /**
@@ -321,7 +358,7 @@ export async function getDropboxAsRefs(limit = 1500, section: DropboxSection = '
   const col = await collection<Record<string, unknown>>('dropbox_assets');
   const docs = await col
     .find({ active: { $ne: false }, ...dropboxSectionMatch(section) })
-    .project({ section: 1, url: 1, title: 1, width: 1, height: 1, sub: 1, folderHint: 1, createdAt: 1 })
+    .project({ section: 1, url: 1, title: 1, width: 1, height: 1, sub: 1, folderHint: 1, products: 1, createdAt: 1 })
     .sort({ folderHint: 1, sourcePath: 1 })
     .limit(limit)
     .toArray();
@@ -337,9 +374,10 @@ export function dropboxToRef(d: Record<string, unknown>): ReferenceDoc {
     height: Number(d.height) || 0,
     // 브랜드 정리는 보관함에서도 따로 — 제품사진 수천 장에 묻히지 않게 탭을 나눈다
     category: d.section === 'brand' ? 'brand' : 'dropbox',
-    // 확정 라벨이 있으면 그것을, 없으면 폴더명을 하위 칩으로 — 어느 쪽이든 골라 쓸 수 있어야 한다
-    // (브랜드 정리는 폴더명이 곧 캠페인 이름이라 「04월 (PASTEL LOVE)」 가 그대로 칩이 된다)
-    sub: (d.sub as string | null) || String(d.folderHint ?? '') || null,
+    // 하위 칩 = 제품 라벨(첫 번째) → 확정 라벨 → 폴더명 순. 촬영 폴더(2018·2021…)가 연도 칩으로 뜨지 않고
+    // 제품 칩으로 들어가게 한다 (사용자 요청 2026-09-22: "제품 폴더링만 남는 게 베스트")
+    // (브랜드 정리는 라벨이 없어서 폴더명 = 캠페인 이름이 그대로 칩이 된다)
+    sub: (Array.isArray(d.products) && (d.products as string[])[0]) || (d.sub as string | null) || String(d.folderHint ?? '') || null,
     tags: [],
     source: 'dropbox',
     createdAt: d.createdAt ? new Date(d.createdAt as string).toISOString() : null,

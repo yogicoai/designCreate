@@ -342,9 +342,10 @@ export default function CreateStudio(p: Props) {
       const r = await fetch(`/api/dropbox?skip=${skip}&limit=1000&summary=1`, { cache: 'no-store' });
       const j = await r.json();
       if (!j?.ok) return;
-      const more: ReferenceDoc[] = (j.assets ?? []).map((a: { url: string; title: string; width: number; height: number; sub: string | null; folderHint: string; createdAt: string | null }) => ({
+      const more: ReferenceDoc[] = (j.assets ?? []).map((a: { url: string; title: string; width: number; height: number; sub: string | null; folderHint: string; products?: string[]; createdAt: string | null }) => ({
         url: a.url, title: a.title, width: a.width, height: a.height,
-        category: 'dropbox', sub: a.sub || a.folderHint || null,
+        // 하위 칩은 제품 라벨 — 서버의 dropboxToRef 와 같은 규칙 (연도 폴더 대신 제품별, 2026-09-22)
+        category: 'dropbox', sub: a.products?.[0] || a.sub || a.folderHint || null,
         tags: [], source: 'dropbox', createdAt: a.createdAt,
       }));
       // 이미 있는 주소는 거른다 — 두 번 받아도 목록이 중복되지 않게
@@ -1111,11 +1112,12 @@ export default function CreateStudio(p: Props) {
                    hint="새로 올리거나 보관함에서 가져옵니다. 여기서 올린 이미지는 이번 작업에만 쓰이고 보관함에는 쌓이지 않습니다 — 계속 쓸 사진은 자산관리 > 레퍼런스에서 등록하세요."
                    right={
                      <span className="flex gap-1.5 flex-wrap justify-end">
-                       <button className="btn btn-ghost text-[11px]" onClick={() => openLib('ref')}>
-                         레퍼런스 보관함 열기 ({refLib.length.toLocaleString()})
+                       {/* 버튼으로 보이게 — ghost 는 글자처럼만 보여 못 찾았다 (사용자 요청 2026-09-22) */}
+                       <button className="btn text-[12px]" onClick={() => openLib('ref')}>
+                         🗂 레퍼런스 보관함 <span style={{ color: 'var(--text-mute)', fontWeight: 500 }}>{refLib.length.toLocaleString()}</span>
                        </button>
-                       <button className="btn btn-ghost text-[11px]" onClick={() => openLib('dropbox')}>
-                         드롭박스 보관함 열기 ({dbxLib.length.toLocaleString()})
+                       <button className="btn text-[12px]" onClick={() => openLib('dropbox')}>
+                         📦 드롭박스 보관함 <span style={{ color: 'var(--text-mute)', fontWeight: 500 }}>{dbxLib.length.toLocaleString()}</span>
                        </button>
                      </span>
                    }>
@@ -1243,11 +1245,12 @@ export default function CreateStudio(p: Props) {
                    hint="제품을 놓을 공간 사진을 올리거나 보관함에서 가져옵니다. 사진이 없으면 아래 「배경 · 연출」에 글로 적으면 됩니다. 여기서 올린 사진은 이번 작업에만 쓰이고 보관함에는 쌓이지 않습니다."
                    right={
                      <span className="flex gap-1.5 flex-wrap justify-end">
-                       <button className="btn btn-ghost text-[11px]" onClick={() => openLib('ref')}>
-                         레퍼런스 보관함 열기 ({refLib.length.toLocaleString()})
+                       {/* 버튼으로 보이게 — ghost 는 글자처럼만 보여 못 찾았다 (사용자 요청 2026-09-22) */}
+                       <button className="btn text-[12px]" onClick={() => openLib('ref')}>
+                         🗂 레퍼런스 보관함 <span style={{ color: 'var(--text-mute)', fontWeight: 500 }}>{refLib.length.toLocaleString()}</span>
                        </button>
-                       <button className="btn btn-ghost text-[11px]" onClick={() => openLib('dropbox')}>
-                         드롭박스 보관함 열기 ({dbxLib.length.toLocaleString()})
+                       <button className="btn text-[12px]" onClick={() => openLib('dropbox')}>
+                         📦 드롭박스 보관함 <span style={{ color: 'var(--text-mute)', fontWeight: 500 }}>{dbxLib.length.toLocaleString()}</span>
                        </button>
                      </span>
                    }>
