@@ -438,6 +438,8 @@ for (const folder of targets) {
             source: SECTION === 'brand' ? 'dropbox-brand' : 'dropbox-product',
             // 웹용으로 줄여 올린 크기 — 원본 화질이 필요하면 sourcePath 로 드롭박스에서 가져온다
             srcBytes: up.srcBytes, uploadedBytes: up.uploadedBytes, maxEdge: MAX_EDGE,
+            // 원본 수정일 — 드롭박스 화면이 "최신 업데이트 순" 으로 보여 준다 (2026-09-22, backfill-dropbox-mtime.mjs 와 같은 값)
+            srcMtime: (() => { try { return fs.statSync(r.abs).mtime; } catch { return null; } })(),
             active: true,
             createdAt: new Date(),
           },

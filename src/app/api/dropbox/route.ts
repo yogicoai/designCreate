@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { toDropboxAsset, dropboxSectionMatch, type DropboxSection } from '@/lib/queries';
+import { toDropboxAsset, dropboxSectionMatch, DROPBOX_SORT, type DropboxSection } from '@/lib/queries';
 import { UNSORTED, isProductLabel } from '@/lib/dropbox-products';
 
 /** ?section=brand 면 브랜드 정리, 그 외에는 제품사진 */
@@ -89,8 +89,8 @@ export async function GET(req: Request) {
     const [docs, total] = await Promise.all([
       col.find(q)
         .project({ section: 1, group: 1, url: 1, title: 1, width: 1, height: 1, sub: 1, folderHint: 1, filenameHint: 1, labelStatus: 1, sourcePath: 1, sourceName: 1, createdAt: 1, products: 1, productsSource: 1, 'ai.confidence': 1 })
-        // 폴더 안에서 원본 순서대로 — 검수할 때 같은 촬영분이 붙어 있어야 판단이 빠르다
-        .sort({ folderHint: 1, sourcePath: 1 })
+        // 원본 수정일 최신순 (2026-09-22) — 같은 촬영분은 수정 시각이 붙어 있어 여전히 모여서 나온다
+        .sort(DROPBOX_SORT)
         .skip(skip)
         .limit(limit)
         .toArray(),
@@ -141,7 +141,7 @@ export async function PATCH(req: Request) {
     let targets: string[] = [];
     if (body.range?.from && body.range?.to) {
       const sp = new URLSearchParams(Object.entries(body.filter ?? {}).filter(([, v]) => v).map(([k, v]) => [k, String(v)]));
-      const ordered = (await col.find(buildQuery(sp)).project({ url: 1 }).sort({ folderHint: 1, sourcePath: 1 }).toArray())
+      const ordered = (await col.find(buildQuery(sp)).project({ url: 1 }).sort(DROPBOX_SORT).toArray())
         .map((d) => String(d.url));
       const a = ordered.indexOf(body.range.from);
       const b = ordered.indexOf(body.range.to);

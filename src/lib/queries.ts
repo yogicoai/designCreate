@@ -285,11 +285,19 @@ export interface DropboxSummary {
   byStatus: Record<string, number>;
 }
 
+/**
+ * 드롭박스 목록 순서 — 원본 파일 수정일이 최신인 것부터 (사용자 요청 2026-09-22: "최신 업데이트된 게 앞쪽").
+ * 같은 시각이면 원본 경로 순. 목록·구간 라벨·생성 화면 보관함이 모두 이 순서를 써야
+ * 정리 모드에서 Shift 로 고른 구간이 화면에 보이는 사이와 같아진다.
+ * srcMtime 은 scripts/backfill-dropbox-mtime.mjs 가 채우고, 새로 가져오는 사진은 수집 스크립트가 넣는다.
+ */
+export const DROPBOX_SORT: Record<string, 1 | -1> = { srcMtime: -1, sourcePath: 1 };
+
 export async function getDropboxAssets(limit = 300, skip = 0, section: DropboxSection = 'product'): Promise<DropboxAssetDoc[]> {
   const col = await collection<DropboxAssetDoc & { active?: boolean; createdAt?: unknown }>('dropbox_assets');
   const docs = await col
     .find({ active: { $ne: false }, ...dropboxSectionMatch(section) })
-    .sort({ folderHint: 1, sourcePath: 1 })
+    .sort(DROPBOX_SORT)
     .skip(skip)
     .limit(limit)
     .toArray();
@@ -359,7 +367,7 @@ export async function getDropboxAsRefs(limit = 1500, section: DropboxSection = '
   const docs = await col
     .find({ active: { $ne: false }, ...dropboxSectionMatch(section) })
     .project({ section: 1, url: 1, title: 1, width: 1, height: 1, sub: 1, folderHint: 1, products: 1, createdAt: 1 })
-    .sort({ folderHint: 1, sourcePath: 1 })
+    .sort(DROPBOX_SORT)
     .limit(limit)
     .toArray();
   return docs.map(dropboxToRef);
