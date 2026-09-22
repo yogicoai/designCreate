@@ -81,7 +81,7 @@ const EDIT_TARGETS: { value: EditTarget; label: string; desc: string }[] = [
 const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
   { value: 'style', label: '분위기 참고', desc: '조명·색감·무드만 따라가고 장면은 새로 — 그 공간 자체를 쓰려면 「배경으로 사용」을 고르세요' },
   { value: 'base', label: '이 사진을 편집', desc: '사진은 그대로 두고 지정한 것만 바꿈 (합성·교체)' },
-  { value: 'background', label: '배경으로 사용', desc: '공간만 가져오고 인물·제품은 우리 자산으로' },
+  { value: 'background', label: '배경으로 사용', desc: '공간만 가져오고 인물·제품은 우리 자산으로 — 조명·색감도 이 공간에 맞춥니다' },
 ];
 
 /** 「제품만 노출」 의 배경 이미지 역할 — 사진 편집(base)은 없다 */
@@ -1634,7 +1634,7 @@ ${c.spec}`}
           */}
           {withPeople && (
           <Section n="6" title="배경 변경 (선택)"
-                   hint="② 레퍼런스의 모델·포즈·제품을 이 배경 안으로 옮겨 합성합니다. 레퍼런스와 비슷한 높이·각도에서 찍은 배경일수록 자연스럽습니다.">
+                   hint="② 레퍼런스의 모델·포즈·제품을 이 배경 안으로 옮겨 합성합니다. 인물·제품의 조명·색감은 이 배경에 맞춰 톤을 조절합니다. 레퍼런스와 비슷한 높이·각도에서 찍은 배경일수록 자연스럽습니다.">
             <input ref={bgFileInput} type="file" accept="image/*" hidden onChange={(e) => onBgFile(e.target.files)} />
             {bgSwap ? (
               <div className="flex gap-2.5 p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
@@ -1651,7 +1651,7 @@ ${c.spec}`}
                   {/* 지금 이 배경이 어떻게 쓰이는지 — ② 가 있으면 합성, 없으면 이 공간에 새로 배치 */}
                   <div className="text-[10.5px] mt-1 leading-relaxed" style={{ color: hasBaseUpload ? 'var(--ok)' : 'var(--text-mute)' }}>
                     {hasBaseUpload
-                      ? `② 레퍼런스 ${uploads.filter((u) => u.role === 'base').length}장에서 모델·포즈·제품만 가져와 이 배경에 합성합니다.`
+                      ? `② 레퍼런스 ${uploads.filter((u) => u.role === 'base').length}장에서 모델·포즈·제품만 가져와 이 배경에 합성합니다 — 톤도 배경에 맞춥니다.`
                       : '② 레퍼런스가 없어서, 이 공간에 고른 모델·제품을 새로 배치합니다.'}
                   </div>
                   <div className="flex gap-1.5 mt-1.5 flex-wrap">

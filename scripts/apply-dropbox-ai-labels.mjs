@@ -25,7 +25,7 @@ if (!journalPath || !manifestPath) { console.error('journal.jsonl 과 manifest.j
 
 const KR = {
   Max: '맥스', Midi: '미디', Mini: '미니', Slim: '슬림', Double: '더블', Lounger: '라운저', Support: '서포트',
-  Pyramid: '피라미드', Pod: '팟', Drop: '드롭', Hugibo: '허기보', Bubble: '버블', Roll: '롤', Mate: '메이트',
+  Pyramid: '피라미드', Pod: '팟', Drop: '드롭', Hugibo: '허기보', Bubble: '버블', Roll: '바디필로우', Mate: '메이트',
   OtherYogibo: '기타 요기보', NoYogibo: '제품 없음',
 };
 const MAX_FAMILY = new Set(['Max', 'Midi', 'Mini', 'Slim', 'Double']);

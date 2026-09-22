@@ -72,7 +72,8 @@ const EDIT_TARGET_EN: Record<EditTarget, string> = {
     'the new face and hair come from the supplied model identity, the body pose stays the same, and they wear ' +
     'the SAME outfit the base person wears — re-rendered naturally on the new person. Never paste a face onto ' +
     'the existing photo: head, neck, shoulders and hands are redrawn together, with one skin tone and the scene\'s own lighting',
-  person: 'replace each specified person entirely with the supplied model (face, hair, body proportions and outfit), keeping their pose',
+  // 옷을 안 고른 사람은 OUTFIT 줄이 "원본 옷 그대로" 를 준다 — 여기서 옷까지 통째로 바꾸라고 하면 부딪힌다 (2차 검토 2026-09-22)
+  person: 'replace each specified person entirely with the supplied model (face, hair, body proportions, and outfit unless that person\'s OUTFIT line keeps the base garment), keeping their pose',
   // 사진에 사람이 없을 때 — 인물을 새로 합성해 앉힌다 (기존 가구·공간은 그대로)
   'add-person': 'ADD the specified people into the scene, seated naturally on the bean bags already in the photo — one person per seat, counting seats from the LEFT. The bean bags in the photo ARE the product being advertised: keep their shape, fabric texture, colour and position exactly as photographed — do not replace, recolour, move or add any furniture. The fabric must visibly compress and dent under each body; shadows, perspective and colour temperature must match the photo so the people look photographed in place, not pasted',
   outfit: 'change the clothing to the specified outfit, keeping the face, hair and pose',
@@ -289,13 +290,25 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
    * "배경은 따로" 라고 해도 그 방이 통째로 따라온다 — 무엇을 가져오고 무엇을 버릴지를 사진마다 적어야 막힌다.
    */
   const swap = !!spec.backgroundSwap && bases.length > 0 && backgrounds.length > 0;
+  /*
+   * 인물 교체를 겸한 합성이면 원본은 "사람" 이 아니라 "포즈" 를 준다.
+   * "원본에서 사람을 가져와라(정확한 팔다리 위치)" 는 원본 몸을 그대로 두라는 말로 읽혀,
+   * 6살 아동 C 가 13살 원본 소년 자리를 못 채우고 원본 소년이 남았다 (검토 2026-09-22).
+   */
+  const recast = recastsPeople(spec);
   for (const u of bases) {
     slots.push({
       kind: 'base',
       title: `${swap ? '인물·제품 소스' : '베이스'} · ${u.title}`,
       url: u.url,
       role: swap
-        ? 'the SOURCE photograph for the people and the products ONLY — take from it the people (their exact pose, limb placement and position relative to each other and to the products) and the products (their shape, size and how they are compressed). Take NOTHING of its environment: its room, walls, floor, windows, props, lighting and colour grade are all replaced by the background image'
+        /*
+         * 합성에서도 아래 문장들은 원본을 "base image" 라고 부른다 — 여기서 그 이름을 원본에 묶는다 (2차 검토 2026-09-22).
+         * 교체 인물의 크기·옷은 SCALE·OUTFIT 줄이 정한다 — 여기서 "몸 크기는 버린다" 로 단정하면 성인끼리 교체의 크기 유지와 부딪힌다.
+         */
+        ? recast
+          ? 'the SOURCE photograph (called "the base image" below) for the POSES and the products ONLY — take from it where each person is and how they are posed (the people themselves are REPLACED by the models described below; nothing of their face, skin tone, hair or age is kept — their size relative to the bean bag and their garment follow the SCALE and OUTFIT lines below) and the products (their shape and size; under a replaced person of a different size the dent follows the new body). Take NOTHING of its environment: its room, walls, floor, windows, props, lighting and colour grade are all replaced by the background image'
+          : 'the SOURCE photograph (called "the base image" below) for the people and the products ONLY — take from it the people (their exact pose, limb placement and position relative to each other and to the products) and the products (their shape, size and how they are compressed). Take NOTHING of its environment: its room, walls, floor, windows, props, lighting and colour grade are all replaced by the background image'
         : 'the base photograph to edit — keep it as-is and change only what is specified below',
     });
   }
@@ -694,15 +707,46 @@ function relativeSizeLines(products: ProductSpec[]): string[] {
  */
 function toneBlock(spec: GenerationSpec): string[] {
   if (!spec.sceneTone) return [];
-  const who = spec.talents?.length ? 'every product and person' : 'every product';
+  /*
+   * 배경 합성(② 원본 + ⑥ 배경) — 인물·제품이 원본의 스튜디오 톤(평면광·그 방의 화이트밸런스·높은 채도)을
+   * 그대로 달고 새 방에 붙는 게 합성 티의 전부였다 (사용자 지적 2026-09-22, 파스텔 3종 + 여성 B 컷).
+   * 그래서 합성이면 "톤은 원본이 아니라 배경에서 온다" 를 먼저 못박고, 대상도 원본에서 가져온 것으로 짚는다.
+   */
+  const swap = isBackgroundSwap(spec);
+  // 피부 — 톤 보정은 "그 방의 빛이 피부에 얹히는 것" 이지 피부색을 바꾸는 게 아니다 (피부색은 얼굴 시트가 정한다)
+  const who = swap
+    ? 'every person (skin, hair and clothing — each person\'s own skin colour stays as ' +
+      (spec.talents?.length ? 'their identity sheet shows' : 'in the source photograph') +
+      '; only the room\'s light and colour cast fall on it) and every product'
+    : spec.talents?.length ? 'every product and person' : 'every product';
+  // 합성엔 사진이 둘 — "그 사진" 이 원본으로 읽히지 않게 배경을 이름으로 부른다 (검토 2026-09-22)
+  const target = swap ? 'the BACKGROUND photograph' : 'that photograph';
+  // 색 hex 가 위에 적혀 있을 때만 그 문장을 가리킨다 — 원본 속 제품만 있는 합성 컷에는 hex 가 없다
+  const hasHex = (spec.products ?? []).some((p) => !!p.color?.hex);
   return [
-    `SCENE TONE (measured from the supplied photograph): ${spec.sceneTone}.`,
-    `PHOTOGRAPHIC MATCH — render ${who} as if captured by the same camera in the same moment as that photograph, not composited: ` +
+    /*
+     * 채도는 방의 톤을 따라 누그러뜨리는 게 원래 설계다 (2026-09-14 "너무 AI 합성 느낌", PRODUCT RELIGHT 의 "mute its colours").
+     * 2차 검토 때 "평균 채도는 제품 목표가 아니다" 를 넣었다가 그 설계·RE-GRADE 와 부딪혀 뺐다 (3차 확인 2026-09-22).
+     * 색이 딴 색으로 바뀌는 것만 아래 "never recolour" 가 막는다.
+     */
+    `SCENE TONE (measured from the ${swap ? 'BACKGROUND' : 'supplied'} photograph): ${spec.sceneTone}.`,
+    ...(swap
+      ? ['TONE COMES FROM THE BACKGROUND, NOT FROM THE SOURCE — the source photograph was lit somewhere else (typically a studio: flat front light, ' +
+          'its own white balance, clean shadows and its own saturation). None of that survives: the people and products are RE-LIT and RE-GRADED ' +
+          'to the background photograph exactly as described below, as if they had been photographed in that room.']
+      : []),
+    `PHOTOGRAPHIC MATCH — render ${who} as if captured by the same camera in the same moment as ${target}, not composited: ` +
       "the same white balance (fabric colours shift toward the room's warmth or coolness exactly as real fabric would under that light), " +
       'shadows on the products no darker than the darkest shadows already in the room, the same contrast and saturation level, ' +
       'the same softness of light and shadow edges, the same sharpness, depth of field, lens perspective, camera height, noise and grain. ' +
+      "Light reaches them from the same side as the room's own light: a brighter side facing the light source, a softer shaded side away from it, " +
+      'and cast shadows falling the same way as the shadows of objects already in the room. ' +
       'Add a soft contact shadow and ambient occlusion where each product meets the floor, and gentle colour bounce from the floor and walls onto the fabric. ' +
-      "The hex colours above are the fabric's true dye colour under neutral daylight — show that same fabric as it would photograph in THIS room. " +
+      (hasHex
+        ? "The hex colours above are the fabric's true dye colour under neutral daylight — show that same fabric as it would photograph in THIS room. "
+        : 'Each fabric keeps its own colour identity (a lavender stays lavender, a mint stays mint, a pink stays pink) — only the light on it changes. ') +
+      "Shift each colour's warmth and brightness by the same amount the room's light shifts the white and neutral surfaces already in the photograph — " +
+      'never recolour a product into a different colour, and never keep the flat studio look. ' +
       'Any subject that looks cleaner, brighter, more saturated, higher-contrast or sharper than the room reads as an AI composite and is a failure.',
   ];
 }
@@ -1017,16 +1061,57 @@ function scaleBlock(spec: GenerationSpec): string[] {
   }
 
   if (talents.length) {
-    if (baseAnchored) {
+    if (baseAnchored && !recastsPeople(spec)) {
+      /*
+       * 인물 추가(add-person)만 — 바꿀 원본 인물이 없으니 "원본 인물이 자" 라는 전제가 틀린다.
+       * 사진 속 빈백·가구·카메라가 자다 (2차 검토 2026-09-22).
+       */
       L.push(
-        'SCALE — the base photograph already shows real people at the correct real-world size against the furniture. ' +
-          'Use the person(s) in the base as the SIZE YARDSTICK. Where you replace a base person, keep their EXACT ' +
-          'size and footprint — same height in the frame, same seat contact, same way their weight sinks into and ' +
-          'compresses the bean bag, same limb placement — and change only the face, hair and outfit. Any newly added ' +
-          'person must be rendered at that SAME human scale as the base person relative to the furniture. Do not resize ' +
-          'people to some other height; heads and faces must not be enlarged.',
+        'SCALE — the base photograph\'s bean bags and furniture are the SIZE YARDSTICK. Seat each added person at their own stated real ' +
+          'height against them, on the same floor plane' +
+          (isBackgroundSwap(spec)
+            ? '; the camera height and perspective come from the BACKGROUND room (see SCALE FROM THE ROOM).'
+            : ', with the photo\'s own camera height and perspective.') +
+          ' Heads and faces must not be enlarged.',
       );
-      if (heights.length) L.push(`  For consistency between people, their real heights are ${heights.join(', ')} — keep these proportions, but the base person's on-screen scale wins over any absolute number.`);
+      if (heights.length) L.push(`  Real heights: ${heights.join(', ')}. Keep these height proportions between the people.`);
+    } else if (baseAnchored) {
+      /*
+       * 「원본 인물 크기 그대로」 는 같은 또래끼리 바꿀 때만 맞다.
+       * 실측 사고 (2026-09-22): 13살쯤 된 원본 소년 자리에 아동 C(6살·116cm)를 넣자 "크기는 원본 그대로 · 얼굴·머리·옷만" 과
+       * "나이는 시트대로" 가 정면으로 부딪혀, 모델이 교체를 포기하고 원본 소년을 그대로 남겼다 (얼굴 대조 40점).
+       * 판단 기준은 키가 아니라 나이대다 — "키가 다르면 시트 키" 로 두면 성인끼리 교체도 키 몇 cm 차이로
+       * 크기가 바뀌어 머리가 커지는 옛 사고가 돌아온다 (2차 검토 2026-09-22). 성인 둘은 늘 같은 나이대로 본다.
+       */
+      const SAME = 'Where you replace a person with someone of the SAME age group (young child / pre-teen / teen / adult — any two adults ' +
+        'count as the same group, whatever their heights), ';
+      const DIFF = 'Where the replacement is in a clearly DIFFERENT age group (for example a small child replacing a teenager), THE SHEET WINS: ';
+      if (isBackgroundSwap(spec)) {
+        /*
+         * 배경 합성 — 원본은 사람↔빈백 비율만 준다. 화면 속 크기·카메라 높이·원근은 새 배경 방이 정한다.
+         * 원본을 "방·카메라의 자" 라고 하면 COMPOSITE·SCALE FROM THE ROOM(배경이 정한다)과 정면으로 부딪힌다 (검토 2026-09-22).
+         */
+        L.push(
+          'SCALE — the SOURCE photograph shows each person at the correct size RELATIVE TO THE BEAN BAG they use. ' + SAME +
+            'keep that person-to-bean-bag ratio, the same seat contact and the same way their weight compresses the bean bag. ' + DIFF +
+            'rebuild the whole body at the replacement\'s own stated age and height, keeping the same spot, the same kind of pose and the same ' +
+            'interaction (what they hold, what they lean on, whom they look at). A size mismatch is NEVER a reason to keep the original person. ' +
+            'Their size IN THE FRAME, the camera height and the perspective come from the BACKGROUND room (see SCALE FROM THE ROOM), never ' +
+            'from the source frame. Heads and faces must not be enlarged.',
+        );
+        if (heights.length) L.push(`  Real heights: ${heights.join(', ')}. Within the same age group (any two adults included) keep the source person's size relative to the bean bag; where the age group clearly differs, these heights win.`);
+      } else {
+        L.push(
+          'SCALE — the base photograph already shows real people at the correct real-world size against the furniture, so it is the ' +
+            'SIZE YARDSTICK for the room, the camera and the bean bag. ' + SAME + 'keep that person\'s EXACT size and footprint — same ' +
+            'height in the frame, same seat contact, same way their weight sinks into and compresses the bean bag, same limb placement. ' + DIFF +
+            'rebuild the whole body at the replacement\'s own stated age and height against the furniture — the figure becomes smaller or ' +
+            'larger in the frame while keeping the same spot, the same kind of pose and the same interaction (what they hold, what they lean ' +
+            'on, whom they look at). A size mismatch is NEVER a reason to keep the original person. Any newly added person must be rendered ' +
+            'at a true-to-life scale against the same furniture. Heads and faces must not be enlarged.',
+        );
+        if (heights.length) L.push(`  Real heights: ${heights.join(', ')}. Within the same age group (any two adults included) the base person's on-screen size wins; where the age group clearly differs, these heights win.`);
+      }
     } else {
       L.push(
         'SCALE — render every person at ONE consistent, true-to-life human scale, correct relative to each other AND to ' +
@@ -1062,11 +1147,15 @@ function scaleBlock(spec: GenerationSpec): string[] {
   // 배경 사진에 얹는 경우도 같은 문제가 나서(붙임 티) 베이스와 동일하게 적용한다.
   if (hasBase || hasBackground) {
     L.push(
-      '  Integrate every person and product seamlessly INTO the photograph, not pasted on top: match the photo\'s ' +
+      // 합성엔 사진이 둘 — "그 사진" 이 원본으로 읽히지 않게 배경을 이름으로 부른다 (검토 2026-09-22)
+      (isBackgroundSwap(spec)
+        ? '  Integrate every person and product seamlessly INTO the BACKGROUND photograph, not pasted on top: match the BACKGROUND photograph\'s '
+        : '  Integrate every person and product seamlessly INTO the photograph, not pasted on top: match the photo\'s ') +
         'lighting direction and softness, its depth of field and photographic grain. Where a person touches a bean bag ' +
         'or the floor, the surface must visibly dent and compress under their weight, with a soft contact shadow in the ' +
         'crease and correct ambient occlusion. The product casts a soft grounded shadow on the room\'s floor. No hard ' +
-        'cut-out edges, no floating, no sticker look — same lens, same grain, same colour temperature as the photo.',
+        'cut-out edges, no floating, no sticker look — same lens, same grain, same colour temperature as ' +
+        (isBackgroundSwap(spec) ? 'the BACKGROUND photograph.' : 'the photo.'),
     );
   }
   // 여러 명이면 사람마다 밝기·조명이 달라 따로 노는 문제 (사용자 지적: 명암도 불일치).
@@ -1100,9 +1189,14 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
   if (editingPeople && hasBase) {
     L.push(
       `If the base image contains MORE people than the ${talents.length} listed here, remove the extra ones completely — ` +
-        'erase the whole person, not just the face. Reconstruct whatever was behind them: the product surface, its ' +
-        'seams and silhouette, the floor, the rug and the background, all consistent with the surrounding lighting ' +
-        'and shadows. No ghosting, no leftover limbs, no blurred smear where a person used to be. ' +
+        'erase the whole person, not just the face. ' +
+        // 합성이면 원본의 방은 버린다 — 지운 자리에 원본 바닥·러그를 되살리라고 하면 버린 방이 돌아온다 (2차 검토 2026-09-22)
+        (isBackgroundSwap(spec)
+          ? 'Reconstruct the product surface, its seams and silhouette where they were (the room itself comes from the background image), ' +
+            'all consistent with the surrounding lighting and shadows. '
+          : 'Reconstruct whatever was behind them: the product surface, its seams and silhouette, the floor, the rug and the background, ' +
+            'all consistent with the surrounding lighting and shadows. ') +
+        'No ghosting, no leftover limbs, no blurred smear where a person used to be. ' +
         'The product must read as a complete, undistorted form where it becomes visible again.',
     );
   }
@@ -1170,7 +1264,8 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
        */
       L.push(
         '  OUTFIT: the SAME garment this person wears in the base image — but RE-RENDER it naturally on the new person ' +
-          '(same colour, fabric and fit), with the collar and neckline redrawn to meet the new head, neck and hair.',
+          '(same colour, fabric and style, sized to the new person\'s own body — a smaller child wears a child-sized version), ' +
+          'with the collar and neckline redrawn to meet the new head, neck and hair.',
       );
     }
   });
@@ -1220,10 +1315,25 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
         'must all match the identity sheet. Never keep the haircut of the person being replaced.',
       'DO NOT AVERAGE. Never blend the sheet face with whatever face is already in the base image — the base face is to be ' +
         'discarded completely and rebuilt from the sheet. A result that looks like a mix of the two is a failure.',
+      // 키·체격이 아니라 나이대로 가른다 — 성인끼리의 키 차이로 몸 크기를 바꾸지 않게 (크기는 SCALE 이 정한다, 2차 검토 2026-09-22)
       'AGE IS LOCKED to what the sheet and the stated age say. Do not age a person up or down to suit the body, pose, ' +
-        'clothing or seat of the figure they are replacing. If the person being replaced is visibly younger, older, ' +
-        'shorter or differently built, the SHEET WINS — rebuild the head, face and proportions to match the sheet and ' +
-        'let the pose adapt around them.',
+        'clothing or seat of the figure they are replacing. If the person being replaced is visibly younger or older ' +
+        '(a different age group), the SHEET WINS — rebuild the head, face and proportions to match the sheet and ' +
+        'let the pose adapt around them; body size follows SCALE.',
+      /*
+       * 교체 누락 — 원본 인물과 시트 인물의 나이·피부색·머리색이 크게 다르면 모델이 교체를 건너뛰고 원본을 남긴다
+       * (실측 2026-09-22: 흑인 10대 소년 자리의 금발 6살 아동 C → 원본 소년이 그대로 나옴).
+       * "모든 교체는 필수, 원본의 인종·피부색·머리색·나이는 하나도 안 남는다" 를 따로 못박는다.
+       * 원본 인물을 바꾸는 흐름(person·face)에서만 — 인물 추가(add-person)는 바꿀 사람이 없다.
+       * 옷·크기는 각자 OUTFIT 줄·SCALE 이 정한다 (옷 유지 설정과 부딪히지 않게 여기서 단정하지 않는다).
+       */
+      ...(recastsPeople(spec)
+        ? ['EVERY LISTED PERSON IS REPLACED — no exception. A result in which any base person is still recognisably the original ' +
+            'person (their face, skin tone, ethnicity, hair colour or age) is a failure, however different the sheet person looks from them. ' +
+            'The replacement takes the skin tone, ethnicity, hair colour and age from the identity sheet — nothing of the base person\'s face, ' +
+            'skin tone, ethnicity, hair or age survives. From the base person keep the pose, position and interaction, the garment only where ' +
+            'the OUTFIT line says so, and the size only as SCALE says.']
+        : []),
       'Do not beautify, slim, smooth, de-age or drift toward a generic attractive face. Keep the real skin texture, ' +
         'pores and asymmetry.',
       /*
@@ -1236,8 +1346,9 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
         'Light every face with THIS scene\'s light — same direction, warmth and softness as the room, with matching ' +
         'shadows on the face and neck — and turn the head to whatever angle the pose calls for.',
       'NO COMPOSITE LOOK — each person must read as ONE continuous photograph: face, ears, neck, chest and hands ' +
-        'share one skin tone; no brightness, colour or sharpness step at the jawline or collar; hair falls naturally ' +
-        'over the shoulders and casts a soft shadow on the clothing; the head\'s size, angle and perspective sit ' +
+        // 짧은 머리 시트(아동 C 등)에 "어깨로 흘러내린다" 를 주면 머리가 길어진다 — 길이는 시트가 정한다 (2차 검토 2026-09-22)
+        'share one skin tone; no brightness, colour or sharpness step at the jawline or collar; hair (at whatever length ' +
+        'the sheet shows) sits naturally and casts a soft shadow where it meets the skin or clothing; the head\'s size, angle and perspective sit ' +
         'correctly on the body. A result that looks like a face pasted onto a photo is a failure.',
       /*
        * 착석 자세 — 자사몰 컷의 최소 기준.
@@ -1255,6 +1366,17 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
   return L;
 }
 
+/** 보존 강도 프리셋의 첫 줄(「IMAGE PRESERVATION LEVEL: MODERATE」) — 합성에서는 본문 대신 이 줄만 쓴다 */
+function swapPreservationHeader(instruction: string): string {
+  return instruction.trim().split(/\r?\n/)[0];
+}
+
+/** 원본 인물을 전속 모델로 바꾸는 편집인가 — 인물 추가(add-person)는 바꿀 원본 인물이 없어서 아니다 */
+function recastsPeople(spec: GenerationSpec): boolean {
+  const hasBase = !!spec.baseCut || (spec.uploadedRefs ?? []).some((r) => r.role === 'base');
+  return hasBase && !!spec.talents?.length && (spec.editTargets ?? []).some((x) => x === 'person' || x === 'face');
+}
+
 /** 배경 합성이 실제로 켜졌는가 — base 와 background 가 둘 다 있어야 한다 */
 function isBackgroundSwap(spec: GenerationSpec): boolean {
   const u = spec.uploadedRefs ?? [];
@@ -1266,13 +1388,23 @@ function isBackgroundSwap(spec: GenerationSpec): boolean {
  * 합성 티가 나는 지점은 오늘까지의 실측으로 셋이다: 조명 방향이 어긋남, 카메라 높이·원근이 어긋남,
  * 바닥에 닿은 그림자가 없음. 셋을 하나씩 못박는다. 인물의 포즈와 제품의 형태는 소스 그대로다.
  */
-function compositeBlock(): string[] {
+function compositeBlock(spec: GenerationSpec): string[] {
   return [
     'COMPOSITE — two photographs become one photograph.',
-    '  From the SOURCE photograph keep the people exactly as posed (same body pose, limb placement and positions relative to each other) and the products exactly as shaped and compressed.',
+    recastsPeople(spec)
+      // 교체 인물은 나이·키가 다를 수 있다 — 팔다리는 새 몸의 길이를 따르고 포즈의 종류·상호작용만 지킨다
+      ? '  From the SOURCE photograph keep each person\'s pose and position (the same kind of pose and the same interaction — where a replacement is in a different age group (see SCALE), the limbs follow the new body\'s own length and the bean bag compresses under the new body\'s weight) and the products as shaped.'
+      : '  From the SOURCE photograph keep the people exactly as posed (same body pose, limb placement and positions relative to each other) and the products exactly as shaped and compressed.',
     '  From the BACKGROUND image take the whole environment — the room, walls, floor, windows, props and light.',
     '  Re-stage the people and products inside that environment: match the background\'s camera height and perspective so they stand or sit on its floor at a natural, true-to-life scale.',
     '  RE-LIGHT the people and products from the background\'s own light direction and colour temperature, so they look photographed in that room rather than pasted into it.',
+    /*
+     * 톤 — 인물·제품의 화이트밸런스·밝기·대비·채도·암부를 배경에 맞춘다 (사용자 요청 2026-09-22).
+     * 원본이 스튜디오 컷이면 그 평면광·높은 채도가 그대로 붙어 나와 합성 티가 났다.
+     */
+    '  RE-GRADE their tone to the background too: white balance, exposure, contrast, saturation and shadow depth on skin, hair, clothing and fabric match the background photograph' +
+      (spec.sceneTone ? ' (measured values in SCENE TONE below)' : '') +
+      ' — none of the source photograph\'s studio light or colour grade stays on them.',
     '  Ground them with soft contact shadows on the background\'s floor where the bodies and products meet it.',
     '  Nothing of the source photograph\'s room, walls, floor, props, lighting or colour grade remains in the result.',
   ];
@@ -1295,8 +1427,10 @@ function editBlock(spec: GenerationSpec): string[] {
         : (EDIT_TARGET_EN[t] ?? t)}`);
     }
     L.push(
-      'Keep each person\'s pose, limb placement and relative position, and each product\'s shape and compression, exactly as in the source photograph. ' +
-        'Their lighting, perspective and scale in frame follow the background image.',
+      (recastsPeople(spec)
+        ? 'Keep each person\'s pose and relative position (limb placement re-proportioned to each new person\'s own body), and each product\'s shape (its compression follows the weight of whoever now sits on it), as in the source photograph. '
+        : 'Keep each person\'s pose, limb placement and relative position, and each product\'s shape and compression, exactly as in the source photograph. ') +
+        'Their lighting, colour tone, perspective and scale in frame follow the background image.',
     );
     return L;
   }
@@ -1336,12 +1470,20 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
     L.push('');
   } else if (isBackgroundSwap(spec)) {
     // 배경 합성 — 아래 "베이스를 그대로 재현(같은 배경·같은 조명)" 과 정면으로 부딪히므로 그 문장 대신 합성 지시를 쓴다
-    L.push(...compositeBlock());
+    L.push(...compositeBlock(spec));
     L.push('');
   } else if (spec.baseCut || hasUploadBase) {
     L.push(
-      'Reproduce the base photograph EXACTLY — same camera angle, same poses, same body positions and limb placement, ' +
-        'same product shapes and compression, same lighting, same background, same framing and crop. ' +
+      /*
+       * 인물 교체면 "같은 팔다리 위치·같은 눌림" 을 픽셀 단위로 요구하지 않는다 — 원본 몸 크기를 강요해
+       * 나이가 다른 아동이 들어갈 자리가 없어진다 (합성과 같은 원인, 2차 검토 2026-09-22).
+       */
+      (recastsPeople(spec)
+        ? 'Reproduce the base photograph EXACTLY — same camera angle, same poses (the same kind of pose and the same interaction — where a ' +
+          'replacement is in a different age group (see SCALE), the limbs follow the new body\'s own length and the bean bag dents under the new body\'s ' +
+          'weight), same product shapes, same lighting, same background, same framing and crop. '
+        : 'Reproduce the base photograph EXACTLY — same camera angle, same poses, same body positions and limb placement, ' +
+          'same product shapes and compression, same lighting, same background, same framing and crop. ') +
         'Change ONLY what is specified below. Everything unspecified must stay pixel-faithful to the base.',
     );
     L.push('');
@@ -1359,13 +1501,21 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
   if (eb.length) { L.push(...eb); L.push(''); }
 
   if (spec.preservation?.instruction) {
-    L.push(spec.preservation.instruction.trim());
     /*
      * 보존 강도 지시는 "원본의 조명·구도·장면을 유지하라" 는 내용이라 배경 합성과 부딪힌다.
-     * 합성일 때는 적용 범위를 인물·제품으로 한정한다.
+     * 처음엔 본문 뒤에 "인물·제품에만 적용" 을 덧붙였는데, 본문의 "원본의 색감·조명 무드 유지" 가 그대로 남아
+     * 인물·제품을 원본 톤에 묶어 두었다 (사용자 지적 2026-09-22). 합성이면 강도 이름 줄만 남기고 적용 범위를 새로 쓴다.
      */
     if (isBackgroundSwap(spec)) {
-      L.push('This preservation level applies ONLY to the people and the products taken from the source photograph. The environment, lighting and colour come from the background image.');
+      L.push(swapPreservationHeader(spec.preservation.instruction));
+      L.push(
+        'This level sets ONLY how closely the people\'s poses and placement and the products\' shape' +
+          (recastsPeople(spec) ? ' (their compression follows each new person\'s weight)' : ' and compression') +
+          ' follow the source photograph. ' +
+          'Light, white balance, colour grade and mood come from the BACKGROUND photograph. Every fabric and garment keeps its own colour — only the room\'s light on it changes.',
+      );
+    } else {
+      L.push(spec.preservation.instruction.trim());
     }
     L.push('');
   }
@@ -1486,12 +1636,13 @@ function specToBrief(spec: GenerationSpec, refs: RefSlot[]): string {
   if (isBackgroundSwap(spec)) {
     L.push('');
     L.push('배경 합성 (가장 강하게 반영할 것) — 인물·제품 소스 사진에서는 인물의 포즈와 제품만, 새 배경 사진에서는 공간 전체를 가져온다. 조명 방향·색온도·카메라 높이·원근을 새 배경에 맞추고, 새 바닥에 접지 그림자를 넣는다:');
-    L.push(...compositeBlock().map((x) => '  ' + x));
+    L.push(...compositeBlock(spec).map((x) => '  ' + x));
   }
   if (eb.length) { L.push(''); L.push(isBackgroundSwap(spec) ? '편집 지시:' : '편집 지시 (이것만 바꾸고 나머지는 원본 그대로 — 가장 강하게 반영할 것):'); L.push(...eb.map((x) => '  ' + x)); }
   if (spec.preservation) {
-    L.push(''); L.push(`레퍼런스 보존 강도: ${spec.preservation.label}${isBackgroundSwap(spec) ? ' — 인물·제품에만 적용 (배경·조명은 새 배경 사진을 따른다)' : ''}`);
-    L.push(spec.preservation.instruction);
+    L.push(''); L.push(`레퍼런스 보존 강도: ${spec.preservation.label}${isBackgroundSwap(spec) ? ' — 인물·제품의 포즈·배치·형태에만 적용 (조명·색감·톤은 원본이 아니라 새 배경 사진을 따른다)' : ''}`);
+    // 합성이면 프리셋 본문("원본 색감·조명 무드 유지")을 싣지 않는다 — 로컬 템플릿과 같은 규칙
+    L.push(isBackgroundSwap(spec) ? swapPreservationHeader(spec.preservation.instruction) : spec.preservation.instruction);
   }
 
   const pb = productBlock(spec);
@@ -1537,6 +1688,8 @@ const OPUS_SYSTEM = `너는 요기보(빈백 소파 브랜드) 자사몰의 AI �
    인물 교체(EDIT: person/face)일 때는 "베이스의 얼굴은 완전히 버리고 시트에서 새로 만든다"를
    프롬프트 앞쪽에 배치하라.
 5. 편집 지시(EDIT)가 있으면 "이것만 바꾸고 나머지는 원본 그대로"를 가장 앞에, 가장 강하게 써라.
+   단, 브리프에 '배경 합성'이 있으면 '나머지는 원본 그대로'를 쓰지 마라 — 원본에서는 인물의 포즈·배치와 제품 형태만 보존하고,
+   조명·색감·톤·원근은 새 배경 사진을 따른다고 가장 강하게 써라.
 6. 전 컷 공통 규칙은 빠짐없이 반영하라.
 7. 텍스트·로고·워터마크 금지 문장을 마지막에 반드시 넣어라.
 7-2. 로고·태그는 어떤 경우에도 그리지 않는다 (필수, 2026-09-15 확정). 베이스·참조 사진에 요기보 봉제 태그·

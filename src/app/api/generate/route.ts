@@ -512,12 +512,23 @@ export async function POST(req: Request) {
       : null;
 
     /*
+     * 배경 합성은 두 사진이 다 있을 때만 켠다 — 화면이 플래그만 보내고 사진 한쪽이 빠지면
+     * 프롬프트가 "배경 사진" 을 가리키는데 그 사진이 없는 상태가 된다.
+     */
+    const bgSwapOn = !!body.backgroundSwap
+      && uploadedRefs.some((u) => u.role === 'base')
+      && uploadedRefs.some((u) => u.role === 'background');
+
+    /*
      * 배경 톤 측정 — 배경 사진(없으면 분위기 참고 사진)의 화이트밸런스·밝기·대비·암부·채도·빛 방향.
      * 편집 베이스는 원본을 그대로 재현하는 흐름이라 재지 않는다. 로컬 계산이라 비용이 없다.
+     * 단 배경 합성(② 편집 원본 + ⑥ 배경)은 공간·조명이 배경 사진에서 오므로 배경을 잰다 —
+     * 안 재면 인물·제품이 원본의 스튜디오 톤 그대로 붙어 나온다
+     * (사용자 요청 2026-09-22: "배경으로 지정했을 때는 제품·모델이 배경에 맞게 톤조절").
      */
     const toneSource = uploadedRefs.find((u) => u.role === 'background') ?? uploadedRefs.find((u) => u.role === 'style');
     const hasEditBase = uploadedRefs.some((u) => u.role === 'base') || (!!baseCut && body.baseCutUsage !== 'pose');
-    const sceneTone = toneSource && !hasEditBase ? await measureSceneTone(toneSource.url) : null;
+    const sceneTone = toneSource && (!hasEditBase || bgSwapOn) ? await measureSceneTone(toneSource.url) : null;
 
     /*
      * 제품 조합 — 고른 칸이 조합 시트면, 그 시트가 두 제품을 다 들고 있다.
@@ -542,15 +553,7 @@ export async function POST(req: Request) {
         : {}),
       uploadedRefs,
       ...(body.editTargets?.length ? { editTargets: body.editTargets } : {}),
-      /*
-       * 배경 합성은 두 사진이 다 있을 때만 켠다 — 화면이 플래그만 보내고 사진 한쪽이 빠지면
-       * 프롬프트가 "배경 사진" 을 가리키는데 그 사진이 없는 상태가 된다.
-       */
-      ...(body.backgroundSwap
-        && uploadedRefs.some((u) => u.role === 'base')
-        && uploadedRefs.some((u) => u.role === 'background')
-        ? { backgroundSwap: true }
-        : {}),
+      ...(bgSwapOn ? { backgroundSwap: true } : {}),
       ...(preservation
         ? { preservation: { value: preservation.value, label: preservation.label, instruction: preservation.instruction } }
         : {}),
