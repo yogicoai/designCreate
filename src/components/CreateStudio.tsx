@@ -479,6 +479,8 @@ export default function CreateStudio(p: Props) {
   const linePoses = p.poses.filter((x) => x.line === line);
   // 사진 편집(base)은 「모델과 함께」 에서만 — 제품만 노출 탭에서는 역할 칩이 없어 base 를 못 고른다
   const hasBaseUpload = flow === 'model' && uploads.some((u) => u.role === 'base');
+  // ② 원본 사진을 쓰면서 ③ 제품을 비워 두면(사진 속 제품 그대로) 크기 기준이 없다 — 「사진 속 제품」 필수 (사용자 결정 2026-09-22)
+  const needsPhotoProduct = hasBaseUpload && !line;
 
   /** 라인의 승인된 AI 생성 제품 시트 (최근 승인 순) */
   const sheetsFor = useCallback(
@@ -774,6 +776,11 @@ export default function CreateStudio(p: Props) {
   }
 
   async function run(dryRun: boolean) {
+    // 사진 속 제품을 모르면 크기가 "170cm 맥스" 기준으로 떨어진다 — 프롬프트 확인도 같은 이유로 막는다
+    if (needsPhotoProduct && !refProduct) {
+      setErr('② 「사진 속 제품」을 골라 주세요 — 사진에 쓰인 제품을 알아야 모델 키와 비교해 정확한 크기로 나옵니다.');
+      return;
+    }
     /*
      * GPT 허들 — 전속 모델(얼굴 시트 보유)이 선택돼 있으면 생성을 막는다.
      * GPT 는 얼굴 유지가 안 돼서(실측) 브랜드 모델 일관성이 깨진다.
@@ -1191,31 +1198,34 @@ export default function CreateStudio(p: Props) {
                   })}
                 </div>
                 {editTargets.includes('face') || editTargets.includes('person') || editTargets.includes('add-person') ? (
-                  <>
-                    <div className="text-[10.5px] mt-2" style={{ color: 'var(--text-dim)' }}>
-                      {editTargets.includes('add-person')
-                        ? '앉힐 모델을 아래 모델 섹션에서 고르세요. 사진 왼쪽 좌석부터 ①②③④ 순서로 앉습니다. 제품은 비워두세요 — 사진의 빈백을 그대로 씁니다.'
-                        : '교체할 모델을 아래 모델 섹션에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.'}
-                    </div>
-                    {/*
-                      사진 속 빈백이 무엇인지 알려주면, 그 실측 치수로 모델 크기를 잡는다.
-                      빈백 대비 사람이 크게/작게 나오는 걸 막는다 (스케일 앵커).
-                    */}
-                    <div className="mt-2">
-                      <div className="label mb-1">사진 속 빈백 (모델 크기 기준 — 선택)</div>
-                      <select className="input py-1 text-[12px]" value={refProduct}
-                              onChange={(e) => setRefProduct(e.target.value)}>
-                        <option value="">— 모르면 비워두세요 —</option>
-                        {beanBags.map((x) => (
-                          <option key={x.line} value={x.line}>{x.emoji} {lineKr(x.line)} · {x.sizeText}</option>
-                        ))}
-                      </select>
-                      <div className="text-[10.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
-                        고르면 그 빈백의 실측 크기로 모델 키와 비교해 앉힙니다 — 빈백 대비 사람이 너무 크거나 작게 나오는 걸 줄입니다.
-                      </div>
-                    </div>
-                  </>
+                  <div className="text-[10.5px] mt-2" style={{ color: 'var(--text-dim)' }}>
+                    {editTargets.includes('add-person')
+                      ? '앉힐 모델을 아래 모델 섹션에서 고르세요. 사진 왼쪽 좌석부터 ①②③④ 순서로 앉습니다. ③ 제품은 비워두세요 — 사진의 빈백을 그대로 씁니다 (대신 아래 「사진 속 제품」은 꼭 고르세요).'
+                      : '교체할 모델을 아래 모델 섹션에서 고르세요. 사진 왼쪽 사람부터 ①②③④ 순서로 들어갑니다.'}
+                  </div>
                 ) : null}
+                {/*
+                  사진 속 제품 — 그 실측 치수로 모델 키와 비교해 크기를 잡는다 (스케일 앵커).
+                  사진 속 제품을 그대로 쓸 때는 ③ 제품을 비워 두므로 크기 정보가 아무 데도 없었다 —
+                  더블 사진이 "170cm 맥스" 기준으로 작게 나왔다 (사용자 결정 2026-09-22: "아예 고르게 할께 무조건").
+                  ③ 에서 제품을 고르면 그 치수를 쓰므로 여기는 선택.
+                */}
+                <div className="mt-2">
+                  <div className="label mb-1" style={needsPhotoProduct && !refProduct ? { color: 'var(--danger)' } : {}}>
+                    사진 속 제품 {line ? '(선택 — ③ 에서 고른 제품 크기를 씁니다)' : '(필수 — 골라야 정확한 크기가 나옵니다)'}
+                  </div>
+                  <select className="input py-1 text-[12px]" value={refProduct}
+                          style={needsPhotoProduct && !refProduct ? { borderColor: 'var(--danger)' } : {}}
+                          onChange={(e) => setRefProduct(e.target.value)}>
+                    <option value="">— 사진에 쓰인 제품을 고르세요 —</option>
+                    {beanBags.map((x) => (
+                      <option key={x.line} value={x.line}>{x.emoji} {lineKr(x.line)} · {x.sizeText}</option>
+                    ))}
+                  </select>
+                  <div className="text-[10.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
+                    사진에 쓰인 제품의 실측 크기로 모델 키와 비교해 앉힙니다 — 제품이 모델보다 너무 크거나 작게 나오는 걸 막습니다.
+                  </div>
+                </div>
               </div>
             )}
 

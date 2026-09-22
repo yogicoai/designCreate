@@ -2,7 +2,7 @@ import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import { loadReference, colorSwatch } from './gemini';
 import { PANEL_ANGLE_EN, TOP_FORM_LINES } from './ai-products';
-import { NO_LOGO_RULE, withNoLogo } from './no-logo';
+import { NO_LOGO_RULE, withNoLogo, KEEP_REAL_TAG_RULE, withKeepRealTags } from './no-logo';
 
 /**
  * 생성 프롬프트 작성기.
@@ -243,6 +243,12 @@ export interface GenerationSpec {
    * 스토리보드 연속 컷은 앞 컷을 배경으로 넘기므로 가구를 지우면 컷끼리 이어지지 않는다 — 거기선 false.
    */
   clearBlockingFurniture?: boolean;
+
+  /**
+   * 편집 원본(base)이 전부 드롭박스 실촬영본이면 true — 그 사진의 진짜 태그를 지우지 않고 둔다 (사용자 결정 2026-09-22).
+   * 로고 없음 규칙 대신 KEEP_REAL_TAG_RULE 이 들어가고, 제품·글자·보존 강도 문장의 "로고 없음" 도 그에 맞춘다.
+   */
+  keepRealTags?: boolean;
 }
 
 /**
@@ -701,12 +707,16 @@ function relativeSizeLines(products: ProductSpec[]): string[] {
   return L;
 }
 
+/** 배경 톤을 재려 했는데 실패했을 때 sceneTone 에 넣는 표시 — 톤 블록은 숫자 없이 "사진에서 직접 읽어라" 로 들어간다 */
+export const SCENE_TONE_UNMEASURED = '__unmeasured__';
+
 /**
  * 톤 맞추기 — 배경 사진에서 잰 수치로 "같은 카메라·같은 순간에 찍힌 사진" 을 요구한다.
  * 합성 티의 주범은 조명 방향보다 화이트밸런스·암부 깊이·채도·선명도 차이다 (제품 칸은 스튜디오 렌더라 전부 과하다).
  */
 function toneBlock(spec: GenerationSpec): string[] {
   if (!spec.sceneTone) return [];
+  const measured = spec.sceneTone !== SCENE_TONE_UNMEASURED;
   /*
    * 배경 합성(② 원본 + ⑥ 배경) — 인물·제품이 원본의 스튜디오 톤(평면광·그 방의 화이트밸런스·높은 채도)을
    * 그대로 달고 새 방에 붙는 게 합성 티의 전부였다 (사용자 지적 2026-09-22, 파스텔 3종 + 여성 B 컷).
@@ -729,7 +739,11 @@ function toneBlock(spec: GenerationSpec): string[] {
      * 2차 검토 때 "평균 채도는 제품 목표가 아니다" 를 넣었다가 그 설계·RE-GRADE 와 부딪혀 뺐다 (3차 확인 2026-09-22).
      * 색이 딴 색으로 바뀌는 것만 아래 "never recolour" 가 막는다.
      */
-    `SCENE TONE (measured from the ${swap ? 'BACKGROUND' : 'supplied'} photograph): ${spec.sceneTone}.`,
+    measured
+      ? `SCENE TONE (measured from the ${swap ? 'BACKGROUND' : 'supplied'} photograph): ${spec.sceneTone}.`
+      // 측정 실패(사진을 못 받음 등) — 톤 맞춤 자체는 빠지면 안 된다 (사용자 지시 2026-09-22: "배경 고르면 조명 맞춤은 필수")
+      : `SCENE TONE — read it directly from the ${swap ? 'BACKGROUND' : 'supplied'} photograph: its white balance (warm, neutral or cool), ` +
+        'exposure, contrast, how deep its darkest shadows go, how saturated its colours are, and which side its main light comes from.',
     ...(swap
       ? ['TONE COMES FROM THE BACKGROUND, NOT FROM THE SOURCE — the source photograph was lit somewhere else (typically a studio: flat front light, ' +
           'its own white balance, clean shadows and its own saturation). None of that survives: the people and products are RE-LIT and RE-GRADED ' +
@@ -812,7 +826,9 @@ function productBlock(spec: GenerationSpec): string[] {
         ? `  POSTURE: ${ang}, exactly as in its placement reference image.`
         : `  CAMERA ANGLE ON THIS PRODUCT: the ${ang}, exactly as in its placement reference image.`);
     }
-    L.push('  LOGO: none — plain fabric with no brand tag, label, patch or lettering (mandatory).');
+    L.push(spec.keepRealTags
+      ? '  LOGO: only the real sewn tag already on this product in the base photograph, kept as photographed (see BRAND TAGS) — never add one.'
+      : '  LOGO: none — plain fabric with no brand tag, label, patch or lettering (mandatory).');
     /*
      * 윗부분 말림 금지 — 피라미드만 끝이 뾰족한 게 정상이다 (사용자 지시 2026-09-15: "저런 식으로 말리는 게 너무 많다").
      * 사람이 기대면 빈백 윗부분이 뒤로 접히거나 말리거나 꺾인 꼭지로 그려진다.
@@ -945,7 +961,16 @@ function wherePhrase(placement: string): string {
  * 대책: 사람 한 명 × 제품 한 종마다 두 숫자를 한 문장에 다시 넣고(제품 치수 + 그 사람 키),
  * 배율과 몸의 어디까지 오는지를 적는다. 그리고 "제품 크기는 고정, 달라지는 건 사람" 을 못박는다.
  */
-function scalePairingLines(products: ProductSpec[], talents: TalentSpec[]): string[] {
+/**
+ * 짝 문장에 쓸 제품 — ③ 에서 고른 제품이 있으면 그것, 없으면 ② 사진 속 제품(scaleProduct).
+ * 사진 속 제품을 골라도 짝 문장이 안 만들어져, 더블을 넣은 컷이 "170cm 맥스" 기준으로 작게 나왔다 (사용자 지적 2026-09-22).
+ */
+function pairingProducts(spec: GenerationSpec): Pick<ProductSpec, 'line' | 'dims'>[] {
+  if (spec.products?.length) return spec.products;
+  return spec.scaleProduct ? [{ line: spec.scaleProduct.line, dims: spec.scaleProduct.dims }] : [];
+}
+
+function scalePairingLines(products: Pick<ProductSpec, 'line' | 'dims'>[], talents: TalentSpec[]): string[] {
   const sized = products.filter((p) => Math.max(p.dims?.w ?? 0, p.dims?.d ?? 0, p.dims?.h ?? 0) > 0);
   const people = talents
     .map((t, i) => ({
@@ -1120,7 +1145,7 @@ function scaleBlock(spec: GenerationSpec): string[] {
       if (heights.length) L.push(`  Real heights: ${heights.join(', ')}. Keep these height proportions between the people.`);
     }
     // 사람 ↔ 제품 두 숫자를 한 문장에 다시 — 아동/어른이 같은 크기 제품으로 나오는 문제 대책
-    L.push(...scalePairingLines(spec.products ?? [], talents));
+    L.push(...scalePairingLines(pairingProducts(spec), talents));
   }
 
   const sp = spec.scaleProduct;
@@ -1228,7 +1253,16 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
       ? ` — identity from the ${slotIdxs.map((idx) => ORDINALS[idx]).join(' and ')} image${slotIdxs.length > 1 ? 's' : ''}`
       : '';
     L.push(`${head}${sheetRef}: ${t.identityEn}.`);
-    L.push(`  BODY: ${t.sizeEn}.`);
+    /*
+     * 키 설명의 "— slightly shorter than the 170cm Max" 는 맥스를 기본 자로 쓰던 시절의 문구다(model-profile.ts).
+     * 이 컷에 맥스가 아닌 제품(예: 더블)이 있으면 그 제품과의 짝 문장(SIZE PAIRING)이 따로 들어가므로 맥스 비교는 뺀다 —
+     * 남겨 두면 더블 컷에서도 맥스를 기준으로 떠올린다 (사용자 지적 2026-09-22, 더블이 작게 나온 컷).
+     */
+    const pairLines = pairingProducts(spec).map((x) => x.line);
+    const bodyEn = pairLines.length && !pairLines.includes('Max')
+      ? t.sizeEn.replace(/\s*—\s*(?:the same length as|(?:slightly|clearly) (?:taller|shorter) than) the 170cm Max/, '')
+      : t.sizeEn;
+    L.push(`  BODY: ${bodyEn}.`);
     if (t.expression) {
       const exprIdx = refs.findIndex((r) => r.kind === 'talent' && r.personIndex === i + 1 && r.sub === 'expr');
       const sheetIdx = refs.findIndex((r) => r.kind === 'talent' && r.personIndex === i + 1 && r.sub === 'sheet');
@@ -1366,6 +1400,15 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
   return L;
 }
 
+/**
+ * 보존 강도 프리셋 본문 — 드롭박스 실촬영본이면 "every product stays plain with no logo or tag" 구절을 뺀다.
+ * 그 구절이 남으면 BRAND TAGS(진짜 태그 유지)와 정면으로 부딪힌다. 프리셋은 DB(preservation_modes)에 있어 여기서 걸러낸다.
+ */
+function presetBody(spec: GenerationSpec, instruction: string): string {
+  const t = instruction.trim();
+  return spec.keepRealTags ? t.replace(/,?\s*and every product stays plain with no logo or tag/i, '') : t;
+}
+
 /** 보존 강도 프리셋의 첫 줄(「IMAGE PRESERVATION LEVEL: MODERATE」) — 합성에서는 본문 대신 이 줄만 쓴다 */
 function swapPreservationHeader(instruction: string): string {
   return instruction.trim().split(/\r?\n/)[0];
@@ -1403,7 +1446,7 @@ function compositeBlock(spec: GenerationSpec): string[] {
      * 원본이 스튜디오 컷이면 그 평면광·높은 채도가 그대로 붙어 나와 합성 티가 났다.
      */
     '  RE-GRADE their tone to the background too: white balance, exposure, contrast, saturation and shadow depth on skin, hair, clothing and fabric match the background photograph' +
-      (spec.sceneTone ? ' (measured values in SCENE TONE below)' : '') +
+      (spec.sceneTone ? (spec.sceneTone === SCENE_TONE_UNMEASURED ? ' (see SCENE TONE below)' : ' (measured values in SCENE TONE below)') : '') +
       ' — none of the source photograph\'s studio light or colour grade stays on them.',
     '  Ground them with soft contact shadows on the background\'s floor where the bodies and products meet it.',
     '  Nothing of the source photograph\'s room, walls, floor, props, lighting or colour grade remains in the result.',
@@ -1515,7 +1558,7 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
           'Light, white balance, colour grade and mood come from the BACKGROUND photograph. Every fabric and garment keeps its own colour — only the room\'s light on it changes.',
       );
     } else {
-      L.push(spec.preservation.instruction.trim());
+      L.push(presetBody(spec, spec.preservation.instruction));
     }
     L.push('');
   }
@@ -1578,7 +1621,9 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
   L.push('');
   L.push(
     spec.mode === 'thumbnail'
-      ? 'ABSOLUTELY NO TEXT: no typography, no Korean or English lettering, no numbers, no badges, no price tags, no logos, no watermarks. Photorealistic commercial product photography only.'
+      ? (spec.keepRealTags
+        ? 'ABSOLUTELY NO TEXT: no typography, no Korean or English lettering, no numbers, no badges, no price tags, no logos, no watermarks — the ONLY exception is the real sewn product tag kept per BRAND TAGS. Photorealistic commercial product photography only.'
+        : 'ABSOLUTELY NO TEXT: no typography, no Korean or English lettering, no numbers, no badges, no price tags, no logos, no watermarks. Photorealistic commercial product photography only.')
       : 'ABSOLUTELY NO TEXT: Korean copy will be overlaid later in a separate editing step, so the image must contain no typography, no lettering, no numbers, no CTA button, no badges and no watermarks.',
   );
 
@@ -1607,7 +1652,8 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
    * 예전 BRAND TAGS 규칙("태그는 하나만·작게·글자가 무너지면 비워라")은 없앴다 — 계속 이상하게 나왔다.
    * 로고·태그는 모든 생성에서 뺀다 (no-logo.ts).
    */
-  L.push(NO_LOGO_RULE);
+  // 드롭박스 실촬영본이 편집 원본이면 진짜 태그는 살린다 (사용자 결정 2026-09-22) — 그 외는 전부 로고 없음
+  L.push(spec.keepRealTags ? KEEP_REAL_TAG_RULE : NO_LOGO_RULE);
 
   return L.join('\n');
 }
@@ -1642,7 +1688,7 @@ function specToBrief(spec: GenerationSpec, refs: RefSlot[]): string {
   if (spec.preservation) {
     L.push(''); L.push(`레퍼런스 보존 강도: ${spec.preservation.label}${isBackgroundSwap(spec) ? ' — 인물·제품의 포즈·배치·형태에만 적용 (조명·색감·톤은 원본이 아니라 새 배경 사진을 따른다)' : ''}`);
     // 합성이면 프리셋 본문("원본 색감·조명 무드 유지")을 싣지 않는다 — 로컬 템플릿과 같은 규칙
-    L.push(isBackgroundSwap(spec) ? swapPreservationHeader(spec.preservation.instruction) : spec.preservation.instruction);
+    L.push(isBackgroundSwap(spec) ? swapPreservationHeader(spec.preservation.instruction) : presetBody(spec, spec.preservation.instruction));
   }
 
   const pb = productBlock(spec);
@@ -1753,14 +1799,14 @@ export async function writePrompt(spec: GenerationSpec, opts: WriteOptions = {})
       '- Every product keeps its factory shape and true dimensions. The official product views show its resting ' +
         'orientation — in the scene, position it as the pose requires WITHOUT reshaping it: never bend, curl, ' +
         'stretch, inflate or merge the shell to fit a pose or composition.',
-      `- ${NO_LOGO_RULE}`,
+      `- ${spec.keepRealTags ? KEEP_REAL_TAG_RULE : NO_LOGO_RULE}`,
       '- Any watermark, copyright line, credit or username printed ON a reference photo is NOT part of the scene — ' +
         'remove it and reconstruct the surface beneath. The output carries no inherited overlay text.',
     ];
     const anchors = (spec.products ?? []).map((p) => p.scalePrompt).filter(Boolean);
     if (anchors.length) guard.push(`- TRUE SCALE: ${anchors.join(' / ')}`);
     // 사람 ↔ 제품 치수 짝짓기 — 매뉴얼 프롬프트에도 숫자로 한 번 더 (아동/어른 크기 차이)
-    guard.push(...scalePairingLines(spec.products ?? [], spec.talents ?? []).map((x) => `- ${x.trim()}`));
+    guard.push(...scalePairingLines(pairingProducts(spec), spec.talents ?? []).map((x) => `- ${x.trim()}`));
     const negatives = (spec.products ?? []).map((p) => p.negative).filter(Boolean);
     if (negatives.length) guard.push(`- NEVER: ${negatives.join(' / ')}`);
     if ((spec.talents ?? []).some((t) => !t.freeform)) {
@@ -1832,7 +1878,7 @@ export async function writePrompt(spec: GenerationSpec, opts: WriteOptions = {})
     if (!text) throw new Error('Opus 응답이 비어 있습니다.');
     return {
       // Opus 가 로고 규칙을 빠뜨려도 필수 문장은 붙는다
-      prompt: withNoLogo(text),
+      prompt: spec.keepRealTags ? withKeepRealTags(text) : withNoLogo(text),
       refs,
       mode: 'opus',
       usage: { input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens },

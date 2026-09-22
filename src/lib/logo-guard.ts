@@ -34,10 +34,89 @@ const SCANS = 'logo_scans';
 
 export const visionModel = () => process.env.GEMINI_VISION_MODEL || 'gemini-3.5-flash';
 
-export interface PxBox { x0: number; y0: number; x1: number; y1: number; label?: string }
+export interface PxBox {
+  x0: number; y0: number; x1: number; y1: number; label?: string;
+  /** judgeTags 일 때만 — 진짜 봉제 태그처럼 "yogibo" 글자가 또렷한가 */
+  legible?: boolean;
+}
 export interface VisionUsage { promptTokens: number; outputTokens: number; thoughtTokens: number; totalTokens: number }
 export interface TopFold { suspected: boolean; note: string }
 export interface Inspection { tags: PxBox[]; topFold: TopFold | null; usage?: VisionUsage; model: string }
+
+/*
+ * 실촬영 태그 판정 — 드롭박스 실촬영본을 원본으로 쓰면 진짜 태그는 살린다 (사용자 결정 2026-09-22).
+ * 제미나이가 다시 그린 태그는 글자가 뭉개지기 쉽다("qo ㅕo").
+ *
+ * "또렷한가" 를 비전에게 직접 물으면 흔들린다 (실측 2026-09-22, 4장):
+ *   전체를 1024 로 줄여 물으면 세로로 돌아간 작은 진짜 태그를 "애매" 로 버리고,
+ *   "기울거나 가려져도 괜찮다" 로 풀면 「13715」 같은 뭉개진 AI 태그까지 진짜라고 한다.
+ * 그래서 찾은 태그 자리를 원본 해상도로 잘라 크게 보여 주고 "보이는 글자를 그대로 받아 적게" 한 뒤, 판정은 코드가 한다 —
+ *   정확히 yogibo 면 진짜, 일부가 가려졌으면 보이는 글자가 yogibo 의 순서대로 된 일부(3글자 이상)일 때만 진짜.
+ *   읽히지 않는 글자(?)가 하나라도 섞이면 가짜 (AI 가 yogibo 밑에 붙이는 뭉개진 작은 글씨).
+ * 같은 4장 시험: 진짜 태그 「yogibo」 살림 · AI 태그 「13715」「yogibo ????」「springees」 지움.
+ */
+const READ_PROMPT = (n: number) =>
+  `Each of the ${n} images is a close-up crop of one fabric tag (crop 1 first). Transcribe EXACTLY the letters you can actually see ` +
+  'on each tag, character by character, in reading order — do not correct, guess or complete the word; write "?" for any character ' +
+  'that is present but not clearly a letter. Also say whether part of the tag is hidden by a fold or cut off by the crop. ' +
+  `Return JSON only: {"tags":[{"text":"...","hidden":false}]} with exactly ${n} entries in crop order.`;
+
+/** 받아 적은 글자가 진짜 yogibo 태그인가 — 위 설명의 규칙 */
+function isGenuineTagText(text: unknown, hidden: unknown): boolean {
+  const raw = String(text ?? '').toLowerCase();
+  if (raw.includes('?')) return false;
+  const s = raw.replace(/[^a-z]/g, '');
+  if (s === 'yogibo') return true;
+  if (hidden !== true || s.length < 3) return false;
+  let i = 0;
+  for (const c of 'yogibo') if (c === s[i]) i++;
+  return i === s.length;
+}
+
+/**
+ * 찾은 태그마다 진짜인지 판정한다 — 원본 해상도로 잘라(여백 40%) 한 번의 비전 호출로 받아 적게 한다.
+ * 실패하면 전부 false(지움) — 모르는 태그를 살리는 것보다 비우는 게 낫다.
+ */
+async function judgeTagsGenuine(
+  upright: Buffer, W: number, H: number, boxes: PxBox[], key: string, model: string,
+): Promise<{ genuine: boolean[]; usage?: VisionUsage }> {
+  const list = boxes.slice(0, 8); // 비용 상한 — 한 컷에 태그가 8개를 넘을 일은 없다
+  try {
+    const crops: Buffer[] = [];
+    for (const b of list) {
+      const mx = (b.x1 - b.x0) * 0.4, my = (b.y1 - b.y0) * 0.4;
+      const L = Math.max(0, Math.floor(b.x0 - mx)), T = Math.max(0, Math.floor(b.y0 - my));
+      const R = Math.min(W, Math.ceil(b.x1 + mx)), B = Math.min(H, Math.ceil(b.y1 + my));
+      crops.push(await sharp(upright).extract({ left: L, top: T, width: R - L, height: B - T })
+        .resize({ width: 384, height: 384, fit: 'inside' }).jpeg({ quality: 92 }).toBuffer());
+    }
+    const res = await fetch(`${API_BASE}/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        contents: [{ parts: [...crops.map((c) => ({ inlineData: { mimeType: 'image/jpeg', data: c.toString('base64') } })), { text: READ_PROMPT(crops.length) }] }],
+        generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+      }),
+      signal: AbortSignal.timeout(45_000),
+    });
+    if (!res.ok) throw new Error(`태그 읽기 호출 실패 ${res.status}`);
+    const json = (await res.json()) as {
+      candidates?: { content?: { parts?: { text?: string }[] } }[];
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; totalTokenCount?: number };
+    };
+    const raw = (json.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('');
+    const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, '')) as { tags?: { text?: unknown; hidden?: unknown }[] };
+    const read = Array.isArray(parsed?.tags) ? parsed.tags : [];
+    const um = json.usageMetadata;
+    return {
+      genuine: boxes.map((_, i) => (i < read.length ? isGenuineTagText(read[i]?.text, read[i]?.hidden) : false)),
+      ...(um ? { usage: { promptTokens: um.promptTokenCount ?? 0, outputTokens: um.candidatesTokenCount ?? 0, thoughtTokens: um.thoughtsTokenCount ?? 0, totalTokens: um.totalTokenCount ?? 0 } } : {}),
+    };
+  } catch (e) {
+    console.warn('[logo-guard] 태그 읽기 실패 — 전부 지움으로 둔다:', (e as Error).message);
+    return { genuine: boxes.map(() => false) };
+  }
+}
 
 const TAG_PROMPT =
   'Find every brand tag, sewn fabric label, loop tab, patch, logo or printed wordmark that is attached to a bean bag, ' +
@@ -60,7 +139,7 @@ const foldPrompt = (expected: string[], exempt: string[]) =>
 /** 제미나이 비전으로 태그 위치(와 선택적으로 윗부분 말림)를 찾는다. 실패하거나 응답 모양이 이상하면 null */
 export async function inspectImage(
   buf: Buffer,
-  opts: { topFold?: boolean; expectedShapes?: string[]; exemptProducts?: string[] } = {},
+  opts: { topFold?: boolean; expectedShapes?: string[]; exemptProducts?: string[]; judgeTags?: boolean } = {},
 ): Promise<Inspection | null> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
@@ -128,19 +207,29 @@ export async function inspectImage(
       tags.push(box);
     }
     const um = json.usageMetadata;
+    let usage: VisionUsage | undefined = um ? {
+      promptTokens: um.promptTokenCount ?? 0,
+      outputTokens: um.candidatesTokenCount ?? 0,
+      thoughtTokens: um.thoughtsTokenCount ?? 0,
+      totalTokens: um.totalTokenCount ?? 0,
+    } : undefined;
+    // 실촬영 원본 모드 — 찾은 태그마다 진짜인지 원본 해상도로 다시 읽어 판정한다 (위 READ_PROMPT 설명)
+    if (opts.judgeTags && tags.length) {
+      const jd = await judgeTagsGenuine(upright, W, H, tags, key, model);
+      tags.forEach((t, i) => { t.legible = jd.genuine[i] === true; });
+      if (jd.usage) {
+        const u = jd.usage;
+        usage = usage
+          ? { promptTokens: usage.promptTokens + u.promptTokens, outputTokens: usage.outputTokens + u.outputTokens, thoughtTokens: usage.thoughtTokens + u.thoughtTokens, totalTokens: usage.totalTokens + u.totalTokens }
+          : u;
+      }
+    }
     return {
       tags,
       topFold: opts.topFold && obj?.top_fold
         ? { suspected: obj.top_fold.suspected === true, note: String(obj.top_fold.note ?? '').slice(0, 200) }
         : null,
-      ...(um ? {
-        usage: {
-          promptTokens: um.promptTokenCount ?? 0,
-          outputTokens: um.candidatesTokenCount ?? 0,
-          thoughtTokens: um.thoughtsTokenCount ?? 0,
-          totalTokens: um.totalTokenCount ?? 0,
-        },
-      } : {}),
+      ...(usage ? { usage } : {}),
       model,
     };
   } catch (e) {
@@ -312,20 +401,36 @@ export async function eraseBoxes(buf: Buffer, boxes: PxBox[]): Promise<{ buffer:
 /** 생성 결과 검사 — 태그는 지우고, 윗부분 말림은 표시만 한다(다시 생성은 비용이라 사람이 판단) */
 export async function guardOutput(
   buf: Buffer,
-  opts: { topFold?: boolean; expectedShapes?: string[]; exemptProducts?: string[] } = {},
-): Promise<{ buffer: Buffer; found: number; erased: PxBox[]; topFold: TopFold | null; usage?: VisionUsage; model: string; checked: boolean }> {
+  opts: {
+    topFold?: boolean; expectedShapes?: string[]; exemptProducts?: string[];
+    /**
+     * 드롭박스 실촬영본이 원본일 때 — 또렷한 "yogibo" 태그는 살리고, 뭉개진 것과 원본보다 늘어난 것만 지운다.
+     * max = 원본 사진에 있던 태그 수 (모르면 null — 그때는 뭉개진 것만 지운다).
+     */
+    keepReal?: { max: number | null };
+  } = {},
+): Promise<{ buffer: Buffer; found: number; erased: PxBox[]; kept: number; topFold: TopFold | null; usage?: VisionUsage; model: string; checked: boolean }> {
   try {
-    const found = await inspectImage(buf, opts);
-    if (!found) return { buffer: buf, found: 0, erased: [], topFold: null, model: visionModel(), checked: false };
-    const er = found.tags.length ? await eraseBoxes(buf, found.tags) : { buffer: buf, erased: [] as PxBox[] };
+    const { keepReal, ...inspectOpts } = opts;
+    const found = await inspectImage(buf, { ...inspectOpts, judgeTags: !!keepReal });
+    if (!found) return { buffer: buf, found: 0, erased: [], kept: 0, topFold: null, model: visionModel(), checked: false };
+    let targets = found.tags;
+    if (keepReal) {
+      // 또렷한 태그는 큰 것부터 원본 개수만큼 살리고, 나머지(뭉개진 것·늘어난 것)를 지운다
+      const area = (b: PxBox) => (b.x1 - b.x0) * (b.y1 - b.y0);
+      const good = found.tags.filter((t) => t.legible).sort((a, b) => area(b) - area(a));
+      const keep = new Set(keepReal.max == null ? good : good.slice(0, keepReal.max));
+      targets = found.tags.filter((t) => !keep.has(t));
+    }
+    const er = targets.length ? await eraseBoxes(buf, targets) : { buffer: buf, erased: [] as PxBox[] };
     return {
-      buffer: er.buffer, found: found.tags.length, erased: er.erased, topFold: found.topFold,
+      buffer: er.buffer, found: found.tags.length, erased: er.erased, kept: found.tags.length - targets.length, topFold: found.topFold,
       ...(found.usage ? { usage: found.usage } : {}), model: found.model, checked: true,
     };
   } catch (e) {
     // 검사·지우기 실패로 생성물을 버리지 않는다
     console.warn('[logo-guard] 결과 검사 실패 — 원본 저장:', (e as Error).message);
-    return { buffer: buf, found: 0, erased: [], topFold: null, model: visionModel(), checked: false };
+    return { buffer: buf, found: 0, erased: [], kept: 0, topFold: null, model: visionModel(), checked: false };
   }
 }
 
@@ -379,5 +484,25 @@ export async function scrubReferenceUrl(url: string): Promise<{ url: string; cle
     memo.delete(id);
     console.warn('[logo-guard] 참조 검사 실패 — 원본을 씁니다:', url, (e as Error).message);
     return { url, cleaned: false };
+  }
+}
+
+/**
+ * 참조 사진에 태그가 몇 개 있었는가 — 드롭박스 실촬영본의 진짜 태그 수 (결과물에서 "늘어난 태그" 를 가르는 기준).
+ * scrubReferenceUrl 과 같은 logo_scans 기록을 쓴다. 기록이 없으면 한 번 검사해 남긴다
+ * (지운 사본도 같이 생기지만, 같은 사진을 다른 역할로 쓸 때 재사용된다). 모르면 null.
+ */
+export async function referenceTagCount(url: string): Promise<number | null> {
+  const id = `${createHash('sha1').update(url).digest('hex').slice(0, 20)}_${VERSION}`;
+  try {
+    const col = (await getDb()).collection(SCANS);
+    let hit = await col.findOne({ _id: id as never });
+    if (!hit) {
+      await scrubReferenceUrl(url);
+      hit = await col.findOne({ _id: id as never });
+    }
+    return hit && Array.isArray(hit.tags) ? hit.tags.length : null;
+  } catch {
+    return null;
   }
 }

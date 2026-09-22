@@ -8,6 +8,7 @@ import {
   type UploadedRefSpec,
   type EditTarget,
   type ProductSpec,
+  SCENE_TONE_UNMEASURED,
 } from '@/lib/prompt-writer';
 import { generateImage, loadReference, colorSwatch, GeminiError, type GenAspect, type InlineImage } from '@/lib/gemini';
 import { generateImage as hfGenerate, higgsfieldConfigured, HiggsfieldError } from '@/lib/higgsfield';
@@ -19,7 +20,7 @@ import { toSheet, supportPanels, panelAngleEn, isComboSheet, comboStaging, TOP_F
 import { recoloredPanelUrl, normalizeHex } from '@/lib/sheet-recolor';
 import { ObjectId } from 'mongodb';
 import { measureSceneTone } from '@/lib/scene-tone';
-import { scrubReferenceUrl, guardOutput } from '@/lib/logo-guard';
+import { scrubReferenceUrl, guardOutput, referenceTagCount } from '@/lib/logo-guard';
 import { checkFaces } from '@/lib/face-guard';
 
 /**
@@ -520,6 +521,15 @@ export async function POST(req: Request) {
       && uploadedRefs.some((u) => u.role === 'background');
 
     /*
+     * 편집 원본이 전부 드롭박스 실촬영본인가 — 그러면 진짜 태그를 지우지 않는다 (사용자 결정 2026-09-22:
+     * "드롭박스는 촬영본이라 로고 안 없애도 된다"). 원본 입력의 태그 지우기를 건너뛰고, 프롬프트는 "진짜 태그 유지·새 태그 금지",
+     * 결과물 검사는 뭉개진 태그와 원본보다 늘어난 태그만 지운다. 우리 생성 컷(baseCut)이나 외부 업로드가 섞이면 지금처럼 전부 뺀다.
+     */
+    const baseUrls = [...new Set(uploadedRefs.filter((u) => u.role === 'base').map((u) => u.url))];
+    const keepRealTags = baseUrls.length > 0 && !(baseCut && body.baseCutUsage !== 'pose')
+      && (await db.collection('dropbox_assets').distinct('url', { url: { $in: baseUrls } })).length === baseUrls.length;
+
+    /*
      * 배경 톤 측정 — 배경 사진(없으면 분위기 참고 사진)의 화이트밸런스·밝기·대비·암부·채도·빛 방향.
      * 편집 베이스는 원본을 그대로 재현하는 흐름이라 재지 않는다. 로컬 계산이라 비용이 없다.
      * 단 배경 합성(② 편집 원본 + ⑥ 배경)은 공간·조명이 배경 사진에서 오므로 배경을 잰다 —
@@ -528,7 +538,8 @@ export async function POST(req: Request) {
      */
     const toneSource = uploadedRefs.find((u) => u.role === 'background') ?? uploadedRefs.find((u) => u.role === 'style');
     const hasEditBase = uploadedRefs.some((u) => u.role === 'base') || (!!baseCut && body.baseCutUsage !== 'pose');
-    const sceneTone = toneSource && (!hasEditBase || bgSwapOn) ? await measureSceneTone(toneSource.url) : null;
+    const wantTone = !!toneSource && (!hasEditBase || bgSwapOn);
+    const sceneTone = wantTone && toneSource ? await measureSceneTone(toneSource.url) : null;
 
     /*
      * 제품 조합 — 고른 칸이 조합 시트면, 그 시트가 두 제품을 다 들고 있다.
@@ -547,13 +558,18 @@ export async function POST(req: Request) {
 
     const spec: GenerationSpec = {
       mode: body.mode || 'thumbnail',
-      ...(sceneTone ? { sceneTone: sceneTone.summaryEn } : {}),
+      /*
+       * 배경을 고르면 톤 맞춤은 필수 (사용자 지시 2026-09-22: "배경 선택하면 조명 맞춤이 자동으로·필수로").
+       * 측정이 실패해도(사진을 못 받음 등) 톤 블록은 들어간다 — 숫자 대신 "사진에서 직접 읽어라" 로.
+       */
+      ...(sceneTone ? { sceneTone: sceneTone.summaryEn } : wantTone ? { sceneTone: SCENE_TONE_UNMEASURED } : {}),
       ...(baseCut
         ? { baseCut: { url: baseCut.url, spec: baseCut.spec, line: baseCut.line, colorName: baseCut.colorName, usage: body.baseCutUsage ?? 'full' } }
         : {}),
       uploadedRefs,
       ...(body.editTargets?.length ? { editTargets: body.editTargets } : {}),
       ...(bgSwapOn ? { backgroundSwap: true } : {}),
+      ...(keepRealTags ? { keepRealTags: true } : {}),
       ...(preservation
         ? { preservation: { value: preservation.value, label: preservation.label, instruction: preservation.instruction } }
         : {}),
@@ -607,6 +623,8 @@ export async function POST(req: Request) {
     const doScrub = !body.dryRun || !!body.handoff;
     const refsToLoad: RefSlot[] = await Promise.all(written.refs.map(async (r) => {
       if (!doScrub || !r.url || r.swatchHex || !SCRUB_KINDS.has(r.kind)) return r;
+      // 드롭박스 실촬영 원본의 진짜 태그는 지우지 않는다 — 다른 사진류(배경·분위기 등)는 그대로 지운다
+      if (keepRealTags && r.kind === 'base') return r;
       const s = await scrubReferenceUrl(r.url);
       if (!s.cleaned) return r;
       originalOf.set(s.url, r.url);
@@ -748,6 +766,16 @@ export async function POST(req: Request) {
       written.prompt = redone.prompt;
     }
 
+    /*
+     * 실촬영 원본의 태그 수 — 결과물에서 이보다 많은 또렷한 태그는 "새로 생긴 것" 으로 보고 지운다.
+     * 원본마다 logo_scans 기록을 쓰고(없으면 한 번 검사), 하나라도 모르면 null — 그때는 뭉개진 것만 지운다.
+     */
+    let realTagMax: number | null = null;
+    if (keepRealTags) {
+      const counts = await Promise.all(baseUrls.map((u) => referenceTagCount(u)));
+      realTagMax = counts.some((c) => c == null) ? null : counts.reduce((s: number, c) => s + (c as number), 0);
+    }
+
     // ── 6) 생성 ───────────────────────────────────────────────────
     const isoNow = new Date().toISOString();
     const results: Record<string, unknown>[] = [];
@@ -819,6 +847,7 @@ export async function POST(req: Request) {
         // 정답 형태를 같이 줘야 "꽉 찬 물방울이라 정상" 같은 오판을 안 한다
         expectedShapes: foldTargets.map((p) => `Yogibo ${p.line}: ${p.shape}`),
         exemptProducts: productSpecs.filter((p) => !TOP_FORM_LINES.has(p.line)).map((p) => `the Yogibo ${p.line}`),
+        ...(keepRealTags ? { keepReal: { max: realTagMax } } : {}),
       });
       const cropped = { ...croppedRaw, buffer: guard.buffer };
       /*
@@ -849,6 +878,8 @@ export async function POST(req: Request) {
         model: guard.model,
         logoFound: guard.found,
         logoErased: guard.erased.length,
+        // 드롭박스 실촬영 원본이라 살린 진짜 태그 수 (keepRealTags 일 때만 의미가 있다)
+        ...(keepRealTags ? { logoKept: guard.kept, realTagMax } : {}),
         ...(guard.erased.length ? { logoBoxes: guard.erased, rawUrl } : {}),
         topFold: guard.topFold,
         refsCleaned: originalOf.size,
