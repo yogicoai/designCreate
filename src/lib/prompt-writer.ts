@@ -853,10 +853,18 @@ function pickFaceAngle(spec: GenerationSpec, i: number): { url: string; kr: stri
    */
   if (recastsPeople(spec) && (spec.baseGaze ?? [])[i]) {
     const g = (spec.baseGaze ?? [])[i] ?? '';
-    const profile = /\bprofile\b/i.test(g);
-    if (/facing the camera|at the camera/i.test(g) && !profile) return undefined; // 정면 그대로면 각도 칸이 필요 없다
-    if (/to their left/i.test(g)) return (profile ? p('r') : q('r')) ?? q('r');
-    if (/to their right/i.test(g)) return (profile ? p('l') : q('l')) ?? q('l');
+    /*
+     * base-gaze 는 한 문장을 "(a) 머리가 어떻게 돌아갔는지, (b) 눈이 어디를 보는지" 순서로 쓴다.
+     * 방향은 앞 구절(머리)에서만 읽는다 — 뒤의 시선 구절("eyes off-frame to the left")까지 보면
+     * 머리와 반대쪽 칸이 들어간다. 주어도 their/her/his 가 섞여 나온다
+     * (실측 2026-09-23: "three-quarter turned to her right" 를 their 만 보다가 놓쳐 반대 칸이 들어갔다).
+     */
+    const head = g.replace(/^PERSON\s*\d+\s*:\s*/i, '').split(',')[0];
+    const profile = /\bprofile\b/i.test(head);
+    // 머리가 정면이면 각도 칸이 필요 없다 — 대표컷·표정컷이 이미 정면이다
+    if (/facing the camera|head-on|straight (on|at the (camera|lens))/i.test(head) && !profile) return undefined;
+    if (/to (their|her|his|the) left/i.test(head)) return profile ? p('r') : q('r');
+    if (/to (their|her|his|the) right/i.test(head)) return profile ? p('l') : q('l');
     return q('r');
   }
 
