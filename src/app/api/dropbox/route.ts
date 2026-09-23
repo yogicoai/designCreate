@@ -95,7 +95,7 @@ export async function GET(req: Request) {
     const [docs, total] = await Promise.all([
       col.find(q)
         .project({ section: 1, group: 1, url: 1, title: 1, width: 1, height: 1, sub: 1, folderHint: 1, filenameHint: 1, labelStatus: 1, sourcePath: 1, sourceName: 1, createdAt: 1, products: 1, productsSource: 1, 'ai.confidence': 1 })
-        // 원본 수정일 최신순 (2026-09-22) — 같은 촬영분은 수정 시각이 붙어 있어 여전히 모여서 나온다
+        // 드롭박스에 올라온 순서 — DROPBOX_SORT(src/lib/queries.ts). 동기화 시각이라 같은 촬영분이 목록에서 흩어진다 → 구간 PATCH 는 폴더를 확인한다
         .sort(DROPBOX_SORT)
         .skip(skip)
         .limit(limit)
@@ -145,15 +145,39 @@ export async function PATCH(req: Request) {
 
     // 대상: 구간이면 화면과 같은 조건·순서로 목록을 받아 첫 장~마지막 장 사이를 고른다
     let targets: string[] = [];
+    let rangeNote = '';
     if (body.range?.from && body.range?.to) {
       const sp = new URLSearchParams(Object.entries(body.filter ?? {}).filter(([, v]) => v).map(([k, v]) => [k, String(v)]));
-      const ordered = (await col.find(buildQuery(sp)).project({ url: 1 }).sort(DROPBOX_SORT).toArray())
-        .map((d) => String(d.url));
-      const a = ordered.indexOf(body.range.from);
-      const b = ordered.indexOf(body.range.to);
+      const ordered = (await col.find(buildQuery(sp)).project({ url: 1, sourcePath: 1 }).sort(DROPBOX_SORT).toArray())
+        .map((d) => ({ url: String(d.url), sourcePath: String(d.sourcePath ?? '') }));
+      const a = ordered.findIndex((d) => d.url === body.range!.from);
+      const b = ordered.findIndex((d) => d.url === body.range!.to);
       if (a < 0 || b < 0) return NextResponse.json({ ok: false, error: '구간의 첫 장이나 마지막 장을 지금 목록에서 찾지 못했습니다. 필터를 바꿨다면 다시 골라 주세요.' }, { status: 400 });
-      targets = ordered.slice(Math.min(a, b), Math.max(a, b) + 1);
+      const seg = ordered.slice(Math.min(a, b), Math.max(a, b) + 1);
+      /*
+       * 폴더 가드 (2026-09-23) — 목록 순서가 "드롭박스에 올라온 순서" 로 바뀌면서 같은 촬영분이 목록에서 잘게 흩어진다
+       * (실측: 서포트_360 556장이 574행 → 3,318행). 두 끝이 같은 폴더면 그 폴더 것만 찍는다 —
+       * 안 그러면 사이에 낀 남의 촬영본 수천 장이 조용히 같은 라벨로 덮인다.
+       */
+      const folderKey = (p: string) => p.split('/').slice(0, -1).slice(0, 3).join('/');
+      const keyA = folderKey(seg[0].sourcePath);
+      const keyB = folderKey(seg[seg.length - 1].sourcePath);
+      const inFolder = keyA && keyA === keyB ? seg.filter((d) => folderKey(d.sourcePath) === keyA) : seg;
+      const skipped = seg.length - inFolder.length;
+      targets = inFolder.map((d) => d.url);
       if (targets.length > RANGE_MAX) return NextResponse.json({ ok: false, error: `구간이 너무 깁니다(${targets.length}장). ${RANGE_MAX}장 이하로 나눠 주세요.` }, { status: 400 });
+      if (keyA && keyA !== keyB) {
+        // 두 끝이 다른 폴더 — 사이에 무엇이 들어갔는지 사람이 볼 수 없으므로 막는다 (폴더별 내역을 알려 준다)
+        const by: Record<string, number> = {};
+        for (const d of seg) { const k = folderKey(d.sourcePath) || '(기타)'; by[k] = (by[k] ?? 0) + 1; }
+        const detail = Object.entries(by).sort((x, y) => y[1] - x[1]).slice(0, 5).map(([k, n]) => `${k} ${n}장`).join(' · ');
+        return NextResponse.json({
+          ok: false,
+          error: `구간의 첫 장(${keyA})과 마지막 장(${keyB})이 다른 폴더입니다. 목록이 업로드 순서라 사이에 다른 촬영분이 ${seg.length}장 섞여 있습니다 — ${detail}. 같은 폴더 안에서 구간을 고르거나, 필터로 폴더를 좁혀 주세요.`,
+          byFolder: by,
+        }, { status: 400 });
+      }
+      if (skipped > 0) rangeNote = `사이에 낀 다른 폴더 ${skipped}장은 건드리지 않았습니다.`;
     } else {
       // 검수는 여러 장을 한 번에 같은 라벨로 찍는 일이 대부분이라 urls 배열도 받는다
       const urls = Array.isArray(body.urls) ? body.urls.filter(Boolean).map(String) : [];
@@ -176,7 +200,7 @@ export async function PATCH(req: Request) {
     set.updatedAt = new Date();
 
     const r = await col.updateMany({ url: { $in: targets } }, { $set: set });
-    return NextResponse.json({ ok: true, matched: r.matchedCount, modified: r.modifiedCount, count: targets.length });
+    return NextResponse.json({ ok: true, matched: r.matchedCount, modified: r.modifiedCount, count: targets.length, ...(rangeNote ? { note: rangeNote } : {}) });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });
   }

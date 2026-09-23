@@ -26,6 +26,8 @@ const SAFE = /^(product|brand)\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\.jpg$/;
 const rel = (u) => (u.startsWith(`${BASE}/`) ? u.slice(BASE.length + 1) : '');
 /** 「촬영/2020/유니랜서/…」 → 「촬영/2020/유니랜서」 — 같은 촬영분인지 가르는 기준 */
 const shootKey = (sp) => sp.split('/').slice(0, 3).join('/');
+/** 사진이 들어 있는 폴더 (파일명 제외, 최대 3단계) — 구간이 폴더를 넘지 않게 막을 때 쓴다 */
+const folderKey = (sp) => sp.split('/').slice(0, -1).slice(0, 3).join('/');
 
 const mc = new MongoClient(process.env.MONGODB_URI);
 await mc.connect();
@@ -61,6 +63,23 @@ if (BY_NUMBER) {
   seg = all.filter((d) => { const x = numOf(d.title); return x && x.pre === A.pre && x.n >= lo && x.n <= hi; });
 } else {
   seg = all.slice(Math.min(a, b), Math.max(a, b) + 1);
+  /*
+   * 폴더 가드 (2026-09-23) — 목록이 "드롭박스에 올라온 순서" 가 되면서 같은 촬영분이 목록에서 잘게 흩어진다
+   * (실측: 서포트_360 556장이 574행 → 3,318행, 사이에 낀 남의 촬영본 2,762장).
+   * 두 끝이 같은 폴더면 그 폴더 것만 남긴다. 폴더를 넘겨 지우려면 --all 을 준다.
+   */
+  const keyA = folderKey(hitsA[0].sourcePath), keyB = folderKey(hitsB[0].sourcePath);
+  if (!ALL && keyA === keyB) {
+    const before = seg.length;
+    seg = seg.filter((d) => folderKey(d.sourcePath) === keyA);
+    if (before !== seg.length) console.log(`  (사이에 낀 다른 폴더 ${before - seg.length}장은 건드리지 않습니다 — 폴더 ${keyA})`);
+  } else if (!ALL) {
+    const by = seg.reduce((m, d) => ((m[folderKey(d.sourcePath)] = (m[folderKey(d.sourcePath)] || 0) + 1), m), {});
+    console.log(`양 끝이 다른 폴더입니다 — 첫 장 ${keyA} · 마지막 장 ${keyB}`);
+    console.log(`구간 ${seg.length}장이 여러 폴더에 걸칩니다: ${Object.entries(by).sort((x, y) => y[1] - x[1]).slice(0, 6).map(([k, v]) => `${k} ${v}`).join(' | ')}`);
+    console.log('같은 폴더 안에서 구간을 고르거나, 정말 다 지우려면 --all 을 붙이세요.');
+    await mc.close(); process.exit(1);
+  }
 }
 /*
  * 기본 규칙 (사용자 결정 2026-09-22): 구간 안의 **촬영본(「촬영/」·「촬영2022/」)은 지우고, 공식 제품사진(「제품사진/」)은 남긴다.**

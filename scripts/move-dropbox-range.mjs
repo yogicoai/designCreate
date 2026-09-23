@@ -36,6 +36,8 @@ if (!labels.includes(LABEL) || LABEL === '제품 없음') { console.error(`「${
 const isShoot = (sp) => /^촬영(2022)?\//.test(sp);
 /** 「촬영/2020/유니랜서/…」 → 「촬영/2020/유니랜서」 — 같은 촬영분인지 가르는 기준 */
 const shootKey = (sp) => sp.split('/').slice(0, 3).join('/');
+/** 사진이 들어 있는 폴더 (파일명 제외, 최대 3단계) — 구간이 폴더를 넘지 않게 막을 때 쓴다 */
+const folderKey = (sp) => sp.split('/').slice(0, -1).slice(0, 3).join('/');
 const numOf = (t) => { const m = /^(.*?)(\d+)$/.exec(t); return m ? { pre: m[1], n: Number(m[2]) } : null; };
 
 const mc = new MongoClient(process.env.MONGODB_URI);
@@ -71,6 +73,19 @@ if (FOLDER) {
   } else {
     const a = all.indexOf(hitsA[0]), b = all.indexOf(hitsB[0]);
     seg = all.slice(Math.min(a, b), Math.max(a, b) + 1);
+    /*
+     * 폴더 가드 (2026-09-23) — 목록이 "드롭박스에 올라온 순서" 가 되면서 같은 촬영분이 목록에서 흩어진다.
+     * 두 끝이 같은 폴더면 그 폴더 것만, 다르면 멈춘다(--all 이면 예전처럼 구간 전체).
+     */
+    const keyA = folderKey(hitsA[0].sourcePath), keyB = folderKey(hitsB[0].sourcePath);
+    if (!ALL && keyA !== keyB) {
+      const by = seg.reduce((m, d) => ((m[folderKey(d.sourcePath)] = (m[folderKey(d.sourcePath)] || 0) + 1), m), {});
+      console.log(`양 끝이 다른 폴더입니다 — 첫 장 ${keyA} · 마지막 장 ${keyB}`);
+      console.log(`구간 ${seg.length}장: ${Object.entries(by).sort((x, y) => y[1] - x[1]).slice(0, 6).map(([k, v]) => `${k} ${v}`).join(' | ')}`);
+      console.log('같은 폴더 안에서 고르거나, 정말 전부 옮기려면 --all 을 붙이세요.');
+      await mc.close(); process.exit(1);
+    }
+    if (!ALL) seg = seg.filter((d) => folderKey(d.sourcePath) === keyA);
     target = ALL ? seg : seg.filter((d) => isShoot(d.sourcePath));
     console.log(`구간 ${seg.length}장 (목록 ${Math.min(a, b) + 1}~${Math.max(a, b) + 1}번째)`);
   }
