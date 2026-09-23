@@ -228,6 +228,25 @@ export interface CutDoc {
   /** 수정으로 만들어진 판이면 원본 배너의 id — 게시판에서 계보를 보여준다 */
   revisedFrom?: string;
 
+  /**
+   * 생성 직후 자동 검사 — 고치지 않고 기록만 한다. 갤러리가 "왜 실패했나" 를 여기서 읽는다.
+   * face: 전속 모델 얼굴 대조 (face-guard) · scene: 제품 일치·크기·조명 (scene-check) · logo*: 태그 (logo-guard)
+   */
+  qc?: {
+    checked?: boolean;
+    logoFound?: number;
+    logoErased?: number;
+    logoKept?: number;
+    topFold?: { suspected: boolean; note: string } | null;
+    face?: { checked: boolean; verdicts: { code: string; score: number; verdict: string; note: string; headFrac: number }[] };
+    scene?: {
+      checked: boolean;
+      product: { ok: boolean; note: string; missing: string[] };
+      scale: { ok: boolean; note: string };
+      light: { score: number; note: string };
+    };
+  };
+
   hidden: boolean;
   note: string;
   createdAt: Date;

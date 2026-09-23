@@ -164,6 +164,13 @@ interface GenResult {
     checked: boolean; logoErased: number; topFold: { suspected: boolean; note: string } | null; refsCleaned: number;
     /** 전속 모델 얼굴이 등록된 얼굴과 같은 사람인지 — 고치지는 않고 알리기만 한다 */
     face?: { checked: boolean; verdicts: { code: string; score: number; verdict: string; note: string; headFrac: number }[] };
+    /** 제품 일치·방 가구 대비 크기·조명 일치 (scene-check.ts) — 실패 원인을 컷에 남긴다 */
+    scene?: {
+      checked: boolean;
+      product: { ok: boolean; note: string; missing: string[] };
+      scale: { ok: boolean; note: string };
+      light: { score: number; note: string };
+    };
   } | null;
 }
 
@@ -177,6 +184,24 @@ function QcChips({ qc }: { qc?: GenResult['qc'] }) {
       {qc.refsCleaned > 0 && <span title="참조 사진에 붙은 태그를 지운 사본을 보냈습니다">참조 태그 정리 {qc.refsCleaned}장</span>}
       {qc.topFold?.suspected && (
         <span style={{ color: 'var(--danger)' }} title={qc.topFold.note}>⚠ 빈백 윗부분 말림 의심 — 다시 생성 권장</span>
+      )}
+      {/*
+        장면 검사 (scene-check.ts) — 어제 실패 컷들의 원인 세 가지를 그대로 본다:
+        고른 제품이 딴 가구로 나옴 · 방 가구 대비 크기가 과함 · 사람·제품만 밝아 합성 티.
+      */}
+      {qc.scene?.checked && !qc.scene.product.ok && (
+        <span style={{ color: 'var(--danger)' }} title={qc.scene.product.note}>
+          ⚠ 제품 불일치{qc.scene.product.missing.length ? ` — ${qc.scene.product.missing.join(', ')}` : ''} — 다시 생성 권장
+        </span>
+      )}
+      {qc.scene?.checked && !qc.scene.scale.ok && (
+        <span style={{ color: 'var(--danger)' }} title={qc.scene.scale.note}>⚠ 크기 어긋남 (방 가구 대비) — 다시 생성 권장</span>
+      )}
+      {qc.scene?.checked && qc.scene.light.score > 0 && qc.scene.light.score < 60 && (
+        <span style={{ color: 'var(--danger)' }} title={qc.scene.light.note}>⚠ 합성 티 · 조명 {qc.scene.light.score}점 — 다시 생성 권장</span>
+      )}
+      {qc.scene?.checked && qc.scene.light.score >= 60 && qc.scene.light.score < 75 && (
+        <span style={{ color: 'var(--warn)' }} title={qc.scene.light.note}>조명 애매 {qc.scene.light.score}점</span>
       )}
       {/*
         얼굴 대조 — 와이드 컷에서 전속 모델 얼굴이 딴사람으로 흐르는 일이 잦다 (실측 2026-09-16).

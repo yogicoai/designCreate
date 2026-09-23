@@ -22,6 +22,7 @@ import { ObjectId } from 'mongodb';
 import { measureSceneTone } from '@/lib/scene-tone';
 import { scrubReferenceUrl, guardOutput, referenceTagCount } from '@/lib/logo-guard';
 import { checkFaces } from '@/lib/face-guard';
+import { checkScene } from '@/lib/scene-check';
 
 /**
  * POST /api/generate — 자산 조합 → 프롬프트 → 나노바나나 → 크롭 → FTP → DB.
@@ -869,6 +870,18 @@ export async function POST(req: Request) {
        * 로고를 지운 뒤의 버퍼로 검사한다: 사람이 실제로 보게 될 그림이 검사 대상이어야 한다.
        */
       const faceCheck = await checkFaces(cropped.buffer, faceRefs);
+      /*
+       * 장면 검사 — 제품이 그 제품으로 나왔는지 · 방 가구 대비 크기 · 조명 일치(합성 티)를 한 번에 본다.
+       * 왜 필요한가 (사용자 요청 2026-09-23): 실패한 컷을 사람이 하나씩 열어 봐야 원인을 알 수 있었다.
+       * 고치지는 않고 기록만 한다 — 다시 뽑을지는 사람이 정한다 (얼굴 검사와 같은 원칙).
+       */
+      const sceneCheck = await checkScene(cropped.buffer, {
+        products: productSpecs.length
+          ? productSpecs.map((p) => ({ line: p.line, shape: p.shape }))
+          : scaleProducts.map((p) => ({ line: p.line, shape: p.shape ?? p.scalePrompt })),
+        people: talents.map((t, i) => `${talents.length > 1 ? `PERSON ${i + 1}` : 'the model'} ${t.sizeEn}`),
+        hasBackground: uploadedRefs.some((u) => u.role === 'background'),
+      });
       const colorCheck = color?.hex ? await measureProductColor(cropped.buffer, color.hex) : null;
 
       const stamp = isoNow.replace(/[-:T]/g, '').slice(0, 14);
@@ -896,6 +909,7 @@ export async function POST(req: Request) {
         ...(guard.erased.length ? { logoBoxes: guard.erased, rawUrl } : {}),
         topFold: guard.topFold,
         refsCleaned: originalOf.size,
+        scene: sceneCheck,
         ...(guard.usage ? { usage: guard.usage } : {}),
         face: { checked: faceCheck.checked, verdicts: faceCheck.verdicts, ...(faceCheck.usage ? { usage: faceCheck.usage } : {}) },
       };
@@ -982,6 +996,7 @@ export async function POST(req: Request) {
         qc: {
           checked: qc.checked, logoErased: qc.logoErased, topFold: qc.topFold, refsCleaned: qc.refsCleaned,
           face: { checked: faceCheck.checked, verdicts: faceCheck.verdicts },
+          scene: sceneCheck,
         },
       });
     }

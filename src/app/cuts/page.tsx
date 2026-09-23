@@ -2,6 +2,7 @@ import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import Zoomable from '@/components/Zoomable';
 import CutActions from '@/components/CutActions';
+import QcFlags, { qcSummary } from '@/components/QcFlags';
 import { getCuts, getProducts, getTalents } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
@@ -58,6 +59,12 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
 
   const generated = cuts.filter((c) => c.source === 'imgcreate').length;
   const activeFilter = line || colorKey || talentCode || source;
+  /*
+   * 자동 검사 요약 — 실패한 컷을 하나씩 열어 보지 않아도 원인이 보이게 (사용자 요청 2026-09-23).
+   * 이 앱이 생성한 컷만 센다 — 이관 컷에는 검사 기록이 없다.
+   */
+  const made = cuts.filter((c) => c.source === 'imgcreate');
+  const flagged = qcSummary(made);
 
   const chip = (label: string, href: string, on: boolean) => (
     <Link key={href + label} href={href} className="chip"
@@ -81,6 +88,18 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
         desc={`총 ${cuts.length}컷 · 이 앱이 생성한 컷 ${generated}건. 생성일자별로 정리됩니다.`}
         right={<Link href="/create" className="btn btn-primary">＋ 새로 생성</Link>}
       />
+
+      {/* 자동 검사 요약 — 원인별 개수. 하나도 없으면 줄을 그리지 않는다 */}
+      {flagged.length > 0 && (
+        <div className="card p-3 mb-3 flex items-center gap-2 flex-wrap text-[11.5px]">
+          <span className="label">자동 검사</span>
+          <span style={{ color: 'var(--text-mute)' }}>생성 컷 {made.length}건 중</span>
+          {flagged.map((f) => (
+            <span key={f.label} className="chip" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>{f.label} {f.n}</span>
+          ))}
+          <span style={{ color: 'var(--text-mute)' }}>— 썸네일 아래 칩에 마우스를 올리면 검사가 적어 준 이유가 보입니다</span>
+        </div>
+      )}
 
       {/* 필터 */}
       <div className="card p-3.5 mb-5 flex flex-col gap-2.5">
@@ -145,6 +164,8 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
                       </span>
                     )}
                   </div>
+                  {/* 자동 검사 — 제품 불일치·크기·합성 티·얼굴 변형. 정상이면 아무것도 안 그린다 */}
+                  <QcFlags qc={c.qc} />
                   {/*
                     이 컷이 무엇을 보고 만들어졌는지 — 결과만 있고 입력이 없으면
                     나중에 "이건 어떻게 뽑았더라" 를 되살릴 수 없다.
