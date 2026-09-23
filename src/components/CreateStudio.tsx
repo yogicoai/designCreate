@@ -514,6 +514,17 @@ export default function CreateStudio(p: Props) {
   const needsPhotoProduct = hasBaseUpload && !line;
 
   /*
+   * ② 원본 사진으로 모델만 바꾸는 흐름에서는 ③ 제품·④ 포즈가 필요 없다 (사용자 지적 2026-09-23 "헷갈리기만 한다").
+   * 제품은 사진 속 제품 그대로, 포즈도 사진에서 온다. 실제로 ③ 을 고르는 바람에 원본의 무늬 제품과 섞여
+   * "맥스가 없다" 판정을 받은 컷이 있었다. 제품을 진짜로 바꿀 때만 펴서 쓴다.
+   */
+  const [swapProduct, setSwapProduct] = useState(false);
+  const showProductSection = !hasBaseUpload || swapProduct || editTargets.includes('product-color');
+  const showPoseSection = flow === 'model' && !hasBaseUpload; // withPeople 과 같은 뜻 — 그 변수는 아래에서 선언된다
+  // 화면에 실제로 보이는 섹션만 1,2,3… 으로 센다 — 숨은 섹션 때문에 번호가 건너뛰면 헷갈린다
+  const secNo = (() => { let i = 0; return () => String(++i); })();
+
+  /*
    * ② 원본이 드롭박스 사진이면 그 사진의 제품 라벨·파일명으로 「사진 속 제품」을 미리 골라 둔다 — 드롭/팟처럼
    * 모양이 비슷한 제품을 잘못 고르는 일을 줄인다 (실측 2026-09-22: 파일명이 Pod_Support_Traybo 인 사진에 드롭을 고름).
    * 사람이 이미 골랐으면 건드리지 않는다.
@@ -1104,7 +1115,7 @@ export default function CreateStudio(p: Props) {
           </div>
 
           {/* ① 용도 · 규격 */}
-          <Section n="1" title="용도와 규격" hint="프리셋에서 고르거나 픽셀을 직접 지정합니다. 직접 지정한 규격은 저장해서 다시 쓸 수 있습니다.">
+          <Section n={secNo()} title="용도와 규격" hint="프리셋에서 고르거나 픽셀을 직접 지정합니다. 직접 지정한 규격은 저장해서 다시 쓸 수 있습니다.">
             <div className="flex gap-1.5 mb-3">
               {([['thumbnail', '상품 썸네일'], ['banner', '이벤트 배너 · SNS']] as const).map(([v, l]) => (
                 <button key={v} onClick={() => setMode(v)} className="btn"
@@ -1170,7 +1181,7 @@ export default function CreateStudio(p: Props) {
 
           {/* ② 레퍼런스 — 가장 흔한 시작 행동이라 위로 올렸다 */}
           {flow === 'model' && (
-          <Section n="2" title="레퍼런스 이미지"
+          <Section n={secNo()} title="레퍼런스 이미지"
                    hint="새로 올리거나 보관함에서 가져옵니다. 여기서 올린 이미지는 이번 작업에만 쓰이고 보관함에는 쌓이지 않습니다 — 계속 쓸 사진은 자산관리 > 레퍼런스에서 등록하세요."
                    right={
                      <span className="flex gap-1.5 flex-wrap justify-end">
@@ -1315,7 +1326,7 @@ export default function CreateStudio(p: Props) {
             사진 편집(base)은 화면에서 뺐다 (사용자 확정 2026-09-14).
           */}
           {flow === 'product' && (
-          <Section n="2" title="배경 이미지 (선택)"
+          <Section n={secNo()} title="배경 이미지 (선택)"
                    hint="제품을 놓을 공간 사진을 올리거나 보관함에서 가져옵니다. 사진이 없으면 아래 「배경 · 연출」에 글로 적으면 됩니다. 여기서 올린 사진은 이번 작업에만 쓰이고 보관함에는 쌓이지 않습니다."
                    right={
                      <span className="flex gap-1.5 flex-wrap justify-end">
@@ -1387,8 +1398,22 @@ export default function CreateStudio(p: Props) {
           </Section>
           )}
 
+          {/*
+            원본 사진으로 모델만 바꾸는 흐름에서는 제품 섹션을 접어 둔다 — 여기서 제품을 고르면
+            "그 제품으로 바꿔라" 가 되어 사진 속 제품과 섞인다 (2026-09-22 실측: 무늬 제품 사진 + 맥스 선택 → 둘 다 아닌 의자).
+          */}
+          {hasBaseUpload && !showProductSection && (
+            <div className="card p-3 flex items-center gap-2 flex-wrap text-[11.5px]">
+              <span style={{ color: 'var(--text-dim)' }}>
+                제품·포즈는 ② 사진에서 그대로 옵니다 — 고르지 않아도 됩니다.
+              </span>
+              <button className="chip" onClick={() => setSwapProduct(true)}>사진 속 제품을 다른 제품으로 바꾸기</button>
+            </div>
+          )}
+
           {/* ③ 제품 · 컬러 · 각도 · 배치 */}
-          <Section n="3" title="제품 · 컬러 · 각도"
+          {showProductSection && (
+          <Section n={secNo()} title="제품 · 컬러 · 각도"
                    hint={hasBaseUpload
                      ? '사진 속 제품을 그대로 쓸 거면 비워두세요. 다른 제품으로 바꿀 때만 고릅니다.'
                      : '제품을 고르고 컬러칩으로 색을 정한 뒤, 승인된 AI 생성 제품에서 보여줄 각도를 고릅니다. 고른 칸은 컬러칩 색으로 바꿔서 넣습니다.'}>
@@ -1505,14 +1530,15 @@ export default function CreateStudio(p: Props) {
               </>
             )}
           </Section>
+          )}
 
           {/*
             포즈 — 예전엔 제품 카드 안에 묻혀 있어 눈에 안 띄었다.
             제품·컬러 다음에 바로 고르는 것이라 제 번호를 단 섹션으로 올린다.
           */}
-          {/* 포즈는 사람이 앉는 방식이라 「모델과 함께」 에만 있다 */}
-          {withPeople && (
-          <Section n="4" title="포즈"
+          {/* 포즈는 사람이 앉는 방식이라 「모델과 함께」 에만 있다. ② 원본 사진이 있으면 포즈는 그 사진에서 온다 — 접어 둔다 */}
+          {showPoseSection && (
+          <Section n={secNo()} title="포즈"
                    hint="우리가 실제로 만든 컷에서 포즈·앵글만 가져오거나, 촬영 원본 실사 포즈 레퍼를 고릅니다. 제품·컬러는 위 선택이 적용됩니다.">
             {!product && (
               <div className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>먼저 제품을 고르세요.</div>
@@ -1614,7 +1640,8 @@ ${c.spec}`}
             그래서 추가하는 순간 첫 제품에도 위치 선택이 생긴다.
             메이트 인형·필로우(소품)도 여기서 고른다 — youtube 제품 데이터에서 끌어왔다.
           */}
-          <Section n={withPeople ? '5' : '4'} title="함께 놓을 제품 · 소품"
+          {showProductSection && (
+          <Section n={secNo()} title="함께 놓을 제품 · 소품"
                    hint="한 컷에 2~3종. 메이트 인형·필로우 같은 소품도 여기서 고릅니다. 제품마다 컬러·각도·배치를 따로 정해야 형태·색이 안 섞입니다.">
             {!line && (
               <div className="text-[11.5px]" style={{ color: 'var(--text-mute)' }}>먼저 제품을 고르세요.</div>
@@ -1700,6 +1727,7 @@ ${c.spec}`}
               </div>
             )}
           </Section>
+          )}
 
           {/*
             ⑥ 배경 변경 (선택) — 「모델과 함께」 전용 (사용자 요청 2026-09-21).
@@ -1707,7 +1735,7 @@ ${c.spec}`}
             보관함에서 고를 때는 인테리어(빈 공간 컷)가 먼저 열린다.
           */}
           {withPeople && (
-          <Section n="6" title="배경 변경 (선택)"
+          <Section n={secNo()} title="배경 변경 (선택)"
                    hint="② 레퍼런스의 모델·포즈·제품을 이 배경 안으로 옮겨 합성합니다. 인물·제품의 조명·색감은 이 배경에 맞춰 톤을 조절합니다. 레퍼런스와 비슷한 높이·각도에서 찍은 배경일수록 자연스럽습니다.">
             <input ref={bgFileInput} type="file" accept="image/*" hidden onChange={(e) => onBgFile(e.target.files)} />
             {bgSwap ? (
@@ -1754,7 +1782,7 @@ ${c.spec}`}
 
           {/* 모델 — 전속 모델. 클릭 순서 = 사진 왼쪽부터 */}
           {withPeople && (
-          <Section n="7" title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다.">
+          <Section n={secNo()} title="모델" hint="여러 명을 고르면 클릭한 순서대로 ①②③④ — 사진 왼쪽부터 배정됩니다.">
             <div className="flex flex-wrap gap-2 mb-3">
               {p.talents.map((t) => {
                 const idx = picks.findIndex((x) => x.code === t.code);
@@ -1894,7 +1922,7 @@ ${c.spec}`}
           */}
 
           {/* 배경 · 연출 (글) — 배경 사진이 없으면 여기 적은 글이 배경을 정한다 */}
-          <Section n={withPeople ? '8' : '5'} title="배경 · 연출" hint="배경 공간·조명·분위기를 한글로 편하게 적으면 됩니다. 배경 사진을 올렸다면 그 공간에 더할 것만 적으세요.">
+          <Section n={secNo()} title="배경 · 연출" hint="배경 공간·조명·분위기를 한글로 편하게 적으면 됩니다. 배경 사진을 올렸다면 그 공간에 더할 것만 적으세요.">
             {/*
               광각 배너(21:9·16:9) 힌트 — 넓게 뽑으면 한쪽을 비워야 글자가 들어간다.
               애초에 빈 쪽이 없으면 배너 스튜디오의 자동 배치도 놓을 자리가 없다.
