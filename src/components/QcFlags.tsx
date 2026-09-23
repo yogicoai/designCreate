@@ -9,7 +9,7 @@ import type { CutDoc } from '@/lib/types';
  */
 
 export interface QcFlag {
-  kind: 'product' | 'scale' | 'light' | 'face' | 'fold' | 'unchecked';
+  kind: 'product' | 'scale' | 'light' | 'face' | 'fold' | 'tag' | 'unchecked';
   label: string;
   /** 마우스를 올렸을 때 보이는 근거 — 검사가 적어 준 문장 */
   note: string;
@@ -41,13 +41,24 @@ export function qcFlags(qc: CutDoc['qc']): QcFlag[] {
     else if (v.verdict === 'weak') out.push({ kind: 'face', level: 'warn', label: `얼굴 애매 · ${v.code} (${v.score}점)`, note: v.note });
   }
   if (qc.topFold?.suspected) out.push({ kind: 'fold', level: 'bad', label: '윗부분 말림 의심', note: qc.topFold.note });
+  /*
+   * 태그를 찾았는데 살리지도 지우지도 못한 경우 — 빈백 가장자리에 걸친 태그는 메우면 윤곽이 뭉개져서 건너뛴다.
+   * 그러면 뭉개진 글자가 그대로 남으므로 사람에게 알린다 (실측 2026-09-23).
+   */
+  const stuck = (qc.logoFound ?? 0) - (qc.logoErased ?? 0) - (qc.logoKept ?? 0);
+  if (stuck > 0) {
+    out.push({
+      kind: 'tag', level: 'bad', label: `태그 뭉개짐 ${stuck}개 남음`,
+      note: '글자가 무너진 태그를 찾았지만 그 자리가 제품 가장자리라 지우지 못했습니다 — 다시 생성하거나 디자인 단계에서 덮으세요.',
+    });
+  }
   return out;
 }
 
 /** 여러 컷의 원인별 개수 — 갤러리 머리말의 "제품 불일치 3 · 크기 2 …" */
 export function qcSummary(cuts: { qc?: CutDoc['qc'] }[]): { label: string; n: number }[] {
   const KR: Record<QcFlag['kind'], string> = {
-    product: '제품 불일치', scale: '크기 어긋남', light: '합성 티(조명)', face: '얼굴 변형', fold: '윗부분 말림', unchecked: '검사 안 됨',
+    product: '제품 불일치', scale: '크기 어긋남', light: '합성 티(조명)', face: '얼굴 변형', fold: '윗부분 말림', tag: '태그 뭉개짐', unchecked: '검사 안 됨',
   };
   const n: Partial<Record<QcFlag['kind'], number>> = {};
   for (const c of cuts) for (const f of qcFlags(c.qc)) if (f.level === 'bad') n[f.kind] = (n[f.kind] ?? 0) + 1;

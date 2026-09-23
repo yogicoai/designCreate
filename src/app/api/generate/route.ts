@@ -888,7 +888,7 @@ export async function POST(req: Request) {
         // 정답 형태를 같이 줘야 "꽉 찬 물방울이라 정상" 같은 오판을 안 한다
         expectedShapes: foldTargets.map((p) => `Yogibo ${p.line}: ${p.shape}`),
         exemptProducts: productSpecs.filter((p) => !TOP_FORM_LINES.has(p.line)).map((p) => `the Yogibo ${p.line}`),
-        ...(keepRealTags ? { keepReal: { max: realTagMax } } : {}),
+        ...(keepRealTags ? { keepReal: { max: realTagMax, ...(baseUrls[0] ? { refUrl: baseUrls[0] } : {}) } } : {}),
       });
       const cropped = { ...croppedRaw, buffer: guard.buffer };
       /*

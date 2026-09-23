@@ -73,22 +73,76 @@ function isGenuineTagText(text: unknown, hidden: unknown): boolean {
   return i === s.length;
 }
 
+/** 사진에서 태그 하나를 원본 해상도로 잘라 낸다 (여백 35%) — 비교·판독용 */
+async function cropTag(upright: Buffer, W: number, H: number, b: PxBox, width = 420): Promise<Buffer> {
+  const mx = (b.x1 - b.x0) * 0.35, my = (b.y1 - b.y0) * 0.35;
+  const L = Math.max(0, Math.floor(b.x0 - mx)), T = Math.max(0, Math.floor(b.y0 - my));
+  const R = Math.min(W, Math.ceil(b.x1 + mx)), B = Math.min(H, Math.ceil(b.y1 + my));
+  return sharp(upright).extract({ left: L, top: T, width: R - L, height: B - T })
+    .resize({ width, height: width, fit: 'inside' }).jpeg({ quality: 95 }).toBuffer();
+}
+
+/**
+ * 원본 사진의 태그와 나란히 놓고 비교해 판정한다 — 글자를 "읽게" 하면 안 된다.
+ *
+ * 실측 2026-09-23: 뭉개진 태그(원본의 y 가 o 로 무너진 것)를 받아 적게 했더니 비전이 「yogibo」 라고 읽었다.
+ * 브랜드를 알고 있어서 흐릿해도 알아서 보정해 읽는다 — "고치지 말고 보이는 대로" 라고 해도 소용이 없다.
+ * 같은 태그를 나란히 보여 주고 "글자 모양이 같냐" 고 물으면 「y 가 o 모양으로 무너졌다」 고 정확히 짚는다.
+ */
+async function judgeTagsByReference(
+  refCrop: Buffer, crops: Buffer[], key: string, model: string,
+): Promise<{ same: boolean[]; usage?: VisionUsage }> {
+  const text =
+    `The FIRST image is a tag from the ORIGINAL photograph — the real, correctly printed tag. The next ${crops.length} image(s) are the same tag ` +
+    'after an AI re-rendered the photo. Compare the lettering shape by shape.\n' +
+    `Return JSON only: {"same":[${crops.map(() => 'true').join(',')}]} with exactly ${crops.length} booleans in order. ` +
+    'A tag is "same" ONLY if it shows the same wordmark with the same letters in the same order, none malformed, missing, merged, mirrored or replaced by squiggles. ' +
+    'Blurry but correctly formed letters count as same; a letter you cannot match to the original counts as different.';
+  const res = await fetch(`${API_BASE}/${model}:generateContent`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify({
+      contents: [{ parts: [
+        { inlineData: { mimeType: 'image/jpeg', data: refCrop.toString('base64') } },
+        ...crops.map((c) => ({ inlineData: { mimeType: 'image/jpeg', data: c.toString('base64') } })),
+        { text },
+      ] }],
+      generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+    }),
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!res.ok) throw new Error(`태그 비교 호출 실패 ${res.status}`);
+  const json = (await res.json()) as {
+    candidates?: { content?: { parts?: { text?: string }[] } }[];
+    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; totalTokenCount?: number };
+  };
+  const raw = (json.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('');
+  const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, '')) as { same?: unknown };
+  const sameList: unknown[] = Array.isArray(parsed?.same) ? parsed.same : [];
+  if (!sameList.length) throw new Error(`응답 모양이 다릅니다: ${raw.slice(0, 120)}`);
+  const um = json.usageMetadata;
+  return {
+    same: crops.map((_, i) => sameList[i] === true),
+    ...(um ? { usage: { promptTokens: um.promptTokenCount ?? 0, outputTokens: um.candidatesTokenCount ?? 0, thoughtTokens: um.thoughtsTokenCount ?? 0, totalTokens: um.totalTokenCount ?? 0 } } : {}),
+  };
+}
+
 /**
  * 찾은 태그마다 진짜인지 판정한다 — 원본 해상도로 잘라(여백 40%) 한 번의 비전 호출로 받아 적게 한다.
+ * 원본 사진의 태그를 줄 수 있으면 비교 판정(judgeTagsByReference)이 먼저다 — 읽기 판정은 뭉개진 태그를 통과시킨다.
  * 실패하면 전부 false(지움) — 모르는 태그를 살리는 것보다 비우는 게 낫다.
  */
 async function judgeTagsGenuine(
-  upright: Buffer, W: number, H: number, boxes: PxBox[], key: string, model: string,
+  upright: Buffer, W: number, H: number, boxes: PxBox[], key: string, model: string, refCrop?: Buffer | null,
 ): Promise<{ genuine: boolean[]; usage?: VisionUsage }> {
   const list = boxes.slice(0, 8); // 비용 상한 — 한 컷에 태그가 8개를 넘을 일은 없다
   try {
     const crops: Buffer[] = [];
-    for (const b of list) {
-      const mx = (b.x1 - b.x0) * 0.4, my = (b.y1 - b.y0) * 0.4;
-      const L = Math.max(0, Math.floor(b.x0 - mx)), T = Math.max(0, Math.floor(b.y0 - my));
-      const R = Math.min(W, Math.ceil(b.x1 + mx)), B = Math.min(H, Math.ceil(b.y1 + my));
-      crops.push(await sharp(upright).extract({ left: L, top: T, width: R - L, height: B - T })
-        .resize({ width: 384, height: 384, fit: 'inside' }).jpeg({ quality: 92 }).toBuffer());
+    for (const b of list) crops.push(await cropTag(upright, W, H, b, 384));
+    // 원본 태그가 있으면 비교 판정 — 읽기 판정은 뭉개진 글자를 「yogibo」 로 읽어 통과시킨다 (실측 2026-09-23)
+    if (refCrop) {
+      const cmp = await judgeTagsByReference(refCrop, crops, key, model);
+      return { genuine: boxes.map((_, i) => (i < cmp.same.length ? cmp.same[i] : false)), ...(cmp.usage ? { usage: cmp.usage } : {}) };
     }
     const res = await fetch(`${API_BASE}/${model}:generateContent`, {
       method: 'POST',
@@ -139,7 +193,7 @@ const foldPrompt = (expected: string[], exempt: string[]) =>
 /** 제미나이 비전으로 태그 위치(와 선택적으로 윗부분 말림)를 찾는다. 실패하거나 응답 모양이 이상하면 null */
 export async function inspectImage(
   buf: Buffer,
-  opts: { topFold?: boolean; expectedShapes?: string[]; exemptProducts?: string[]; judgeTags?: boolean } = {},
+  opts: { topFold?: boolean; expectedShapes?: string[]; exemptProducts?: string[]; judgeTags?: boolean; refTagCrop?: Buffer | null } = {},
 ): Promise<Inspection | null> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
@@ -215,7 +269,7 @@ export async function inspectImage(
     } : undefined;
     // 실촬영 원본 모드 — 찾은 태그마다 진짜인지 원본 해상도로 다시 읽어 판정한다 (위 READ_PROMPT 설명)
     if (opts.judgeTags && tags.length) {
-      const jd = await judgeTagsGenuine(upright, W, H, tags, key, model);
+      const jd = await judgeTagsGenuine(upright, W, H, tags, key, model, opts.refTagCrop);
       tags.forEach((t, i) => { t.legible = jd.genuine[i] === true; });
       if (jd.usage) {
         const u = jd.usage;
@@ -407,12 +461,14 @@ export async function guardOutput(
      * 드롭박스 실촬영본이 원본일 때 — 또렷한 "yogibo" 태그는 살리고, 뭉개진 것과 원본보다 늘어난 것만 지운다.
      * max = 원본 사진에 있던 태그 수 (모르면 null — 그때는 뭉개진 것만 지운다).
      */
-    keepReal?: { max: number | null };
+    keepReal?: { max: number | null; /** 원본 사진 주소 — 그 태그와 나란히 비교해 판정한다 */ refUrl?: string };
   } = {},
 ): Promise<{ buffer: Buffer; found: number; erased: PxBox[]; kept: number; topFold: TopFold | null; usage?: VisionUsage; model: string; checked: boolean }> {
   try {
     const { keepReal, ...inspectOpts } = opts;
-    const found = await inspectImage(buf, { ...inspectOpts, judgeTags: !!keepReal });
+    // 원본 사진의 태그를 잘라 비교 기준으로 준다 — 없으면 읽기 판정으로 떨어진다
+    const refTagCrop = keepReal?.refUrl ? await referenceTagCrop(keepReal.refUrl) : null;
+    const found = await inspectImage(buf, { ...inspectOpts, judgeTags: !!keepReal, refTagCrop });
     if (!found) return { buffer: buf, found: 0, erased: [], kept: 0, topFold: null, model: visionModel(), checked: false };
     let targets = found.tags;
     if (keepReal) {
@@ -503,6 +559,32 @@ export async function referenceTagCount(url: string): Promise<number | null> {
     }
     return hit && Array.isArray(hit.tags) ? hit.tags.length : null;
   } catch {
+    return null;
+  }
+}
+
+/**
+ * 원본 사진에서 태그 한 장을 잘라 낸다 — 결과물의 태그와 나란히 놓고 "글자 모양이 같은가" 를 물을 때 쓴다.
+ * 상자는 logo_scans 기록을 재사용한다(없으면 한 번 검사해 남긴다). 태그가 없으면 null.
+ */
+export async function referenceTagCrop(url: string): Promise<Buffer | null> {
+  try {
+    const id = `${createHash('sha1').update(url).digest('hex').slice(0, 20)}_${VERSION}`;
+    const col = (await getDb()).collection(SCANS);
+    let hit = await col.findOne({ _id: id as never });
+    if (!hit) { await scrubReferenceUrl(url); hit = await col.findOne({ _id: id as never }); }
+    const boxes = (Array.isArray(hit?.tags) ? hit!.tags : []) as PxBox[];
+    if (!boxes.length) return null;
+    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) return null;
+    const upright = await sharp(Buffer.from(await res.arrayBuffer())).rotate().toBuffer();
+    const meta = await sharp(upright).metadata();
+    if (!meta.width || !meta.height) return null;
+    const area = (b: PxBox) => (b.x1 - b.x0) * (b.y1 - b.y0);
+    const big = [...boxes].sort((a, b) => area(b) - area(a))[0];
+    return await cropTag(upright, meta.width, meta.height, big, 420);
+  } catch (e) {
+    console.warn('[logo-guard] 원본 태그 자르기 실패:', (e as Error).message);
     return null;
   }
 }
