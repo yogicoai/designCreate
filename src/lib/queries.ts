@@ -286,12 +286,15 @@ export interface DropboxSummary {
 }
 
 /**
- * 드롭박스 목록 순서 — 원본 파일 수정일이 최신인 것부터 (사용자 요청 2026-09-22: "최신 업데이트된 게 앞쪽").
- * 같은 시각이면 원본 경로 순. 목록·구간 라벨·생성 화면 보관함이 모두 이 순서를 써야
- * 정리 모드에서 Shift 로 고른 구간이 화면에 보이는 사이와 같아진다.
- * srcMtime 은 scripts/backfill-dropbox-mtime.mjs 가 채우고, 새로 가져오는 사진은 수집 스크립트가 넣는다.
+ * 드롭박스 목록 순서 — 드롭박스에 올라온 순서(최신 업로드가 앞) (사용자 요청 2026-09-23).
+ *
+ * srcUploaded = 그 파일이 드롭박스 폴더에 들어온 시각(scripts/backfill-dropbox-uploaded.mjs).
+ * 수정일(srcMtime)만 쓰면 사진 자체의 날짜라, 2021년에 찍어 2024-12 에 올린 사진이 목록 한참 뒤에 묻힌다.
+ * 올라온 시각이 같은 무더기(한 번에 올린 폴더) 안에서는 수정일 최신순, 그다음 경로순으로 갈라 순서를 고정한다.
+ * 목록·구간 라벨·생성 화면 보관함이 모두 이 순서를 써야 정리 모드에서 Shift 로 고른 구간이 화면에 보이는 사이와 같아진다.
+ * 구간 이동·삭제 스크립트(move/purge-dropbox-range.mjs)도 같은 순서를 쓴다.
  */
-export const DROPBOX_SORT: Record<string, 1 | -1> = { srcMtime: -1, sourcePath: 1 };
+export const DROPBOX_SORT: Record<string, 1 | -1> = { srcUploaded: -1, srcMtime: -1, sourcePath: 1 };
 
 export async function getDropboxAssets(limit = 300, skip = 0, section: DropboxSection = 'product'): Promise<DropboxAssetDoc[]> {
   const col = await collection<DropboxAssetDoc & { active?: boolean; createdAt?: unknown }>('dropbox_assets');

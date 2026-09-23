@@ -1,7 +1,7 @@
 import { MongoClient } from 'mongodb';
 
 /**
- * 드롭박스 화면 순서(원본 수정일 최신순)에서 「첫 장 ~ 마지막 장」 구간을 한 제품 폴더(라벨)로 옮긴다 — 사용자가 파일명으로 불러 줄 때.
+ * 드롭박스 화면 순서(드롭박스에 올라온 순서, 최신 업로드가 앞)에서 「첫 장 ~ 마지막 장」 구간을 한 제품 폴더(라벨)로 옮긴다 — 사용자가 파일명으로 불러 줄 때.
  * 예: 「UE3A1207 ~ 20211112_yogibo_2997 럭스로 이동」, 「DSC00947~DSC00767 맥스 이동」
  *
  * 「옮긴다」 = 원래 라벨을 지우고 그 라벨 하나만 남긴다(products=[라벨], productsSource 'human' — AI 가 다시 덮지 않는다).
@@ -44,7 +44,7 @@ const col = mc.db(process.env.MONGODB_DB || undefined).collection('dropbox_asset
 // --in=<라벨>: 화면에서 그 제품 칩을 눌러 놓고 본 순서로 구간을 잡는다(칩 안에서 연속인 것만)
 const base = { section: { $ne: 'brand' }, active: { $ne: false }, ...(IN ? { products: IN } : {}) };
 // 화면과 같은 순서 — src/lib/queries.ts 의 DROPBOX_SORT
-const all = await col.find(base).sort({ srcMtime: -1, sourcePath: 1 }).project({ title: 1, sourcePath: 1, products: 1 }).toArray();
+const all = await col.find(base).sort({ srcUploaded: -1, srcMtime: -1, sourcePath: 1 }).project({ title: 1, sourcePath: 1, products: 1 }).toArray();
 
 let target, note;
 if (FOLDER) {

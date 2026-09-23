@@ -2,7 +2,7 @@ import { MongoClient } from 'mongodb';
 import { Client } from 'basic-ftp';
 
 /**
- * 드롭박스 화면 순서(원본 수정일 최신순)에서 「첫 장 ~ 마지막 장」 구간을 지운다 — 사용자가 파일명으로 구간을 불러 줄 때.
+ * 드롭박스 화면 순서(드롭박스에 올라온 순서, 최신 업로드가 앞)에서 「첫 장 ~ 마지막 장」 구간을 지운다 — 사용자가 파일명으로 구간을 불러 줄 때.
  *
  * 최신순 목록에서는 수정 날짜가 비슷한 다른 폴더 사진(특히 2.7 제품사진의 공식 컷)이 사이에 끼어 있을 수 있다.
  * 그래서 기본은 **촬영본만** 지우고 사이에 낀 공식 제품사진(2.7 제품사진)은 남긴다(아래 isShoot)
@@ -33,7 +33,7 @@ const db = mc.db(process.env.MONGODB_DB || undefined);
 const col = db.collection('dropbox_assets');
 const base = { section: { $ne: 'brand' }, active: { $ne: false } };
 // 화면과 같은 순서 — src/lib/queries.ts 의 DROPBOX_SORT
-const all = await col.find(base).sort({ srcMtime: -1, sourcePath: 1 }).project({ url: 1, title: 1, sourcePath: 1 }).toArray();
+const all = await col.find(base).sort({ srcUploaded: -1, srcMtime: -1, sourcePath: 1 }).project({ url: 1, title: 1, sourcePath: 1 }).toArray();
 
 // 끝 사진 이름이 같은 폴더 안에서도 겹칠 때(원본 DSC02962.JPG · retouching/DSC02962.png) --from-path= / --to-path= 로 경로 일부를 준다
 const FROM_PATH = arg('from-path'), TO_PATH = arg('to-path');

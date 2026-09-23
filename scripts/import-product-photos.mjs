@@ -438,8 +438,18 @@ for (const folder of targets) {
             source: SECTION === 'brand' ? 'dropbox-brand' : 'dropbox-product',
             // 웹용으로 줄여 올린 크기 — 원본 화질이 필요하면 sourcePath 로 드롭박스에서 가져온다
             srcBytes: up.srcBytes, uploadedBytes: up.uploadedBytes, maxEdge: MAX_EDGE,
-            // 원본 수정일 — 드롭박스 화면이 "최신 업데이트 순" 으로 보여 준다 (2026-09-22, backfill-dropbox-mtime.mjs 와 같은 값)
-            srcMtime: (() => { try { return fs.statSync(r.abs).mtime; } catch { return null; } })(),
+            /*
+             * 두 날짜를 같이 남긴다 (stat 한 번).
+             *   srcMtime    = 사진 자체의 날짜(촬영·보정일) — 같은 업로드 무더기 안에서 갈라 세울 때 쓴다.
+             *   srcUploaded = 그 파일이 드롭박스에 들어온 시각(birthtime) — 드롭박스 화면 정렬의 첫 기준
+             *                 (사용자 요청 2026-09-23 "가장 최근에 업로드된 순서", backfill-dropbox-uploaded.mjs 와 같은 값).
+             */
+            ...(() => {
+              try {
+                const st = fs.statSync(r.abs);
+                return { srcMtime: st.mtime, srcUploaded: st.birthtimeMs ? st.birthtime : st.mtime };
+              } catch { return { srcMtime: null, srcUploaded: null }; }
+            })(),
             active: true,
             createdAt: new Date(),
           },
