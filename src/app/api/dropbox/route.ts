@@ -46,6 +46,12 @@ const SAFE_REL = /^(product|brand)\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\.jpg$/;
  * withProduct=false 는 제품 칩의 숫자를 셀 때 — 칩 숫자가 자기 자신으로 걸러지면 안 된다.
  */
 function buildQuery(sp: URLSearchParams, withProduct = true): Record<string, unknown> {
+  /*
+   * 주소 하나로 찾기 — 생성 화면이 ② 원본 사진이 드롭박스 사진인지, 무슨 제품이 찍혔는지(라벨·파일명) 볼 때.
+   * 제품사진·브랜드 어느 쪽이든 주소가 같으면 같은 사진이라 섹션 조건을 걸지 않는다.
+   */
+  const url = sp.get('url');
+  if (url) return { url, active: { $ne: false } };
   const q: Record<string, unknown> = { active: { $ne: false }, ...dropboxSectionMatch(sectionOf(sp)) };
   const product = sp.get('product');
   if (withProduct && product) {

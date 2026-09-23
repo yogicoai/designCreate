@@ -383,7 +383,13 @@ export default function CreateStudio(p: Props) {
     setDry(null);
   };
   // 레퍼런스에 담긴 제품 — 인물 대비 스케일용 (사진 속 빈백이 무엇인지)
-  const [refProduct, setRefProduct] = useState('');
+  /*
+   * ② 원본 사진 속 제품 — 여러 개 (사용자 요청 2026-09-22: 팟 + 서포트 같은 조합 사진).
+   * 하나만 고를 수 있을 때 서포트(ㄷ자 쿠션)를 모델이 목베개로 읽고 사람 목에 둘렀다.
+   */
+  const [refProducts, setRefProducts] = useState<string[]>([]);
+  /** 드롭박스 라벨·파일명으로 미리 골라 준 제품 — 화면에 "자동으로 골랐다" 를 보여주려고 */
+  const [refAuto, setRefAuto] = useState<string[]>([]);
   const [direction, setDirection] = useState('');
   const [samples, setSamples] = useState(1);
   /*
@@ -481,6 +487,30 @@ export default function CreateStudio(p: Props) {
   const hasBaseUpload = flow === 'model' && uploads.some((u) => u.role === 'base');
   // ② 원본 사진을 쓰면서 ③ 제품을 비워 두면(사진 속 제품 그대로) 크기 기준이 없다 — 「사진 속 제품」 필수 (사용자 결정 2026-09-22)
   const needsPhotoProduct = hasBaseUpload && !line;
+
+  /*
+   * ② 원본이 드롭박스 사진이면 그 사진의 제품 라벨·파일명으로 「사진 속 제품」을 미리 골라 둔다 — 드롭/팟처럼
+   * 모양이 비슷한 제품을 잘못 고르는 일을 줄인다 (실측 2026-09-22: 파일명이 Pod_Support_Traybo 인 사진에 드롭을 고름).
+   * 사람이 이미 골랐으면 건드리지 않는다.
+   */
+  const baseUploadUrl = flow === 'model' ? (uploads.find((u) => u.role === 'base')?.url ?? '') : '';
+  useEffect(() => {
+    if (!baseUploadUrl) return;
+    let off = false;
+    fetch(`/api/dropbox?url=${encodeURIComponent(baseUploadUrl)}&limit=1`)
+      .then((r) => r.json())
+      .then((j: { assets?: { products?: string[]; sourcePath?: string; title?: string }[] }) => {
+        const a = j.assets?.[0];
+        if (off || !a) return;
+        const found = suggestPhotoLines(a.products ?? [], `${a.sourcePath ?? ''} ${a.title ?? ''}`)
+          .filter((l) => beanBags.some((b) => b.line === l));
+        if (!found.length) return;
+        setRefProducts((cur) => (cur.length ? cur : found));
+        setRefAuto(found);
+      })
+      .catch(() => { /* 드롭박스 사진이 아니거나 조회 실패 — 사람이 고른다 */ });
+    return () => { off = true; };
+  }, [baseUploadUrl, beanBags]);
 
   /** 라인의 승인된 AI 생성 제품 시트 (최근 승인 순) */
   const sheetsFor = useCallback(
@@ -764,7 +794,7 @@ export default function CreateStudio(p: Props) {
       // ⑥ 배경 합성 — ② 에 편집 원본이 있을 때만. ② 가 비어 있으면 ⑥ 은 평범한 「배경으로 사용」 이다
       ...(withPeople && bgSwap && hasBaseUpload ? { backgroundSwap: true } : {}),
       ...(hasBaseUpload && editTargets.length ? { editTargets } : {}),
-      ...(withPeople && refProduct ? { refProduct } : {}),
+      ...(withPeople && refProducts.length ? { refProducts } : {}),
       engine: effectiveEngine,
       ...(imageSize !== '2K' ? { imageSize } : {}),
       ...(direction.trim() ? { direction: direction.trim() } : {}),
@@ -777,7 +807,7 @@ export default function CreateStudio(p: Props) {
 
   async function run(dryRun: boolean) {
     // 사진 속 제품을 모르면 크기가 "170cm 맥스" 기준으로 떨어진다 — 프롬프트 확인도 같은 이유로 막는다
-    if (needsPhotoProduct && !refProduct) {
+    if (needsPhotoProduct && !refProducts.length) {
       setErr('② 「사진 속 제품」을 골라 주세요 — 사진에 쓰인 제품을 알아야 모델 키와 비교해 정확한 크기로 나옵니다.');
       return;
     }
@@ -1211,19 +1241,28 @@ export default function CreateStudio(p: Props) {
                   ③ 에서 제품을 고르면 그 치수를 쓰므로 여기는 선택.
                 */}
                 <div className="mt-2">
-                  <div className="label mb-1" style={needsPhotoProduct && !refProduct ? { color: 'var(--danger)' } : {}}>
-                    사진 속 제품 {line ? '(선택 — ③ 에서 고른 제품 크기를 씁니다)' : '(필수 — 골라야 정확한 크기가 나옵니다)'}
+                  <div className="label mb-1" style={needsPhotoProduct && !refProducts.length ? { color: 'var(--danger)' } : {}}>
+                    사진 속 제품 {line ? '(선택 — ③ 에서 고른 제품 크기를 씁니다)' : '(필수 — 사진에 보이는 제품을 모두 고르세요)'}
                   </div>
-                  <select className="input py-1 text-[12px]" value={refProduct}
-                          style={needsPhotoProduct && !refProduct ? { borderColor: 'var(--danger)' } : {}}
-                          onChange={(e) => setRefProduct(e.target.value)}>
-                    <option value="">— 사진에 쓰인 제품을 고르세요 —</option>
-                    {beanBags.map((x) => (
-                      <option key={x.line} value={x.line}>{x.emoji} {lineKr(x.line)} · {x.sizeText}</option>
-                    ))}
-                  </select>
+                  <div className="flex flex-wrap gap-1.5 p-1.5 rounded-lg"
+                       style={needsPhotoProduct && !refProducts.length ? { border: '1px solid var(--danger)' } : {}}>
+                    {beanBags.map((x) => {
+                      const on = refProducts.includes(x.line);
+                      return (
+                        <button key={x.line} className="chip" title={x.sizeText}
+                                onClick={() => setRefProducts((c) => (on ? c.filter((y) => y !== x.line) : [...c, x.line]))}
+                                style={on ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--surface)' } : {}}>
+                          {x.emoji} {lineKr(x.line)}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <div className="text-[10.5px] mt-1 leading-relaxed" style={{ color: 'var(--text-mute)' }}>
-                    사진에 쓰인 제품의 실측 크기로 모델 키와 비교해 앉힙니다 — 제품이 모델보다 너무 크거나 작게 나오는 걸 막습니다.
+                    {refAuto.length && refAuto.every((l) => refProducts.includes(l))
+                      ? `드롭박스 라벨·파일명으로 ${refAuto.map(lineKr).join(' + ')} 을(를) 미리 골랐습니다 — 사진과 맞는지 확인하세요. `
+                      : ''}
+                    팟 + 서포트처럼 여러 개면 모두 고르세요. 제품마다 실측 크기·형태로 모델 키와 비교하고, 사진 속 자리 그대로 둡니다
+                    (쿠션을 사람 몸에 두르거나 옮기지 않게).
                   </div>
                 </div>
               </div>
@@ -2399,4 +2438,22 @@ ${hint}` : hint))}>
       )}
     </div>
   );
+}
+
+/**
+ * 드롭박스 사진의 제품 라벨(한글)과 원본 경로·파일명(영문 제품명)에서 「사진 속 제품」 후보를 뽑는다.
+ * 예: 「2024_July_Pod_Support_Traybo_2_BTS.jpg」 → Pod, Support / 라벨 ["더블"] → Double.
+ */
+const KR_TO_LINE: Record<string, string> = {
+  맥스: 'Max', 미디: 'Midi', 미니: 'Mini', 슬림: 'Slim', 더블: 'Double', 라운저: 'Lounger',
+  서포트: 'Support', 피라미드: 'Pyramid', 팟: 'Pod', 드롭: 'Drop',
+};
+const EN_LINES = ['Max', 'Midi', 'Mini', 'Slim', 'Double', 'Lounger', 'Support', 'Pyramid', 'Pod', 'Drop'];
+function suggestPhotoLines(labels: string[], pathText: string): string[] {
+  const out: string[] = [];
+  for (const l of labels) if (KR_TO_LINE[l]) out.push(KR_TO_LINE[l]);
+  for (const en of EN_LINES) if (new RegExp(`(^|[^a-z])${en}([^a-z]|$)`, 'i').test(pathText)) out.push(en);
+  // 한글은 앞뒤가 한글이 아닐 때만 — 「미니멀」을 미니로, 「팟캐스트」를 팟으로 읽지 않게
+  for (const [kr, en] of Object.entries(KR_TO_LINE)) if (new RegExp(`(^|[^가-힣])${kr}([^가-힣]|$)`).test(pathText)) out.push(en);
+  return [...new Set(out)];
 }

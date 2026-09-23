@@ -79,6 +79,8 @@ interface Body {
   baseCutId?: string;
   /** ref 흐름에서 '이 레퍼런스에 담긴 제품' — 인물 대비 스케일용. products[] 와 별개 */
   refProduct?: string;
+  /** 레퍼런스(원본 사진)에 담긴 제품이 여러 개일 때 — 팟 + 서포트 같은 조합 사진 (refProduct 보다 우선) */
+  refProducts?: string[];
   /** 베이스 컷 사용 방식 — full(그대로 재현) | pose(포즈만 빌림) */
   baseCutUsage?: 'full' | 'pose';
   uploadedRefs?: { url: string; title: string; role?: 'style' | 'base' | 'background' }[];
@@ -508,9 +510,22 @@ export async function POST(req: Request) {
      * 레퍼런스에 담긴 제품 — 인물 대비 스케일을 못박기 위해서만 쓴다.
      * 명시 제품(products[])이 이미 있으면 그게 스케일까지 담당하므로 중복으로 안 넣는다.
      */
-    const scaleProductDoc = !productSpecs.length && body.refProduct
-      ? await db.collection('products').findOne({ _id: body.refProduct as never })
-      : null;
+    // 여러 개(refProducts)를 받는다 — 하나짜리 refProduct 는 예전 화면·기록 호환. 고른 순서를 지킨다(최대 4종)
+    const refLines = [...new Set([...(body.refProducts ?? []), ...(body.refProduct ? [body.refProduct] : [])])]
+      .filter((x): x is string => typeof x === 'string' && !!x).slice(0, 4);
+    const refDocs = !productSpecs.length && refLines.length
+      ? await db.collection('products').find({ _id: { $in: refLines as never[] } }).toArray()
+      : [];
+    const scaleProducts = refLines
+      .map((l) => refDocs.find((d) => String(d._id) === l))
+      .filter((d): d is NonNullable<typeof d> => !!d)
+      .map((d) => ({
+        line: String(d.line), dims: d.dims ?? {}, scalePrompt: String(d.scalePrompt ?? ''),
+        // 무엇인지·아닌 것·쓰임 — 서포트를 목베개로 읽은 사고 (2026-09-22) 이후 사진 속 제품에도 싣는다
+        ...(d.geometry?.shape ? { shape: String(d.geometry.shape) } : {}),
+        ...(d.geometry?.negative ? { negative: String(d.geometry.negative) } : {}),
+        ...(d.geometry?.modes ? { modes: String(d.geometry.modes) } : {}),
+      }));
 
     /*
      * 배경 합성은 두 사진이 다 있을 때만 켠다 — 화면이 플래그만 보내고 사진 한쪽이 빠지면
@@ -580,9 +595,7 @@ export async function POST(req: Request) {
       ...(productSpecs.length ? { products: productSpecs } : {}),
       ...(combo ? { combo } : {}),
       // 레퍼런스에 담긴 제품이 지정되면 인물 대비 스케일 앵커를 넣는다 (제품 블록과 무관하게)
-      ...(scaleProductDoc
-        ? { scaleProduct: { line: scaleProductDoc.line, dims: scaleProductDoc.dims ?? {}, scalePrompt: scaleProductDoc.scalePrompt ?? '' } }
-        : {}),
+      ...(scaleProducts.length ? { scaleProducts } : {}),
       size: {
         width: size.width,
         height: size.height,
@@ -655,7 +668,7 @@ export async function POST(req: Request) {
           preservation: body.preservation ?? null,
           talents: body.talents ?? [],
           products: body.products ?? (body.line ? [{ line: body.line, colorKey: body.colorKey }] : []),
-          ...(body.refProduct ? { refProduct: body.refProduct } : {}),
+          ...(refLines.length ? { refProducts: refLines } : {}),
           uploadedRefs: body.uploadedRefs ?? [],
           direction: body.direction ?? '',
           sizeValue: body.sizeValue ?? '',

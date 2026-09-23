@@ -94,6 +94,17 @@ const EDIT_TOUCHES: Record<EditTarget, string[]> = {
   'text-removal': ['the overlaid text'],
 };
 
+/** ② 원본 사진 속 제품 — 크기 기준 + 형태 서술 (③ 에서 고르지 않고 사진 속 제품을 그대로 쓸 때) */
+export interface PhotoProduct {
+  line: string;
+  dims: { w?: number; d?: number; h?: number };
+  scalePrompt: string;
+  /** products.geometry — 무엇인지(형태) · 아닌 것 · 실제 쓰임 */
+  shape?: string;
+  negative?: string;
+  modes?: string;
+}
+
 export interface ProductSpec {
   line: string;
   shape: string;
@@ -196,7 +207,13 @@ export interface GenerationSpec {
    * ref 흐름은 products[] 가 비어 제품 실측이 안 들어간다. 이걸 채우면
    * 모델 키와 이 제품 치수를 숫자로 비교해 빈백 대비 사람 크기를 잡는다.
    */
-  scaleProduct?: { line: string; dims: { w?: number; d?: number; h?: number }; scalePrompt: string };
+  scaleProduct?: PhotoProduct;
+  /**
+   * 사진 속 제품이 여러 개일 때 (사용자 요청 2026-09-22: 팟 + 서포트 + 트레이보 같은 조합 사진).
+   * 하나만 고를 수 있을 때 서포트(ㄷ자 쿠션)가 무엇인지 몰라 사람 목에 둘렀다 — 제품마다 형태·치수·"사진 속 자리 그대로" 를 넣는다.
+   * 있으면 scaleProduct 보다 우선한다.
+   */
+  scaleProducts?: PhotoProduct[];
 
   /**
    * 제품 조합 — 맥스에 서포트를 얹는 식으로 두 제품을 겹쳐 쓰는 연출.
@@ -675,7 +692,7 @@ function compositionFor(spec: GenerationSpec): string {
  * 제품마다 칸을 꽉 채워 찍혀 있어 참조 이미지끼리는 크기 차이가 전혀 안 보인다 — 크기는 숫자로만 전달된다.
  * 그래서 가장 긴 변 기준으로 큰 순서와 배율을 따로 적는다.
  */
-function relativeSizeLines(products: ProductSpec[]): string[] {
+function relativeSizeLines(products: Pick<ProductSpec, 'line' | 'dims' | 'placement'>[]): string[] {
   const sized = products
     .map((p, i) => {
       const d = p.dims ?? {};
@@ -705,6 +722,30 @@ function relativeSizeLines(products: ProductSpec[]): string[] {
   );
   L.push('');
   return L;
+}
+
+/**
+ * 배경 톤 맞춤 — 프롬프트 끝(방향 지시 바로 앞)에 한 번 더 (사용자 요청 2026-09-22: "기본 프롬프트에 넣어줘").
+ *
+ * 왜 끝에 또: 가운데의 SCENE TONE·PHOTOGRAPHIC MATCH 만 있을 때는 합성 티가 났다(게임방 네온 컷 — 사람·팟이 밝고 고르게 붙음).
+ * 같은 날 사용자가 방향 지시에 "배경 톤에 맞춰서 제품에 대한 컬러가 조절되게 해주고…" 라고 직접 적은 컷은 잘 나왔다.
+ * 방향 지시는 프롬프트 맨 끝에 "이 지시가 이긴다" 로 들어가므로, 배경을 고르면 같은 자리에 같은 결의 지시를 자동으로 넣는다.
+ * 제미나이는 한국어를 읽으므로, 잘 먹힌 한국어 문장 결도 그대로 한 줄 넣는다. 사람이 쓴 방향 지시는 이 뒤라 여전히 이긴다.
+ */
+function finalToneLines(spec: GenerationSpec): string[] {
+  if (!spec.sceneTone) return [];
+  const bg = isBackgroundSwap(spec) ? 'the BACKGROUND photograph' : 'the supplied background photograph';
+  const who = spec.talents?.length ? 'the products and the people' : 'the products';
+  const whoKr = spec.talents?.length ? '제품과 모델' : '제품';
+  return [
+    '',
+    `FINAL TONE CHECK — this overrides any earlier colour or lighting wording: re-light and re-grade ${who} to ${bg}. ` +
+      'Their brightness, contrast, shadow depth, white balance and colour cast must equal the room\'s — lit by the room\'s own light ' +
+      'sources (its windows, lamps or coloured lights), from their direction and in their colour, with the room\'s own shadows falling on them. ' +
+      'In a dim or night room they are dim too, lit only where that light reaches them; nothing in the frame is brighter, cleaner or more evenly ' +
+      'lit than the room allows. Each product keeps its own colour identity — only the light on it changes.',
+    `배경 이미지의 조명·톤에 맞춰서 ${whoKr}의 명도·대비·색감·그림자가 조절되게 해줘 — 배경 속 조명(창·스탠드·네온 등)의 방향과 색이 ${whoKr}에도 그대로 비쳐야 한다.`,
+  ];
 }
 
 /** 배경 톤을 재려 했는데 실패했을 때 sceneTone 에 넣는 표시 — 톤 블록은 숫자 없이 "사진에서 직접 읽어라" 로 들어간다 */
@@ -967,7 +1008,41 @@ function wherePhrase(placement: string): string {
  */
 function pairingProducts(spec: GenerationSpec): Pick<ProductSpec, 'line' | 'dims'>[] {
   if (spec.products?.length) return spec.products;
-  return spec.scaleProduct ? [{ line: spec.scaleProduct.line, dims: spec.scaleProduct.dims }] : [];
+  return photoProducts(spec).map((x) => ({ line: x.line, dims: x.dims }));
+}
+
+/** ② 사진 속 제품 목록 — 여러 개(scaleProducts)가 있으면 그것, 없으면 예전 하나짜리(scaleProduct) */
+function photoProducts(spec: GenerationSpec): PhotoProduct[] {
+  if (spec.scaleProducts?.length) return spec.scaleProducts;
+  return spec.scaleProduct ? [spec.scaleProduct] : [];
+}
+
+/**
+ * 사진 속 제품 블록 — 무엇인지(형태·아닌 것)·치수·"사진 속 자리 그대로".
+ * ③ 에서 제품을 고르지 않고 원본 사진의 제품을 그대로 쓰는 편집에서만 (③ 을 고르면 productBlock 이 이 일을 한다).
+ * 실측 사고 (2026-09-22): 팟 위에 얹힌 서포트(ㄷ자 쿠션)를 모델이 목베개로 읽고 사람 목에 둘렀다 —
+ * 형태 서술의 "NOT a neck pillow" 가 있었지만 서포트를 고를 칸이 없어 프롬프트에 안 들어갔다.
+ */
+function photoProductsBlock(spec: GenerationSpec): string[] {
+  const list = photoProducts(spec);
+  const hasBase = !!spec.baseCut || (spec.uploadedRefs ?? []).some((u) => u.role === 'base');
+  if (!list.length || !hasBase || spec.products?.length) return [];
+  const L = ['PRODUCTS ALREADY IN THE BASE PHOTOGRAPH — these are the real Yogibo products in it; identify each one and keep it as that product:'];
+  for (const p of list) {
+    const d = p.dims || {};
+    const dims = [d.w && `${d.w}cm wide`, d.d && `${d.d}cm deep`, d.h && `${d.h}cm tall/long`].filter(Boolean).join(' x ');
+    L.push(
+      `  - Yogibo ${p.line}${dims ? ` (${dims})` : ''}: ${p.shape || p.scalePrompt}.` +
+        (p.negative ? ` It is ${p.negative}.` : '') +
+        (p.modes ? ` Real use: ${p.modes}.` : ''),
+    );
+  }
+  L.push(
+    '  Every one of them stays where and how it sits in the base photograph — the same position, orientation and arrangement relative to ' +
+      'the others (a product resting on top of another stays resting there). Never wear, drape, wrap or hang any of them on a person, never ' +
+      'lift or carry them, and never move them to a new spot; people only sit, lean or rest on them as each product\'s real use allows.',
+  );
+  return L;
 }
 
 function scalePairingLines(products: Pick<ProductSpec, 'line' | 'dims'>[], talents: TalentSpec[]): string[] {
@@ -1148,18 +1223,22 @@ function scaleBlock(spec: GenerationSpec): string[] {
     L.push(...scalePairingLines(pairingProducts(spec), talents));
   }
 
-  const sp = spec.scaleProduct;
-  if (sp) {
-    const d = sp.dims || {};
-    const dims = [d.w && `${d.w}cm wide`, d.d && `${d.d}cm deep`, d.h && `${d.h}cm long/tall`].filter(Boolean).join(' x ');
-    L.push(
-      `  The Yogibo ${sp.line} in this scene measures ${dims || 'its real size'} — ${sp.scalePrompt}.` +
-        (talents.length
-          ? ' Size every person against it: a seated adult sinks into it and their body takes up a large part of it, ' +
-            'and an adult lying along it spans nearly its whole length. Do not shrink the people so it looks oversized, ' +
-            'nor enlarge them so it looks like a small cushion.'
-          : ' Its bulk must read correctly next to the sofas, tables and counters in the space.'),
-    );
+  const sps = photoProducts(spec);
+  if (sps.length) {
+    for (const sp of sps) {
+      const d = sp.dims || {};
+      const dims = [d.w && `${d.w}cm wide`, d.d && `${d.d}cm deep`, d.h && `${d.h}cm long/tall`].filter(Boolean).join(' x ');
+      L.push(
+        `  The Yogibo ${sp.line} in this scene measures ${dims || 'its real size'} — ${sp.scalePrompt}.` +
+          (talents.length
+            ? ' Size every person against it: do not shrink the people so it looks oversized, nor enlarge them so it looks like a small cushion.'
+            : ' Its bulk must read correctly next to the sofas, tables and counters in the space.'),
+      );
+    }
+    /*
+     * 제품끼리 크기 비교(relativeSizeLines)는 넣지 않는다 — 원본 사진이 실제 크기 관계를 이미 보여 주고,
+     * 그 문장의 "같은 바닥에 서 있다" 가 "위에 얹힌 제품은 그대로 얹혀 있게"(사진 속 제품 블록)와 부딪힌다.
+     */
   } else if (talents.length) {
     L.push(
       '  Keep the Yogibo furniture at its true real-world size against these people — a Yogibo floor lounger is ' +
@@ -1565,6 +1644,8 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
 
   const pb = productBlock(spec);
   if (pb.length) { L.push(...pb); L.push(''); }
+  const ppb = photoProductsBlock(spec);
+  if (ppb.length) { L.push(...ppb); L.push(''); }
 
   const tb = talentBlock(spec, refs);
   if (tb.length) { L.push(...tb); L.push(''); }
@@ -1597,6 +1678,8 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
     L.push('');
     L.push(`STAGING: ${vars.map((v) => v.hint).join('; ')}.`);
   }
+
+  L.push(...finalToneLines(spec));
 
   if (spec.direction) {
     /*
@@ -1693,6 +1776,8 @@ function specToBrief(spec: GenerationSpec, refs: RefSlot[]): string {
 
   const pb = productBlock(spec);
   if (pb.length) { L.push(''); L.push('제품 정보 (실측으로 확립된 값 — 그대로 써야 함):'); L.push(...pb.map((x) => '  ' + x)); }
+  const ppb = photoProductsBlock(spec);
+  if (ppb.length) { L.push(''); L.push('사진 속 제품 (사진 속 자리 그대로 — 사람 몸에 두르거나 옮기지 않는다):'); L.push(...ppb.map((x) => '  ' + x)); }
 
   const tb = talentBlock(spec, refs);
   if (tb.length) { L.push(''); L.push('인물 정보 (여러 명이면 사진 왼쪽부터 순서 배정):'); L.push(...tb.map((x) => '  ' + x)); }
@@ -1705,6 +1790,9 @@ function specToBrief(spec: GenerationSpec, refs: RefSlot[]): string {
 
   const vars = (spec.variations ?? []).filter((v) => v.hint);
   if (vars.length) { L.push(''); L.push('연출 옵션: ' + vars.map((v) => `${v.label}(${v.hint})`).join(', ')); }
+  // 배경 톤 맞춤 — 로컬 템플릿처럼 끝에 한 번 더, 가장 강하게 (Opus 가 본문 끝에 녹이게)
+  const ft = finalToneLines(spec).filter(Boolean);
+  if (ft.length) { L.push(''); L.push('최종 톤 확인 (배경을 골랐으므로 필수 — 프롬프트 끝에 가장 강하게 넣을 것):'); L.push(...ft.map((x) => '  ' + x)); }
   if (spec.direction) { L.push(''); L.push(`MD 의 방향 지시 (한글): ${spec.direction}`); }
   if (spec.houseRules?.length) { L.push(''); L.push('전 컷 공통 규칙 (반드시 프롬프트에 반영):'); L.push(...spec.houseRules.map((r) => '  - ' + r)); }
 
