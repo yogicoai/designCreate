@@ -19,7 +19,11 @@ import { visionModel } from './logo-guard';
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const SCANS = 'base_scans';
 /** 읽는 방식이 바뀌면 올린다 — 옛 기록을 다시 쓰지 않게 */
-const VERSION = 'g1';
+/**
+ * 캐시 키에 들어가는 판정 버전. 프롬프트를 고치면 올린다 — 안 올리면 옛 답이 그대로 나온다.
+ * g2 (2026-09-23): 사람이 없는 사진에서 사람을 지어내던 것을 막았다.
+ */
+const VERSION = 'g2';
 
 /** 사진 왼쪽부터 세어 사람마다 한 줄 (영문, 프롬프트에 그대로 들어간다) */
 export async function readBaseGaze(buf: Buffer, url: string, expected: number): Promise<string[]> {
@@ -33,13 +37,22 @@ export async function readBaseGaze(buf: Buffer, url: string, expected: number): 
 
     const small = await sharp(buf).rotate().resize(1024, 1024, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
     const text =
-      `This photograph will be edited: its ${expected} people (counted from the LEFT of the frame) will be replaced by other models, ` +
-      'keeping exactly how each of them is turned and where they look. Describe that for each person in ONE short sentence, in this order:\n' +
+      `This photograph is about to be edited: the people in it (counted from the LEFT of the frame) will be replaced by other models, ` +
+      'keeping exactly how each of them is turned and where they look.\n' +
+      /*
+       * 사람이 없는 제품 단독 사진에도 이 검사가 돌 때가 있다 (사용자가 '인물 교체' 로 골랐지만 원본이 빈 제품 컷).
+       * 예전 문장은 "이 사진의 N명" 이라고 단정해서, 없는 사람을 지어냈다 — 빈 방 사진에서
+       * "PERSON 1: 고개를 오른쪽으로 돌리고 허리에 손을 얹고 서 있다" 가 나왔고 그 포즈가 결과를 지배했다 (실측 2026-09-23).
+       */
+      'FIRST look at whether the photograph actually contains any people. If it shows NO person at all — an empty room, ' +
+      'a product on its own, furniture only — return {"people":[]} and stop. Never invent a person who is not there.\n' +
+      `If there are people, describe each of them (we expect about ${expected}) in ONE short sentence, in this order:\n` +
       '  (a) how the head is turned relative to the camera — "facing the camera", "three-quarter turned to their left", "profile to their right", "head tilted down" …\n' +
       '  (b) where the eyes look — "at the camera", "off-frame to the left", "at the other person", "down at what they hold", "into the middle distance" …\n' +
       '  (c) what they are doing with hands or body that fixes that direction, if anything.\n' +
       'Write it as an instruction to keep, for example: "PERSON 1: three-quarter turned to their left, smiling, eyes off-frame left toward the fireplace — not at the camera."\n' +
-      `Return JSON only: {"people":["PERSON 1: …","PERSON 2: …"]} with exactly ${expected} entries in left-to-right order.`;
+      'Return JSON only: {"people":["PERSON 1: …","PERSON 2: …"]}, one entry per person you can actually see, ' +
+      'in left-to-right order — or {"people":[]} if there are none.';
     const res = await fetch(`${API_BASE}/${visionModel()}:generateContent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': key },

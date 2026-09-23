@@ -1231,10 +1231,24 @@ function scalePairingLines(products: Pick<ProductSpec, 'line' | 'dims'>[], talen
        * 아동일 때는 배율만으로 부족해서 "어른 옆에서보다 눈에 띄게 커야 한다" 를 한 줄 더 못박는다.
        */
       const child = person.child || person.cm < 150;
+      /*
+       * 눕혀 놓은 제품의 높이는 세웠을 때의 높이가 아니라 두께다 (더블: 세우면 170cm, 눕히면 45cm).
+       * 예전엔 세운 기준 한 줄만 나가서, 바닥에 눕힌 더블에도 "머리 높이까지 온다" 고 일렀다 —
+       * 172cm 모델 옆에서 무릎 높이여야 할 제품이 실측 60cm(실물 45cm 대비 +33%)로 부풀었다 (2026-09-23).
+       * 어느 쪽인지는 원본 사진이 정하므로, 두 경우를 다 주고 사진을 보고 고르게 한다.
+       */
+      const lying = d.d ?? 0;
+      const rLying = person.cm > 0 ? lying / person.cm : 0;
       L.push(
         `  Yogibo ${p.line} (${dims}) vs ${who} (${person.cm}cm tall): standing beside them the product reaches about ` +
           `${landmark(rHeight)} — its ${upright}cm height is ${rHeight.toFixed(2)}x their ${person.cm}cm height, and its ` +
           `longest side (${longest}cm) is ${rLong.toFixed(2)}x their height. Seated or leaning on it, keep exactly this ratio.` +
+          (lying && longest > lying * 1.5
+            ? ` THAT IS THE UPRIGHT FIGURE. Read the base photograph for which way this one actually sits: if it LIES FLAT` +
+              ` on the floor, its ${longest}cm length runs along the floor and it rises only ${lying}cm — about` +
+              ` ${landmark(rLying)} height on ${who} (${rLying.toFixed(2)}x their height). Keep it that low and that long:` +
+              ` a ${p.line} lying on the floor never rises to their hip or waist, and never shortens into a fat cube.`
+            : '') +
           (child
             ? ` ${who} is a child, so this product must read visibly BIGGER against their body than it would against a 175cm adult:`
               + ` it swallows more of them, its top sits higher on them, and their limbs look short against it.`
