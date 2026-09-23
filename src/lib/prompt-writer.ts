@@ -761,6 +761,30 @@ function finalToneLines(spec: GenerationSpec): string[] {
   ];
 }
 
+/**
+ * 연출 최종 확인 — 새로 넣는 인물은 "찍힌 순간" 이어야 한다 (사용자 요청 2026-09-23: "자연스럽게 대화하는 연출이면 더 좋은데").
+ *
+ * 얼굴 시트·표정컷이 전부 정면 포트레이트라, 그냥 두면 둘 다 카메라를 보고 나란히 웃는 증명사진이 된다.
+ * 가운데의 GAZE 규칙만으로는 안 눌려서 프롬프트 끝(사람이 쓴 방향 지시 바로 앞)에 한 번 더 못박는다 —
+ * 방향 지시가 있으면 그게 이 문장을 덮는다(카메라를 보게 하고 싶을 때는 거기 적으면 된다).
+ * 원본 인물을 교체하는 컷에는 넣지 않는다 — 거기선 원본의 시선을 그대로 지켜야 한다.
+ */
+function finalCandidLines(spec: GenerationSpec): string[] {
+  const n = spec.talents?.length ?? 0;
+  if (!n || recastsPeople(spec)) return [];
+  return [
+    '',
+    n > 1
+      ? 'FINAL STAGING CHECK — this is a candid moment between them, not a portrait: they are turned slightly toward each other, ' +
+        'mid-conversation — one talking or laughing, the other listening and looking at them, or both looking together at the product, ' +
+        'a window, a book or something off-frame. Their heads are at relaxed three-quarter angles, shoulders not squared to the lens. ' +
+        'At most ONE of them may glance at the camera; everyone facing the lens and smiling at once is a failure.'
+      : 'FINAL STAGING CHECK — this is a candid moment, not a portrait: the person is absorbed in what they are doing — settling into the product, ' +
+        'reading, looking out of the window or at something off-frame — head at a relaxed three-quarter angle, shoulders not squared to the lens. ' +
+        'A straight-to-camera pose is only right when the art director asked for it below.',
+  ];
+}
+
 /** 배경 톤을 재려 했는데 실패했을 때 sceneTone 에 넣는 표시 — 톤 블록은 숫자 없이 "사진에서 직접 읽어라" 로 들어간다 */
 export const SCENE_TONE_UNMEASURED = '__unmeasured__';
 
@@ -1411,7 +1435,12 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
    */
   if (talents.length) {
     L.push(
-      editingPeople && hasBase
+      /*
+       * 교체(person·face)일 때만 "원본 인물의 시선을 그대로" 가 말이 된다.
+       * 인물 추가(add-person)는 원본에 그 사람이 없어서 그 문장이 아무것도 지시하지 못했고, 정면 얼굴 참조가 이겨
+       * 둘 다 카메라를 응시했다 (사용자 지적 2026-09-23 "자연스럽게 대화하는 연출이면 더 좋은데").
+       */
+      recastsPeople(spec)
         ? 'GAZE & HEAD DIRECTION — each replaced person keeps the head angle and EYELINE of the person they replace ' +
           'in the base photograph: if they were looking at each other, at the product, down at a book or off-frame, ' +
           'the new person looks the SAME way. Never rotate a head toward the camera just because the identity or ' +
@@ -1732,6 +1761,7 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
   }
 
   L.push(...finalToneLines(spec));
+  L.push(...finalCandidLines(spec));
   /*
    * 시선 최종 확인 — 표정컷이 정면이라 얼굴을 바꾸면 카메라를 보게 된다. 가운데의 GAZE 규칙만으로는 안 지켜져서
    * 끝(방향 지시 바로 앞)에 원본에서 읽은 문장을 한 번 더 박는다 (사용자 지적 2026-09-23).
