@@ -24,6 +24,7 @@ import { scrubReferenceUrl, guardOutput, referenceTagCount } from '@/lib/logo-gu
 import { checkFaces } from '@/lib/face-guard';
 import { checkScene } from '@/lib/scene-check';
 import sharp from 'sharp';
+import { readBaseGaze } from '@/lib/base-gaze';
 
 /**
  * POST /api/generate — 자산 조합 → 프롬프트 → 나노바나나 → 크롭 → FTP → DB.
@@ -629,11 +630,20 @@ export async function POST(req: Request) {
     if (baseRefUrl) {
       try {
         const res = await fetch(baseRefUrl, { signal: AbortSignal.timeout(15000) });
-        const meta = await sharp(Buffer.from(await res.arrayBuffer())).metadata();
+        const buf = Buffer.from(await res.arrayBuffer());
+        const meta = await sharp(buf).metadata();
         const w = meta.orientation && meta.orientation >= 5 ? meta.height : meta.width;
         const h = meta.orientation && meta.orientation >= 5 ? meta.width : meta.height;
         if (w && h) spec.baseAspect = Number((w / h).toFixed(3));
-      } catch { /* 원본을 못 받으면 비율 규칙 없이 진행한다 */ }
+        /*
+         * 원본 인물의 머리 각도·시선을 읽어 문장으로 넣는다 (사용자 지적 2026-09-23 "왜 정면을 응시할까나").
+         * 얼굴 시트·표정컷이 전부 정면 포트레이트라 얼굴을 바꾸면 카메라를 보게 된다 —
+         * "원본 그대로" 라는 말만으로는 안 되고, 원본이 어디를 보는지 적어 줘야 지켜진다. 같은 사진은 기록해 두고 다시 안 묻는다.
+         */
+        if (talents.length && (body.editTargets ?? []).some((t) => t === 'face' || t === 'person')) {
+          spec.baseGaze = await readBaseGaze(buf, baseRefUrl, talents.length);
+        }
+      } catch { /* 원본을 못 받으면 비율·시선 규칙 없이 진행한다 */ }
     }
 
     const written = await writePrompt(spec, {

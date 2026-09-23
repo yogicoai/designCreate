@@ -272,6 +272,12 @@ export interface GenerationSpec {
    * 실측 2026-09-23: 3:2 사진을 1:1 로 뽑자 모델이 장면을 다시 구성해 시선·인물 수·제품 모양이 바뀌었다.
    */
   baseAspect?: number;
+
+  /**
+   * 원본 사진 속 인물의 머리 각도·시선 (사진 왼쪽부터 한 줄씩, base-gaze.ts 가 읽는다).
+   * 얼굴 시트·표정컷이 전부 정면이라 얼굴을 바꾸면 카메라를 보게 된다 — 원본이 어디를 보는지 적어 줘야 지켜진다.
+   */
+  baseGaze?: string[];
 }
 
 /**
@@ -394,7 +400,8 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
             url: t.expressionCrop,
             sub: 'expr',
             title: `표정컷 ${n}· ${t.category} ${t.slot}${t.expression ? ` · ${t.expression.kr}` : ''}`,
-            role: `the SAME person as the previous image, showing EXACTLY the expression to use for ${who} — copy this facial expression precisely while keeping the identity identical`,
+            // 표정컷은 정면 스튜디오 사진이다 — 표정만 가져오라고 못박지 않으면 머리 각도·시선까지 따라온다 (실측 2026-09-23)
+            role: `the SAME person as the previous image, showing EXACTLY the expression to use for ${who} — copy this facial expression precisely while keeping the identity identical. Take ONLY the expression from it: ignore its frontal head angle and its eyeline, which come from the scene instead`,
           }
         : {
             url: t.exprSheet,
@@ -1408,7 +1415,14 @@ function talentBlock(spec: GenerationSpec, refs: RefSlot[]): string[] {
         ? 'GAZE & HEAD DIRECTION — each replaced person keeps the head angle and EYELINE of the person they replace ' +
           'in the base photograph: if they were looking at each other, at the product, down at a book or off-frame, ' +
           'the new person looks the SAME way. Never rotate a head toward the camera just because the identity or ' +
-          'expression references are frontal portraits — copy the expression, never the reference\'s eyeline.'
+          'expression references are frontal portraits — copy the expression, never the reference\'s eyeline.' +
+          /*
+           * 원본이 어디를 보는지 실제로 읽어 적는다 (base-gaze.ts) — "원본 그대로" 만으로는 안 지켜졌다
+           * (실측 2026-09-23: 옆을 보던 두 사람이 둘 다 카메라를 응시).
+           */
+          ((spec.baseGaze ?? []).length
+            ? `\n  In the base photograph, read from it: ${spec.baseGaze!.join(' / ')}. Keep each of these exactly — the new face is turned and looks the same way.`
+            : '')
         : 'GAZE & HEAD DIRECTION — direct eye contact with the camera is the EXCEPTION, not the default. ' +
           'The people are candid, absorbed in the scene: looking at each other, at the product, out the window, ' +
           'at a prop, or into the middle distance, with relaxed three-quarter head angles. At most ONE person may ' +
@@ -1718,6 +1732,18 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
   }
 
   L.push(...finalToneLines(spec));
+  /*
+   * 시선 최종 확인 — 표정컷이 정면이라 얼굴을 바꾸면 카메라를 보게 된다. 가운데의 GAZE 규칙만으로는 안 지켜져서
+   * 끝(방향 지시 바로 앞)에 원본에서 읽은 문장을 한 번 더 박는다 (사용자 지적 2026-09-23).
+   */
+  if ((spec.baseGaze ?? []).length) {
+    L.push('');
+    L.push(
+      'FINAL GAZE CHECK — this overrides the frontal look of the identity and expression reference portraits: ' +
+        `${spec.baseGaze!.join(' ')} Copy ONLY the expression from the expression reference — never its head angle or eyeline. ` +
+        'A person who is not looking at the camera in the base photograph must not look at the camera here.',
+    );
+  }
 
   if (spec.direction) {
     /*
