@@ -31,7 +31,7 @@ export interface RefSlot {
   /** 인물 시트일 때 몇 번째 사람인지 (1-base, 왼쪽부터) */
   personIndex?: number;
   /** 인물 참조의 종류 — rep(대표컷) / expr(요청 표정 한 칸) / sheet(8칸 시트 폴백) */
-  sub?: 'rep' | 'expr' | 'sheet';
+  sub?: 'rep' | 'expr' | 'sheet' | 'angle';
 }
 
 export interface SizeSpec {
@@ -165,6 +165,13 @@ export interface TalentSpec {
   repShot?: string;
   /** 요청한 표정 한 칸만 잘라낸 표정컷 — 있으면 8칸 시트 대신 이걸 쓴다 */
   expressionCrop?: string;
+  /**
+   * 얼굴 턴어라운드를 칸별로 잘라둔 각도컷 — { front, three_quarter_l, profile_l, three_quarter_r, profile_r }.
+   * 대표컷·표정컷이 둘 다 정면이라, 고개를 돌리는 컷에서는 모델이 옆얼굴을 스스로 지어냈다
+   * (실측 2026-09-23: 유럽계 여성이 동아시아 여성으로 바뀜, 얼굴 대조 40점).
+   * 시트에는 3/4·옆이 이미 있었는데 생성에는 한 번도 안 들어가고 얼굴 검사 대조용으로만 쓰였다.
+   */
+  faceCrops?: Record<string, string>;
   exprSheet?: string;
   /** 사용할 표정 패널 */
   expression?: { kr: string; en: string };
@@ -377,8 +384,13 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
    * 4인 교체에서 인당 2장(총 8장 + 베이스)을 넣었더니 네 얼굴 모두 시트에서 벗어났다 —
    * 특히 표정컷을 "정확히 복사하라"고 시키면 표정을 따라가며 골격까지 끌려간다.
    * 그래서 3인 이상이면 대표컷 한 장만 쓰고 표정은 텍스트로만 지시한다.
+   *
+   * 2인 이하는 2장 → 3장으로 늘렸다 (2026-09-23). 대표컷·표정컷이 둘 다 정면이라
+   * 고개를 돌리는 컷에서 모델이 옆얼굴을 지어냈다 — 유럽계 여성이 동아시아 여성으로 바뀌어 나왔다.
+   * 세 번째 자리는 얼굴 시트에서 그 방향으로 돌아간 칸 한 장이다(pickFaceAngle).
+   * 시트를 통째로 넣지는 않는다 — 5칸이 한꺼번에 보이면 얼굴이 굳는다(repShot 주석 참고).
    */
-  const identPerPerson = talents.filter((t) => !t.freeform).length >= 3 ? 1 : 2;
+  const identPerPerson = talents.filter((t) => !t.freeform).length >= 3 ? 1 : 3;
   talents.forEach((t, i) => {
     if (t.freeform) return; // 자유 서술 인물은 참조 이미지가 없다 — 텍스트로만 지정
     const multi = talents.length > 1;
@@ -387,7 +399,8 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
       ? `PERSON ${i + 1}${t.placement ? ` (${wherePhrase(t.placement)})` : ' (counting people from the LEFT of the base image)'}`
       : 'the model';
     const n = multi ? `${i + 1} ` : '';
-    const ident: { url?: string; title: string; role: string; sub: 'rep' | 'expr' | 'sheet' }[] = [
+    const angle = pickFaceAngle(spec, i);
+    const ident: { url?: string; title: string; role: string; sub: 'rep' | 'expr' | 'sheet' | 'angle' }[] = [
       {
         url: t.repShot,
         sub: 'rep',
@@ -409,6 +422,22 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
             title: `표정 시트 ${n}· ${t.category} ${t.slot}`,
             role: `the expression reference for ${who} — the SAME model in 8 expressions; pick the requested expression panel while keeping the identity identical`,
           },
+      /*
+       * 얼굴 각도 칸 — 앞의 두 장은 둘 다 정면이라, 고개가 돌아가는 컷에서는 옆얼굴을 지어낸다.
+       * 이 칸은 같은 사람이 그 방향으로 돌아간 모습이다. 표정은 앞 장이 정하고, 이 장은 뼈대만 준다.
+       */
+      {
+        url: angle?.url,
+        sub: 'angle',
+        title: `얼굴 각도 ${n}· ${t.category} ${t.slot}${angle ? ` · ${angle.kr}` : ''}`,
+        role:
+          `the SAME person again, from the identity sheet — this panel shows ${who}'s face ${angle?.en ?? 'turned away from the lens'}. ` +
+          'This scene turns their head away from the lens, so build the turned head FROM THIS PANEL: the skull and jaw seen from this angle, ' +
+          'the cheekbone line, the nose profile, the brow and the ear. It is the same person as the two previous images — ' +
+          'if the turned face you draw does not look like this panel, it is the wrong person. ' +
+          'Take ONLY the head shape and features from it: not its expression (that comes from the expression reference), ' +
+          'not its flat studio light, not its plain background',
+      },
     ];
     let used = 0;
     for (const r of ident) {
@@ -790,6 +819,50 @@ function finalCandidLines(spec: GenerationSpec): string[] {
         'looking down at what they hold, out of the window, or off-frame — absorbed in the moment, shoulders angled, not squared to the camera. ' +
         'Do not look into the lens unless the art director asked for it.',
   ];
+}
+
+/**
+ * 인물 i 에게 줄 얼굴 각도 칸을 고른다 — 그 컷에서 고개가 실제로 돌아갈 방향의 칸.
+ *
+ * 왜: 생성에 들어가는 얼굴 참조(대표컷·표정컷)가 둘 다 정면이라, 고개를 돌리는 컷에서는
+ * 모델이 옆얼굴을 스스로 지어냈다 — 실측 2026-09-23 에 유럽계 여성(W_A)이 동아시아 여성으로
+ * 바뀌어 나왔다(얼굴 대조 40점). 시트에는 3/4·옆이 처음부터 있었는데 생성에는 안 들어갔다.
+ *
+ * 좌우 이름: 칸의 `_l` 은 얼굴이 **화면** 왼쪽을 향한 것, `_r` 은 오른쪽 (실측 확인).
+ * base-gaze 가 읽어 주는 문장은 **인물** 기준("turned to their left")이라 좌우가 뒤집힌다 —
+ * 인물의 왼쪽으로 돌면 화면에서는 오른쪽을 향하므로 `_r` 이다.
+ */
+function pickFaceAngle(spec: GenerationSpec, i: number): { url: string; kr: string; en: string } | undefined {
+  const crops = spec.talents?.[i]?.faceCrops;
+  if (!crops) return undefined;
+  const n = spec.talents?.length ?? 0;
+  const pick = (key: string, kr: string, en: string) => (crops[key] ? { url: crops[key], kr, en } : undefined);
+  const q = (side: 'l' | 'r') =>
+    side === 'l'
+      ? pick('three_quarter_l', '3/4 · 화면 왼쪽', 'turned about 35° toward the LEFT side of the frame')
+      : pick('three_quarter_r', '3/4 · 화면 오른쪽', 'turned about 35° toward the RIGHT side of the frame');
+  const p = (side: 'l' | 'r') =>
+    side === 'l'
+      ? pick('profile_l', '옆모습 · 화면 왼쪽', 'in full profile facing the LEFT side of the frame')
+      : pick('profile_r', '옆모습 · 화면 오른쪽', 'in full profile facing the RIGHT side of the frame');
+
+  /*
+   * 원본 인물을 교체하는 컷 — 원본이 보던 방향을 그대로 따른다 (인물 기준 ↔ 화면 기준 뒤집기 주의).
+   * 단 시선을 읽지 못했으면(원본에 사람이 없거나 판독 실패) 아래의 연출 기본값으로 간다 —
+   * 여기서 기본값을 쓰면 두 사람이 같은 쪽을 보게 된다.
+   */
+  if (recastsPeople(spec) && (spec.baseGaze ?? [])[i]) {
+    const g = (spec.baseGaze ?? [])[i] ?? '';
+    const profile = /\bprofile\b/i.test(g);
+    if (/facing the camera|at the camera/i.test(g) && !profile) return undefined; // 정면 그대로면 각도 칸이 필요 없다
+    if (/to their left/i.test(g)) return (profile ? p('r') : q('r')) ?? q('r');
+    if (/to their right/i.test(g)) return (profile ? p('l') : q('l')) ?? q('l');
+    return q('r');
+  }
+
+  // 인물을 새로 넣는 컷 — finalCandidLines 의 연출과 같은 방향으로 (PERSON 1 이 오른쪽의 상대를 본다)
+  if (n > 1) return i === n - 1 ? q('l') : q('r');
+  return q('r');
 }
 
 /**

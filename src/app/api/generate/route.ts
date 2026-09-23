@@ -292,6 +292,10 @@ export async function POST(req: Request) {
         ...(pick.expression && t.expressionCrops?.[pick.expression]
           ? { expressionCrop: String(t.expressionCrops[pick.expression]) }
           : {}),
+        // 얼굴 시트의 각도 칸 — 어느 칸을 쓸지는 컷의 연출을 아는 prompt-writer 가 고른다
+        ...(t.faceCrops && Object.keys(t.faceCrops).length
+          ? { faceCrops: t.faceCrops as Record<string, string> }
+          : {}),
         ...(t.exprSheet ? { exprSheet: String(t.exprSheet) } : {}),
         ...(expr ? { expression: { kr: String(expr.kr), en: String(expr.en) } } : {}),
         ...(outfit

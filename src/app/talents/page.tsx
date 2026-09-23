@@ -18,6 +18,15 @@ const SHEETS = [
   { key: 'body' as const, label: '③ 바디 턴어라운드', layout: '5패널', goal: '체형·비율 고정' },
 ];
 
+/** ① 얼굴 시트를 칸별로 자른 각도 조각 (scripts/make-face-crops.mjs) — 좌/우는 화면 기준이다 */
+const FACE_PANELS = [
+  { id: 'front', kr: '정면' },
+  { id: 'three_quarter_l', kr: '3/4 · 왼쪽' },
+  { id: 'profile_l', kr: '옆 · 왼쪽' },
+  { id: 'three_quarter_r', kr: '3/4 · 오른쪽' },
+  { id: 'profile_r', kr: '옆 · 오른쪽' },
+];
+
 export default async function TalentsPage() {
   const [talents, cuts, expressions] = await Promise.all([getTalents(), getCuts({ limit: 2000 }), getExpressions()]);
 
@@ -148,6 +157,37 @@ export default async function TalentsPage() {
                                 style={{ aspectRatio: '9/10', borderColor: 'var(--line-strong)', background: 'var(--surface-2)' }}
                               />
                               <div className="text-[9.5px] mt-1" style={{ color: 'var(--text-mute)' }}>{ex.kr}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/*
+                    얼굴 각도 조각 — 대표컷·표정컷이 둘 다 정면이라 고개를 돌리는 컷에서 옆얼굴이 지어내졌다
+                    (2026-09-23 실측: 유럽계 여성이 동아시아 여성으로 바뀜). 이제 그 컷에서 고개가 돌아갈
+                    방향의 칸 한 장이 참조로 같이 들어간다.
+                  */}
+                  {t.faceCrops && Object.keys(t.faceCrops).length > 0 && (
+                    <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--line)' }}>
+                      <div className="label mb-2">
+                        얼굴 각도 조각 — 생성 때 고개가 돌아갈 방향의 한 장만 들어갑니다
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {FACE_PANELS.map((fp) => {
+                          const url = t.faceCrops?.[fp.id];
+                          if (!url) return null;
+                          return (
+                            <div key={fp.id} className="text-center">
+                              <Zoomable
+                                src={url}
+                                alt={fp.kr}
+                                caption={`${cat} ${t.slot} · ${fp.kr}`}
+                                className="w-[96px] rounded-lg border object-cover"
+                                style={{ aspectRatio: '9/10', borderColor: 'var(--line-strong)', background: 'var(--surface-2)' }}
+                              />
+                              <div className="text-[9.5px] mt-1" style={{ color: 'var(--text-mute)' }}>{fp.kr}</div>
                             </div>
                           );
                         })}

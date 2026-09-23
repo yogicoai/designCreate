@@ -50,8 +50,9 @@ export interface FaceCheck {
 }
 
 const PROMPT =
-  'The FIRST image is a generated marketing photograph. The SECOND image shows the face of a specific real person, ' +
-  'from two angles — this is the person the photograph was supposed to depict.\n' +
+  'The FIRST image is a generated marketing photograph. The SECOND image is an identity sheet: the face of ONE specific ' +
+  'person photographed from five angles in a row — front, three-quarter, profile, three-quarter, profile. ' +
+  'It is five views of the SAME person, not five people. This is the person the photograph was supposed to depict.\n' +
   'Find the person in the FIRST image whose face is most visible, and compare that face with the SECOND image.\n' +
   'Judge IDENTITY only — the bone structure, the shape and spacing of the eyes, the eyebrow shape, the nose width and tip, ' +
   'the lip shape, the jaw and chin, the cheek width, and any freckles or moles. ' +
