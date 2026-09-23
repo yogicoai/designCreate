@@ -78,6 +78,45 @@ const EDIT_TARGETS: { value: EditTarget; label: string; desc: string }[] = [
   { value: 'text-removal', label: '텍스트 제거', desc: '박힌 글자·배지·로고 지우기' },
 ];
 
+/*
+ * ⑤ 배경·연출 칸의 예시 — 한 문장만 박아 두면 다들 그 문장만 따라 쓴다 (사용자 요청 2026-09-23: "예제가 계속 바뀌게").
+ * 지금 고른 상태에 맞는 것만 돌려 보여 준다: 배경 사진을 올렸으면 "그 공간에 더할 것", 아니면 공간을 글로 묘사하는 예시.
+ * 인물·제품 단독은 각각 한 묶음 더 붙인다.
+ */
+const DIRECTION_EXAMPLES = {
+  /** 배경 사진(또는 ⑥ 배경 변경)이 있을 때 — 공간은 사진이 정하므로 "더할 것" 만 적는다 */
+  withBg: [
+    '그 공간의 조명 그대로, 창가 쪽에 작은 화분 하나만 더해줘',
+    '바닥에 러그를 깔고, 소품은 늘리지 말고 지금 배치 그대로',
+    '저녁 스탠드 불빛만 켜진 느낌으로, 창밖은 어둡게',
+    '카메라를 조금 뒤로 빼서 방 전체가 보이게',
+    '제품은 방 가운데로, 주변 가구는 그대로 두고',
+    '아침 햇살이 바닥까지 길게 들어오게',
+  ],
+  /** 배경 사진이 없을 때 — 공간·조명·카메라를 글로 정한다 */
+  noBg: [
+    '창가 자연광이 드는 아늑한 거실, 45도 측면에서, 옆에 작은 화분',
+    '우드톤 원룸, 늦은 오후 햇살, 바닥에 러그 한 장',
+    '화이트 톤 미니멀 거실, 정면에서, 소품은 최소로',
+    '아이방, 파스텔 벽지, 아침 햇살, 장난감 바구니 하나',
+    '게임방, 네온 조명, 밤, 책상 위 모니터 불빛',
+    '호텔 스위트룸 창가, 도시 야경, 따뜻한 간접 조명',
+    '툇마루가 보이는 한옥 거실, 오후 그림자가 길게',
+  ],
+  /** 인물이 있을 때 덧붙일 만한 연출 */
+  people: [
+    '모델은 제품에 편하게 기대 앉고, 시선은 창밖으로',
+    '두 사람이 마주 보고 웃는 순간, 과한 포즈 없이',
+    '아이가 제품 위에서 책을 보는 자연스러운 장면',
+    '집에서 쉬는 주말 오후 같은 분위기로',
+  ],
+  /** 제품만 노출 */
+  product: [
+    '제품만 단독으로, 바닥 접지 그림자만 살짝',
+    '제품 옆에 담요와 머그컵 하나, 과하지 않게',
+  ],
+};
+
 const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
   { value: 'style', label: '분위기 참고', desc: '조명·색감·무드만 따라가고 장면은 새로 — 그 공간 자체를 쓰려면 「배경으로 사용」을 고르세요' },
   { value: 'base', label: '이 사진을 편집', desc: '사진은 그대로 두고 지정한 것만 바꿈 (합성·교체)' },
@@ -521,6 +560,23 @@ export default function CreateStudio(p: Props) {
   const [swapProduct, setSwapProduct] = useState(false);
   const showProductSection = !hasBaseUpload || swapProduct || editTargets.includes('product-color');
   const showPoseSection = flow === 'model' && !hasBaseUpload; // withPeople 과 같은 뜻 — 그 변수는 아래에서 선언된다
+
+  /*
+   * ⑤ 배경·연출 예시 돌리기 (사용자 요청 2026-09-23). 지금 고른 상태에 맞는 예시만 고른다.
+   * 사람이 쓰기 시작했거나 칸에 들어와 있으면 멈춘다 — 쓰는 중에 자리표시자가 바뀌면 거슬린다.
+   */
+  const [dirIdx, setDirIdx] = useState(0);
+  const [dirFocus, setDirFocus] = useState(false);
+  const dirExamples = useMemo(() => [
+    ...(uploads.some((u) => u.role === 'background') || bgSwap ? DIRECTION_EXAMPLES.withBg : DIRECTION_EXAMPLES.noBg),
+    ...(flow === 'model' ? DIRECTION_EXAMPLES.people : DIRECTION_EXAMPLES.product),
+  ], [uploads, bgSwap, flow]);
+  useEffect(() => {
+    if (direction.trim() || dirFocus) return;
+    const t = setInterval(() => setDirIdx((i) => i + 1), 4500);
+    return () => clearInterval(t);
+  }, [direction, dirFocus]);
+  const dirExample = dirExamples[dirIdx % dirExamples.length] ?? '';
   // 화면에 실제로 보이는 섹션만 1,2,3… 으로 센다 — 숨은 섹션 때문에 번호가 건너뛰면 헷갈린다
   const secNo = (() => { let i = 0; return () => String(++i); })();
 
@@ -1947,8 +2003,17 @@ ${hint}` : hint))}>
                 </div>
               </div>
             )}
+            {/* 자리표시자 예시는 몇 초마다 바뀐다 (DIRECTION_EXAMPLES) — 쓰기 시작하면 멈춘다 */}
             <textarea className="input" rows={3} value={direction} onChange={(e) => setDirection(e.target.value)}
-                      placeholder="예: 창가 자연광이 드는 아늑한 거실, 45도 측면에서, 옆에 작은 화분" />
+                      onFocus={() => setDirFocus(true)} onBlur={() => setDirFocus(false)}
+                      placeholder={`예: ${dirExample}`} />
+            {!direction.trim() && (
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                <button type="button" className="chip" onClick={() => setDirection(dirExample)}>이 예시 넣기</button>
+                <button type="button" className="chip" onClick={() => setDirIdx((i) => i + 1)}>다른 예시</button>
+                <span className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>예시는 몇 초마다 바뀝니다 — 그대로 쓰지 않아도 됩니다</span>
+              </div>
+            )}
           </Section>
         </div>
       </div>
