@@ -344,8 +344,55 @@ export async function eraseBoxes(buf: Buffer, boxes: PxBox[]): Promise<{ buffer:
       if (x >= X0 && x < X1 && y >= Y0 && y < Y1) continue;
       if (dist(x, y) <= 40) fabricLike++;
     }
-    // 고리가 원단으로 둘러싸여 있지 않다 = 가장자리·다른 물체에 걸침 — 메우면 윤곽이 뭉개지므로 이 상자는 건너뛴다
-    if (fabricLike / Math.max(1, Math.ceil(ringN / 4)) < 0.6) continue;
+    /*
+     * 고리가 원단으로 둘러싸여 있지 않다 = 제품 가장자리·다른 물체에 걸친 태그.
+     * 예전엔 그냥 건너뛰었는데, 그러면 글자가 무너진 태그가 그대로 남았다 (실측 2026-09-23: 한 컷에서 4개 발견·0개 지움).
+     * 그래서 한쪽 변의 원단만 보고 상자 안만 칠하는 대안을 쓴다 — 네 변 중 색이 가장 고른(원단일 가능성이 큰) 변을 골라
+     * 그 줄의 색을 상자 안으로 이어 칠하고 가장자리 2px 는 원본과 섞는다. 번지지 않으므로 옆 윤곽을 건드리지 않는다.
+     */
+    if (fabricLike / Math.max(1, Math.ceil(ringN / 4)) < 0.6) {
+      const S = 6; // 참고할 변의 두께
+      type Side = { key: 'left' | 'right' | 'top' | 'bottom'; varSum: number; n: number };
+      const sides: Side[] = [];
+      const pushSide = (key: Side['key'], xs: number[], ys: number[]) => {
+        let s = 0, s2 = 0, n = 0;
+        for (const y of ys) for (const x of xs) {
+          if (x < 0 || y < 0 || x >= W || y >= H) continue;
+          const l = 0.299 * px(x, y, 0) + 0.587 * px(x, y, 1) + 0.114 * px(x, y, 2);
+          s += l; s2 += l * l; n++;
+        }
+        if (n > 8) sides.push({ key, varSum: s2 / n - (s / n) ** 2, n });
+      };
+      const range = (a: number, b: number) => Array.from({ length: Math.max(0, b - a) }, (_, i) => a + i);
+      pushSide('left', range(x0 - S, x0), range(y0, y1));
+      pushSide('right', range(x1, x1 + S), range(y0, y1));
+      pushSide('top', range(x0, x1), range(y0 - S, y0));
+      pushSide('bottom', range(x0, x1), range(y1, y1 + S));
+      const best = sides.sort((a, b) => a.varSum - b.varSum)[0];
+      if (!best) continue;
+      const sampleAt = (x: number, y: number, c: number) => {
+        // 고른 변에서 같은 줄(가로변이면 같은 칸)의 평균색을 가져온다
+        let s = 0, n = 0;
+        for (let k = 1; k <= S; k++) {
+          const sx = best.key === 'left' ? x0 - k : best.key === 'right' ? x1 + k - 1 : x;
+          const sy = best.key === 'top' ? y0 - k : best.key === 'bottom' ? y1 + k - 1 : y;
+          if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue;
+          s += px(sx, sy, c); n++;
+        }
+        return n ? s / n : med[c];
+      };
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+        // 상자 테두리 2px 는 원본과 섞어 경계가 안 보이게
+        const edge = x < x0 + 2 || x >= x1 - 2 || y < y0 + 2 || y >= y1 - 2;
+        const a = edge ? 0.6 : 1;
+        for (let c = 0; c < 3; c++) {
+          const o = (y * W + x) * CH + c;
+          out[o] = Math.max(0, Math.min(255, Math.round(a * sampleAt(x, y, c) + (1 - a) * out[o])));
+        }
+      }
+      erased.push(b);
+      continue;
+    }
 
     // 2) 마스크 — 코어 상자 전체 + 여백 안에서 코어와 이어진 "원단색 아닌" 픽셀 (BFS)
     const M = new Uint8Array(w * h);
