@@ -772,17 +772,36 @@ function finalToneLines(spec: GenerationSpec): string[] {
 function finalCandidLines(spec: GenerationSpec): string[] {
   const n = spec.talents?.length ?? 0;
   if (!n || recastsPeople(spec)) return [];
+  /*
+   * 2026-09-23 2차: 문장을 끝에 넣었는데도 둘 다 정면을 봤다 (실측 01:47 컷 — 연출 문장이 들어간 채로).
+   * 정면 얼굴 참조 4장의 힘이 세서 "자연스럽게" 같은 말로는 안 눌린다. 그래서 각도를 숫자로 못박고,
+   * 사람이 쓴 방향 지시가 없으면 이 문장을 "아트 디렉터 지시" 자리(프롬프트에서 가장 센 자리)에 넣는다.
+   */
+  const name = (i: number) => (n > 1 ? `PERSON ${i}` : 'the model');
   return [
     '',
     n > 1
-      ? 'FINAL STAGING CHECK — this is a candid moment between them, not a portrait: they are turned slightly toward each other, ' +
-        'mid-conversation — one talking or laughing, the other listening and looking at them, or both looking together at the product, ' +
-        'a window, a book or something off-frame. Their heads are at relaxed three-quarter angles, shoulders not squared to the lens. ' +
-        'At most ONE of them may glance at the camera; everyone facing the lens and smiling at once is a failure.'
-      : 'FINAL STAGING CHECK — this is a candid moment, not a portrait: the person is absorbed in what they are doing — settling into the product, ' +
-        'reading, looking out of the window or at something off-frame — head at a relaxed three-quarter angle, shoulders not squared to the lens. ' +
-        'A straight-to-camera pose is only right when the art director asked for it below.',
+      ? 'FINAL STAGING CHECK — a candid moment between them, NOT a portrait. Turn each head 25-40° away from the lens: ' +
+        `${name(1)} turns toward ${name(2)} and looks AT THEIR FACE, ${name(2)} answers — talking, listening or laughing — ` +
+        `and looks back at ${name(1)} or down at what they hold. Shoulders are angled, not squared to the camera. ` +
+        'NEITHER of them looks into the lens. A frame where both faces are turned to the camera and smiling is a failure — ' +
+        'if you have drawn that, turn the heads toward each other instead.'
+      : 'FINAL STAGING CHECK — a candid moment, NOT a portrait. Turn the head 25-40° away from the lens and let the eyes follow it: ' +
+        'looking down at what they hold, out of the window, or off-frame — absorbed in the moment, shoulders angled, not squared to the camera. ' +
+        'Do not look into the lens unless the art director asked for it.',
   ];
+}
+
+/**
+ * 사람이 방향 지시를 안 썼을 때 대신 넣는 연출 지시 (한국어) — 프롬프트 맨 끝 "아트 디렉터 지시" 자리에 들어간다.
+ * 그 자리는 "앞의 규칙과 부딪히면 이 지시가 이긴다" 로 읽히는 유일한 자리다 (실측: 사용자가 직접 쓴 지시는 잘 먹혔다).
+ */
+function autoDirection(spec: GenerationSpec): string {
+  const n = spec.talents?.length ?? 0;
+  if (!n || recastsPeople(spec) || spec.direction) return '';
+  return n > 1
+    ? '두 사람이 서로 마주 보며 대화하는 순간으로 연출해줘 — 한 사람은 말하고 다른 사람은 웃으며 듣는다. 고개는 렌즈에서 25~40도 돌아가 있고, 둘 다 카메라를 보지 않는다.'
+    : '카메라를 의식하지 않는 순간으로 연출해줘 — 고개를 렌즈에서 25~40도 돌리고, 시선은 손에 든 것이나 창밖을 향한다.';
 }
 
 /** 배경 톤을 재려 했는데 실패했을 때 sceneTone 에 넣는 표시 — 톤 블록은 숫자 없이 "사진에서 직접 읽어라" 로 들어간다 */
@@ -1775,7 +1794,12 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
     );
   }
 
-  if (spec.direction) {
+  /*
+   * 사람이 쓴 방향 지시가 없으면 연출 지시를 대신 넣는다 (2026-09-23) — 이 자리가 "부딪히면 이게 이긴다" 인 유일한 자리라,
+   * 같은 내용도 여기 있을 때만 정면 응시를 눌렀다. 사람이 적었으면 그 글이 그대로 들어간다(사람 것이 우선).
+   */
+  const direction = spec.direction || autoDirection(spec);
+  if (direction) {
     /*
      * 로컬(템플릿) 모드에는 번역기가 없어 한글 지시가 그대로 나간다.
      * 나노바나나는 한국어를 이해하므로 동작은 하지만, 무엇을 하라는 건지 못 박아준다.
@@ -1787,7 +1811,7 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
         'Read it, translate it faithfully, and apply it to the scene, lighting, props, camera and pose. ' +
         'Where it conflicts with any rule above, THIS DIRECTION WINS:',
     );
-    L.push(spec.direction);
+    L.push(direction);
   }
 
   if (spec.houseRules?.length) {
@@ -1890,7 +1914,8 @@ function specToBrief(spec: GenerationSpec, refs: RefSlot[]): string {
   // 배경 톤 맞춤 — 로컬 템플릿처럼 끝에 한 번 더, 가장 강하게 (Opus 가 본문 끝에 녹이게)
   const ft = finalToneLines(spec).filter(Boolean);
   if (ft.length) { L.push(''); L.push('최종 톤 확인 (배경을 골랐으므로 필수 — 프롬프트 끝에 가장 강하게 넣을 것):'); L.push(...ft.map((x) => '  ' + x)); }
-  if (spec.direction) { L.push(''); L.push(`MD 의 방향 지시 (한글): ${spec.direction}`); }
+  const dirB = spec.direction || autoDirection(spec);
+  if (dirB) { L.push(''); L.push(`MD 의 방향 지시 (한글 — 가장 강하게 반영할 것): ${dirB}`); }
   if (spec.houseRules?.length) { L.push(''); L.push('전 컷 공통 규칙 (반드시 프롬프트에 반영):'); L.push(...spec.houseRules.map((r) => '  - ' + r)); }
 
   return L.join('\n');
