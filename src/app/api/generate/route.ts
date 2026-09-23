@@ -544,7 +544,13 @@ export async function POST(req: Request) {
      * 결과물 검사는 뭉개진 태그와 원본보다 늘어난 태그만 지운다. 우리 생성 컷(baseCut)이나 외부 업로드가 섞이면 지금처럼 전부 뺀다.
      */
     const baseUrls = [...new Set(uploadedRefs.filter((u) => u.role === 'base').map((u) => u.url))];
-    const keepRealTags = baseUrls.length > 0 && !(baseCut && body.baseCutUsage !== 'pose')
+    /*
+     * 단 배경을 갈아끼우는 합성에서는 끈다 (실측 2026-09-23): 제품을 새 방에 다시 그리므로 태그도 다시 그려지고,
+     * 그러면 글자가 무너진 태그가 4개씩 생긴다(찾아도 제품 가장자리라 지우기가 건너뛰어진 컷도 있었다).
+     * 게다가 소품 공에 없던 「yogibo」 워드마크를 새로 그렸다 — 로고 없음 규칙이 꺼져 있었기 때문이다.
+     * 장면을 그대로 두는 편집(얼굴·인물·의상 교체)에서만 진짜 태그를 살린다.
+     */
+    const keepRealTags = baseUrls.length > 0 && !(baseCut && body.baseCutUsage !== 'pose') && !bgSwapOn
       && (await db.collection('dropbox_assets').distinct('url', { url: { $in: baseUrls } })).length === baseUrls.length;
 
     /*
