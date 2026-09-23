@@ -266,6 +266,12 @@ export interface GenerationSpec {
    * 로고 없음 규칙 대신 KEEP_REAL_TAG_RULE 이 들어가고, 제품·글자·보존 강도 문장의 "로고 없음" 도 그에 맞춘다.
    */
   keepRealTags?: boolean;
+
+  /**
+   * 편집 원본 사진의 가로/세로 비율 — 규격과 다르면 "구도는 그대로, 가장자리만 늘려라" 를 넣는다.
+   * 실측 2026-09-23: 3:2 사진을 1:1 로 뽑자 모델이 장면을 다시 구성해 시선·인물 수·제품 모양이 바뀌었다.
+   */
+  baseAspect?: number;
 }
 
 /**
@@ -1499,6 +1505,34 @@ function recastsPeople(spec: GenerationSpec): boolean {
   return hasBase && !!spec.talents?.length && (spec.editTargets ?? []).some((x) => x === 'person' || x === 'face');
 }
 
+/**
+ * 원본 사진과 뽑을 규격의 비율이 다를 때 — 구도는 그대로 두고 가장자리만 늘린다 (사용자 결정 2026-09-23).
+ *
+ * 왜: 3:2 사진을 1:1 로 뽑으면 모델이 빈 자리를 채우려고 장면을 다시 구성한다. 실측(크리스마스 컷)에서
+ * 두 사람의 시선이 옆에서 카메라로 바뀌고, 왼쪽에 앉아 있던 사람이 사라지고 양말 신은 발만 남았고,
+ * 회색 빈백 모양이 변했다("맥스가 아니다" 판정). 프롬프트의 "원본 그대로·같은 프레이밍" 은 규격이 다르면 지킬 수가 없다.
+ * 그래서 늘릴 방향(위아래/좌우)을 집어서 outpaint 로만 채우게 하고, 뒤에 오는 구도 문장보다 우선한다고 적는다.
+ */
+function framePreserveLines(spec: GenerationSpec): string[] {
+  const hasBase = !!spec.baseCut || (spec.uploadedRefs ?? []).some((u) => u.role === 'base');
+  if (!hasBase || !spec.baseAspect || spec.baseCut?.usage === 'pose') return [];
+  const [gw, gh] = String(spec.size.genAspect || '').split(':').map(Number);
+  const target = gw && gh ? gw / gh : spec.size.width / spec.size.height;
+  if (!target) return [];
+  if (Math.abs(spec.baseAspect - target) / target < 0.05) return []; // 거의 같은 비율이면 아무 말도 하지 않는다
+  const r = (v: number) => (v >= 1 ? `${v.toFixed(2)}:1` : `1:${(1 / v).toFixed(2)}`);
+  const wider = spec.baseAspect > target;
+  return [
+    `FRAME — the base photograph is ${r(spec.baseAspect)} and the picture you must deliver is ${r(target)}. ` +
+      'Do NOT re-compose, re-frame, zoom into, crop or re-stage it to fit that shape, and do not move the camera. ' +
+      'Keep the base photograph\'s composition exactly: every person, product and prop stays in the same place, at the same size in the frame, ' +
+      'seen from the same angle, with the same eyelines — a person looking off to the side keeps looking there. ' +
+      `Fill the new shape ONLY by EXTENDING the photograph at its ${wider ? 'TOP and BOTTOM' : 'LEFT and RIGHT'} edges: continue the same room outwards — ` +
+      'the same wall, floor, ceiling, furniture and light — adding nothing that draws attention and no new people. ' +
+      'This overrides any later instruction about camera distance, framing or filling the frame.',
+  ];
+}
+
 /** 배경 합성이 실제로 켜졌는가 — base 와 background 가 둘 다 있어야 한다 */
 function isBackgroundSwap(spec: GenerationSpec): boolean {
   const u = spec.uploadedRefs ?? [];
@@ -1618,6 +1652,10 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
     );
     L.push('');
   }
+
+  // 규격이 원본 사진과 다르면 — 구도는 그대로, 가장자리만 늘린다 (편집 지시 바로 뒤, 구도 문장보다 앞)
+  const fp = framePreserveLines(spec);
+  if (fp.length) { L.push(...fp); L.push(''); }
 
   const eb = editBlock(spec);
   if (eb.length) { L.push(...eb); L.push(''); }
@@ -1762,6 +1800,9 @@ function specToBrief(spec: GenerationSpec, refs: RefSlot[]): string {
     );
   }
   const eb = editBlock(spec);
+  // 규격이 원본 사진과 다르면 — 구도는 그대로, 가장자리만 늘린다 (반드시 프롬프트에 실을 것)
+  const fpB = framePreserveLines(spec);
+  if (fpB.length) { L.push(''); L.push('규격이 원본 사진과 다르다 (가장 강하게 반영할 것 — 구도 재구성 금지):'); L.push(...fpB.map((x) => '  ' + x)); }
   if (isBackgroundSwap(spec)) {
     L.push('');
     L.push('배경 합성 (가장 강하게 반영할 것) — 인물·제품 소스 사진에서는 인물의 포즈와 제품만, 새 배경 사진에서는 공간 전체를 가져온다. 조명 방향·색온도·카메라 높이·원근을 새 배경에 맞추고, 새 바닥에 접지 그림자를 넣는다:');

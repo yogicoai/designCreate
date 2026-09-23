@@ -117,6 +117,16 @@ const DIRECTION_EXAMPLES = {
   ],
 };
 
+/** 1.5 → 「3:2」 처럼 흔한 비율 이름으로. 아니면 소수로 (원본 사진과 규격을 비교해 보여줄 때 쓴다) */
+const COMMON_RATIOS: [string, number][] = [
+  ['1:1', 1], ['5:4', 1.25], ['4:3', 4 / 3], ['3:2', 1.5], ['16:9', 16 / 9], ['2:1', 2], ['21:9', 21 / 9],
+  ['4:5', 0.8], ['3:4', 0.75], ['2:3', 2 / 3], ['9:16', 9 / 16],
+];
+function ratioLabel(v: number): string {
+  const hit = COMMON_RATIOS.find(([, r]) => Math.abs(v - r) / r < 0.03);
+  return hit ? hit[0] : v >= 1 ? `${v.toFixed(2)}:1` : `1:${(1 / v).toFixed(2)}`;
+}
+
 const ROLE_META: { value: RefRole; label: string; desc: string }[] = [
   { value: 'style', label: '분위기 참고', desc: '조명·색감·무드만 따라가고 장면은 새로 — 그 공간 자체를 쓰려면 「배경으로 사용」을 고르세요' },
   { value: 'base', label: '이 사진을 편집', desc: '사진은 그대로 두고 지정한 것만 바꿈 (합성·교체)' },
@@ -565,6 +575,25 @@ export default function CreateStudio(p: Props) {
    * ⑤ 배경·연출 예시 돌리기 (사용자 요청 2026-09-23). 지금 고른 상태에 맞는 예시만 고른다.
    * 사람이 쓰기 시작했거나 칸에 들어와 있으면 멈춘다 — 쓰는 중에 자리표시자가 바뀌면 거슬린다.
    */
+  /*
+   * 원본 사진의 비율 — 규격과 다르면 모델이 장면을 다시 구성한다 (실측 2026-09-23:
+   * 3:2 사진을 1:1 로 뽑자 시선이 카메라로 바뀌고 왼쪽 인물이 사라졌다). 비율만 보면 되니 썸네일로 잰다.
+   */
+  const [aspectByUrl, setAspectByUrl] = useState<Record<string, number>>({});
+  const baseUrl = uploads.find((x) => x.role === 'base')?.url ?? '';
+  const baseAspect = baseUrl ? aspectByUrl[baseUrl] ?? null : null;
+  useEffect(() => {
+    if (!baseUrl || aspectByUrl[baseUrl]) return;
+    let off = false;
+    const img = new window.Image();
+    img.onload = () => {
+      if (off || !img.naturalWidth || !img.naturalHeight) return;
+      setAspectByUrl((m) => ({ ...m, [baseUrl]: img.naturalWidth / img.naturalHeight }));
+    };
+    img.src = thumbUrl(baseUrl, 256);
+    return () => { off = true; };
+  }, [baseUrl, aspectByUrl]);
+
   const [dirIdx, setDirIdx] = useState(0);
   const [dirFocus, setDirFocus] = useState(false);
   const dirExamples = useMemo(() => [
@@ -1023,6 +1052,21 @@ export default function CreateStudio(p: Props) {
   }
 
   const isMySize = size?.group === MY_SIZE_GROUP;
+  /*
+   * 원본 사진 비율 ↔ 뽑을 규격 비율 — 다르면 모델이 구도를 다시 짠다.
+   * 가장 안전한 것은 원본과 같은 비율로 뽑는 것이라, 한 번에 맞추는 버튼을 둔다 (사용자 결정 2026-09-23).
+   */
+  const targetAspect = sizeValue === 'custom'
+    ? (Number(customW) > 0 && Number(customH) > 0 ? Number(customW) / Number(customH) : 0)
+    : (size ? size.width / size.height : 0);
+  const aspectOff = !!baseAspect && !!targetAspect && Math.abs(baseAspect - targetAspect) / targetAspect > 0.05;
+  const fitBaseAspect = () => {
+    if (!baseAspect) return;
+    const long = 1500; // 긴 변 1500px — 생성은 2048 로 하고 여기로 줄여 내보낸다
+    setSizeValue('custom');
+    setCustomW(String(baseAspect >= 1 ? long : Math.round(long * baseAspect)));
+    setCustomH(String(baseAspect >= 1 ? Math.round(long / baseAspect) : long));
+  };
 
   /**
    * AI 생성 제품 칸 고르기 — 제품 섹션(첫 제품)과 함께 놓을 제품(추가 제품)이 같이 쓴다.
@@ -1212,6 +1256,28 @@ export default function CreateStudio(p: Props) {
                 <div className="text-[10.5px]" style={{ color: 'var(--text-mute)' }}>
                   저장하면 &lsquo;{MY_SIZE_GROUP}&rsquo; 그룹에 추가되고 다음부터 목록에서 바로 고를 수 있습니다.
                 </div>
+              </div>
+            )}
+
+            {/* 원본 사진이 있으면 비율을 맞춰 준다 — 다르면 모델이 구도를 다시 짠다 */}
+            {hasBaseUpload && baseAspect && (
+              <div className="mt-2 px-3 py-2 rounded-[10px] text-[11px] leading-relaxed flex items-center gap-2 flex-wrap"
+                   style={aspectOff
+                     ? { background: 'rgba(240,180,41,.08)', border: '1px solid var(--warn)', color: 'var(--warn)' }
+                     : { color: 'var(--text-mute)' }}>
+                {aspectOff ? (
+                  <>
+                    <span>
+                      ⚠ 원본 사진 <b>{ratioLabel(baseAspect)}</b> · 지금 규격 <b>{ratioLabel(targetAspect)}</b> — 빈 자리는 가장자리를 늘려 채웁니다(구도·시선은 그대로).
+                      원본 비율로 뽑으면 구도가 가장 안전합니다.
+                    </span>
+                    <button className="chip" onClick={fitBaseAspect} style={{ color: 'var(--warn)', borderColor: 'var(--warn)' }}>
+                      원본 비율로 맞추기
+                    </button>
+                  </>
+                ) : (
+                  <span>원본 사진과 같은 비율({ratioLabel(baseAspect)})입니다 — 구도가 그대로 유지됩니다.</span>
+                )}
               </div>
             )}
 

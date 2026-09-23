@@ -23,6 +23,7 @@ import { measureSceneTone } from '@/lib/scene-tone';
 import { scrubReferenceUrl, guardOutput, referenceTagCount } from '@/lib/logo-guard';
 import { checkFaces } from '@/lib/face-guard';
 import { checkScene } from '@/lib/scene-check';
+import sharp from 'sharp';
 
 /**
  * POST /api/generate — 자산 조합 → 프롬프트 → 나노바나나 → 크롭 → FTP → DB.
@@ -619,6 +620,22 @@ export async function POST(req: Request) {
      * env(PROMPT_MODE)가 opus 여도 여기서는 무조건 무과금 템플릿으로 조립한다.
      * 필요한 건 참조 순서와 선택값이지 완성된 문장이 아니다.
      */
+    /*
+     * 원본 사진의 비율 — 규격과 다르면 모델이 장면을 통째로 다시 구성한다 (실측 2026-09-23:
+     * 3:2 크리스마스 사진을 1:1 로 뽑자 시선이 카메라로 바뀌고, 왼쪽 인물이 사라지고 발만 남고, 빈백 모양이 변했다).
+     * 비율을 알려 주면 프롬프트가 "구도는 그대로, 가장자리만 늘려라" 를 못박는다 (prompt-writer framePreserveLines).
+     */
+    const baseRefUrl = uploadedRefs.find((u) => u.role === 'base')?.url;
+    if (baseRefUrl) {
+      try {
+        const res = await fetch(baseRefUrl, { signal: AbortSignal.timeout(15000) });
+        const meta = await sharp(Buffer.from(await res.arrayBuffer())).metadata();
+        const w = meta.orientation && meta.orientation >= 5 ? meta.height : meta.width;
+        const h = meta.orientation && meta.orientation >= 5 ? meta.width : meta.height;
+        if (w && h) spec.baseAspect = Number((w / h).toFixed(3));
+      } catch { /* 원본을 못 받으면 비율 규칙 없이 진행한다 */ }
+    }
+
     const written = await writePrompt(spec, {
       mode: body.handoff ? 'local' : body.promptMode,
       manualPrompt: body.promptOverride,
