@@ -25,6 +25,7 @@ import { checkFaces } from '@/lib/face-guard';
 import { checkScene } from '@/lib/scene-check';
 import sharp from 'sharp';
 import { readBaseGaze } from '@/lib/base-gaze';
+import { readRoomScale } from '@/lib/room-scale';
 
 /**
  * POST /api/generate — 자산 조합 → 프롬프트 → 나노바나나 → 크롭 → FTP → DB.
@@ -567,7 +568,16 @@ export async function POST(req: Request) {
     const toneSource = uploadedRefs.find((u) => u.role === 'background') ?? uploadedRefs.find((u) => u.role === 'style');
     const hasEditBase = uploadedRefs.some((u) => u.role === 'base') || (!!baseCut && body.baseCutUsage !== 'pose');
     const wantTone = !!toneSource && (!hasEditBase || bgSwapOn);
-    const sceneTone = wantTone && toneSource ? await measureSceneTone(toneSource.url) : null;
+    /*
+     * 배경 사진은 톤과 크기, 두 가지를 정한다. 크기를 안 재면 원본 사진의 프레이밍이 그대로 따라와
+     * 넓은 방에 넣어도 사람·제품이 방을 압도한다 (사용자 지적 2026-09-28, 실측: 앉은 성인이 화면 세로의
+     * 27% 여야 할 자리에 60%). 둘 다 같은 배경을 보므로 한 번에 병렬로 잰다 — 결과는 캐시된다.
+     */
+    const bgForScale = uploadedRefs.find((u) => u.role === 'background');
+    const [sceneTone, roomScale] = await Promise.all([
+      wantTone && toneSource ? measureSceneTone(toneSource.url) : Promise.resolve(null),
+      bgForScale ? readRoomScale(bgForScale.url) : Promise.resolve(null),
+    ]);
 
     /*
      * 제품 조합 — 고른 칸이 조합 시트면, 그 시트가 두 제품을 다 들고 있다.
@@ -591,6 +601,8 @@ export async function POST(req: Request) {
        * 측정이 실패해도(사진을 못 받음 등) 톤 블록은 들어간다 — 숫자 대신 "사진에서 직접 읽어라" 로.
        */
       ...(sceneTone ? { sceneTone: sceneTone.summaryEn } : wantTone ? { sceneTone: SCENE_TONE_UNMEASURED } : {}),
+      // 배경에서 잰 사람 크기 — 프롬프트 끝의 FINAL SCALE CHECK 가 이 숫자로 프레임 점유율을 못박는다
+      ...(roomScale ? { roomScale } : {}),
       ...(baseCut
         ? { baseCut: { url: baseCut.url, spec: baseCut.spec, line: baseCut.line, colorName: baseCut.colorName, usage: body.baseCutUsage ?? 'full' } }
         : {}),

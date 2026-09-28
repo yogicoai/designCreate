@@ -285,6 +285,12 @@ export interface GenerationSpec {
    * 얼굴 시트·표정컷이 전부 정면이라 얼굴을 바꾸면 카메라를 보게 된다 — 원본이 어디를 보는지 적어 줘야 지켜진다.
    */
   baseGaze?: string[];
+  /**
+   * 배경 사진에서 잰 사람 크기 — 175cm 성인이 방 한가운데 섰을 때 화면 세로에서 차지하는 비율(%).
+   * 배경 합성 컷이 원본의 클로즈업 프레이밍을 그대로 끌고 와 사람·제품이 방을 압도하던 것을 막는다
+   * (실측 2026-09-28: 앉은 성인이 27% 여야 할 자리에 60%). room-scale.ts 가 잰다.
+   */
+  roomScale?: { midPct: number; frontPct: number; backPct: number; basis: string };
 }
 
 /**
@@ -1182,6 +1188,74 @@ function photoProductsBlock(spec: GenerationSpec): string[] {
   return L;
 }
 
+/**
+ * 배경 방에서 잰 크기를 "화면의 몇 %" 로 바꿔 못박는다 (사용자 지적 2026-09-28 "합성 자체가 잘못되었어").
+ *
+ * 배경 합성 컷은 원본 사진의 프레이밍을 그대로 끌고 온다. 원본이 인물 클로즈업이면 넓은 방에 넣어도
+ * 그 크기 그대로 나와 사람과 제품이 방을 압도한다 — 실측에서 앉은 성인이 화면 세로의 27% 여야 할 자리에
+ * 60% 로 그려졌고, 맥스(170cm)가 3m 넘게 보였다. "방의 가구에서 실물 크기를 잡아라" 는 이미 있었지만
+ * 앞쪽의 "원본을 그대로" 에 매번 졌다. 그래서 숫자로 준다 — 이 프로젝트에서 숫자는 늘 이겼다.
+ *
+ * 세로 점유 = cm × (midPct / 175). 가로 점유는 화면 비율(H/W)을 곱해 환산한다.
+ */
+function framedScaleLines(spec: GenerationSpec): string[] {
+  const rs = spec.roomScale;
+  if (!rs) return [];
+  // 크롭 전 '생성되는' 화면 비율로 재야 한다 — 전달 규격은 나중에 잘린다
+  const [gw, gh] = String(spec.size?.genAspect || '').split(':').map(Number);
+  const width = gw || spec.size?.width || 0;
+  const height = gh || spec.size?.height || 0;
+  if (!width || !height) return [];
+  const perCmV = rs.midPct / 175; // 1cm 가 차지하는 화면 세로 비율(%)
+  const perCmH = perCmV * (height / width); // 같은 1cm 를 화면 가로 비율(%)로
+  const pv = (cm: number) => Math.round(cm * perCmV);
+  const ph = (cm: number) => Math.round(cm * perCmH);
+
+  const talents = (spec.talents ?? []).filter((t) => !t.freeform);
+  const multi = (spec.talents ?? []).length > 1;
+  const L: string[] = [
+    '',
+    'FINAL SCALE CHECK — MEASURED FROM THE BACKGROUND PHOTOGRAPH. This overrides every earlier wording about framing.',
+    '  THE FRAMING COMES FROM THE BACKGROUND ROOM, NOT FROM THE SOURCE PHOTOGRAPH. From the source you take the poses, ' +
+      'the placement relative to each other and the product\'s shape — never the camera distance. A source photographed ' +
+      'close up does NOT make this a close-up: the camera stands where the background photograph\'s camera stands.',
+    // basis 는 "Based on the sliding doors…" 처럼 접두어를 달고 오기도 한다 — 앞말이 겹치지 않게 벗긴다
+    `  In this room a standing 175cm adult spans about ${Math.round(rs.midPct)}% of the picture height` +
+      (rs.basis ? ` (measured from ${rs.basis.replace(/^(based on|measured from|using|from|judging by)\s+/i, '').replace(/\.$/, '')})` : '') +
+      `, about ${Math.round(rs.frontPct)}% right at the front and ${Math.round(rs.backPct)}% at the back wall.`,
+  ];
+
+  talents.forEach((t, i) => {
+    const cm = Number((t.sizeEn.match(/(\d{2,3})\s?cm/) || [])[1] || 0);
+    if (!cm) return;
+    const who = multi ? `PERSON ${i + 1}` : 'the model';
+    // 앉으면 머리 꼭대기가 바닥에서 대략 키의 절반이다 (빈백은 시트가 낮아 더 내려간다)
+    L.push(
+      `  ${who} is ${cm}cm: standing, head to feet spans about ${pv(cm)}% of the picture height; ` +
+        `sitting on a bean bag, head to floor about ${pv(cm * 0.52)}%.`,
+    );
+  });
+
+  for (const p of pairingProducts(spec)) {
+    const d = p.dims ?? {};
+    const longest = Math.max(d.w ?? 0, d.d ?? 0, d.h ?? 0);
+    if (!longest) continue;
+    const lying = d.d ?? 0;
+    L.push(
+      `  The Yogibo ${p.line} is ${longest}cm at its longest: lying flat its length runs about ${ph(longest)}% of the picture WIDTH` +
+        (lying ? ` and it rises only about ${pv(lying)}% of the picture height` : '') +
+        `; stood upright it spans about ${pv(d.h ?? longest)}% of the picture height.`,
+    );
+  }
+
+  L.push(
+    '  If anything in your draft is markedly bigger than these figures, it is wrong no matter how the source photograph ' +
+      'is cropped — pull the camera back and re-place everything until the figures are met. Leave the room reading as the ' +
+      'large space it is, with its floor, walls and ceiling still visible around the subjects.',
+  );
+  return L;
+}
+
 function scalePairingLines(products: Pick<ProductSpec, 'line' | 'dims'>[], talents: TalentSpec[]): string[] {
   const sized = products.filter((p) => Math.max(p.dims?.w ?? 0, p.dims?.d ?? 0, p.dims?.h ?? 0) > 0);
   const people = talents
@@ -1875,6 +1949,7 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
   }
 
   L.push(...finalToneLines(spec));
+  L.push(...framedScaleLines(spec));
   L.push(...finalCandidLines(spec));
   /*
    * 시선 최종 확인 — 표정컷이 정면이라 얼굴을 바꾸면 카메라를 보게 된다. 가운데의 GAZE 규칙만으로는 안 지켜져서

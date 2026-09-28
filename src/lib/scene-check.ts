@@ -59,11 +59,23 @@ export async function checkScene(buf: Buffer, input: SceneCheckInput): Promise<S
       `1) PRODUCTS — the photo should show these products:\n${wanted}\n` +
       'For each one, decide whether a product matching that description is actually in the photo. List in "missing" the names that are absent or drawn as a clearly different piece of furniture ' +
       '(different silhouette, a rigid armchair/sofa instead of a soft bean bag, or a pattern/fabric that is not that product). product.ok is false when "missing" is not empty.\n\n' +
-      `2) SCALE — the people in this photo are: ${people}. Use the room's own furniture and architecture as the ruler ` +
-      '(sofa seats 40-45cm, coffee tables 40-45cm, kitchen counters 85-95cm, dining chair seats ~45cm, door openings 200-210cm, ceilings 230-250cm). ' +
-      'A Yogibo Max is 170cm long, a Pod is 95cm tall, a Support is 94cm tall, a Drop is 75cm tall. ' +
-      'scale.ok is false when any bean bag or person clearly reads too large or too small against that furniture — for example a bean bag as tall as a door, ' +
-      'a bean bag wider than a three-seat sofa, or a person whose head is oversized for their body. Say in the note which object and how far off it looks.\n\n' +
+      /*
+       * 크기 검사는 원래 "명백히 크거나 작으면" 이라는 눈대중이었고, 실측 2배짜리 컷을 통과시켰다
+       * (2026-09-28: 앉은 성인이 화면 세로의 60%, 맥스가 3m 넘게 그려진 한옥 컷에 "scale ok").
+       * 그래서 재게 시킨다 — 자를 하나 고르고, 그려진 치수를 cm 로 환산하고, 실물과 대조해 숫자를 남긴다.
+       */
+      `2) SCALE — MEASURE it, do not eyeball it. The people in this photo are: ${people}.
+` +
+      '  a) Pick ONE architectural element you can trust, use it as a ruler, and name it in the note: a door opening is about 200cm tall, ' +
+      'a residential ceiling 230-260cm, a window sill sits 90cm off the floor, a kitchen counter 85-95cm, a dining chair seat 45cm, ' +
+      'a sofa seat 40-45cm, a coffee table or low console top 35-45cm, a skirting board 8-12cm, a floorboard 12-20cm wide.\n' +
+      '  b) Using that ruler, work out roughly how many centimetres tall or long each person and each bean bag is AS DRAWN here.\n' +
+      '  c) Compare against their real sizes: a Yogibo Max is 170cm long and about 45cm thick lying flat, a Double is 170cm long and 140cm wide, ' +
+      "a Pod is 95cm tall, a Support 94cm, a Drop 75cm, and each person is the height listed above. A seated adult's head sits about half their standing height off the floor.\n" +
+      '  scale.ok is false when anything is more than about 25% away from its real size. The note must carry the numbers you measured — ' +
+      '"the seated man reads about 200cm against a 200cm door, roughly twice his correct seated height" is the kind of note wanted.\n' +
+      '  Watch for the usual failure: the picture was built from a close-up source photograph and kept that close-up size inside a wide room, ' +
+      'so the people and the bean bag dwarf the space. Check that the room still reads as the large room its own architecture implies.\n\n' +
       `3) LIGHT — does every person and product look photographed in THIS room${input.hasBackground ? ' (the room itself came from a separate background photo)' : ''}? ` +
       'Judge the light ON THE SUBJECTS, not whether the colours look pleasant together. Look at each product and person on their own and ask: ' +
       'which side is lit, how hard are the shadows, how deep are they, does the room\'s own light colour sit on them, do they cast a shadow onto the floor where they touch it?\n' +
