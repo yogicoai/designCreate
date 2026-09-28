@@ -1198,6 +1198,71 @@ function photoProductsBlock(spec: GenerationSpec): string[] {
  *
  * 세로 점유 = cm × (midPct / 175). 가로 점유는 화면 비율(H/W)을 곱해 환산한다.
  */
+/**
+ * 합성 티를 막는 최종 블록 — 배경 합성 컷에만 들어간다 (사용자 지적 2026-09-28 "뭔가 합성 느낌이 난다").
+ *
+ * 네 관점으로 실제 결과물을 픽셀 단위로 재서 나온 수치다 (워크플로 '합성티-원인-분해'):
+ *  - 배경을 정렬해 밝기 차분을 뜨면 인물·제품 실루엣 **바깥이 전부 0** 이었다. 사람 둘과 큰 제품이
+ *    들어왔는데 방의 빛 분포가 한 톨도 안 바뀐 것 — 그림자를 아예 안 그렸다는 뜻이다.
+ *    같은 사진의 안락의자는 바닥을 20 L* 어둡게 120px 깔았는데 제품 아래는 0~2 L* 였다.
+ *  - 사람이 제품에 닿는 자리가 어두워지기는커녕 1~3 L* 더 밝았다 (물리적으로 반대).
+ *  - 빛 방향이 정반대였다: 방은 왼쪽이 밝은데 인물은 오른쪽이 밝았다 — 원본 스튜디오 사진의
+ *    명암을 그대로 두고 전체 밝기만 곱한 것이다.
+ *  - 색온도: 방의 흰 천은 b*+10~+29 인데 합성된 옷·제품만 b*+5/−9/−23 이었다.
+ *
+ * 실측으로 확인된 개선 (사용자 "합성티 덜 난다 이건 해결된 것 같아"): 이 문장들이 들어간 컷에서
+ * 접지 그림자·눌림·조명 방향이 전부 잡혔다.
+ */
+function finalCompositeLines(spec: GenerationSpec): string[] {
+  if (!isBackgroundSwap(spec)) return [];
+  const people = (spec.talents ?? []).length;
+  const who = people > 1 ? 'each person' : 'the person';
+  return [
+    '',
+    'FINAL COMPOSITE CHECK — the result must not read as two photographs stuck together. Four things decide that, and ' +
+      'each is measured against what is ALREADY in the background photograph, not against a general idea of realism.',
+    '  SHADOWS ON THE ROOM. Find a piece of furniture already standing on that floor and look at the shadow it lays: ' +
+      'its direction, its length, how much darker than clean floor it is, how softly it fades. Every product you place ' +
+      'must ground itself the same way — along its whole base the floor beside it sits about 20-25 levels of brightness ' +
+      'darker than clean floor 150px away, and recovers gradually over 80-120px. It must NOT snap back to clean floor ' +
+      'within 15px, and its base must NOT be a pure-black cut-out rim: the darkest pixel there is a deep soft version of ' +
+      'the fabric colour, never absolute black, ramping smoothly outward into the floor shadow. ' +
+      "Shadows fall the way the room's own light sends them — every object on that floor throws its shadow away from the " +
+      "brightest light source, roughly 1.8x its own height. " +
+      (people ? `${who[0].toUpperCase() + who.slice(1)} also casts a large, very soft shadow onto the wall behind, offset to the shaded side, a few levels below the surrounding wall with edges blurred wide. ` : '') +
+      'After you are done, the room must NOT look identical to the empty-room photograph outside the subjects: a person ' +
+      'and a large product entering a room change where its light falls.',
+    ...(people
+      ? [
+        '  CONTACT. Where a body presses into fabric — thighs, hips, calves, feet, elbows — darken a 20-40px band by ' +
+          '8-12 levels so that brightness FALLS as you approach the body. Fabric that gets BRIGHTER toward the contact ' +
+          'line is physically impossible and is the clearest sign of a paste-up. ' +
+          (people > 1
+            ? 'The darkest part of the product is the fabric between and beneath the people, where their shadows overlap — never the brightest.'
+            : 'The darkest part of the product is the fabric right under and behind them — never the brightest.'),
+        '  WEIGHT. The bean bag is soft filling, not a board: under each body the surface sinks into a clear hollow, the ' +
+          'fabric gathers into folds radiating out from the hips and legs, and the bag bulges slightly upward around the ' +
+          'rim of each hollow. Limbs press in and are partly embraced by the fabric. Parts nobody touches stay plump and ' +
+          'smooth. A flat, undisturbed bean bag with someone sitting on it reads instantly as fake. Note that a bean bag ' +
+          'under real weight also SPREADS sideways — its pressed footprint is longer and wider than its nominal size.',
+      ]
+      : []),
+    '  ONE LIGHT, ONE COLOUR TEMPERATURE. Find the brightest light in the background photograph and light everything from ' +
+      'there: the side of every face, shoulder, arm and product facing it is brighter, the opposite side falls into soft ' +
+      'shade, and there is a visible shading gradient across every face — never flat, even, frontal light that this room ' +
+      'does not have. Whatever cast the room already has, the added subjects carry the SAME cast by the SAME amount: ' +
+      "compare against the room's own white and neutral surfaces (its walls, a white cushion, a cream throw). A garment " +
+      'that stays neutral, or turns cooler than the room\'s own white textiles, is wrong. And nobody is brighter than the ' +
+      'room allows — if a surface 30cm from a lamp is not bright, a person metres away must be dimmer than that, not ' +
+      'brighter. In a dim room, skin is dim.',
+    '  ONE CAMERA. Match the background photograph\'s optics: the same softness, the same depth of field, the same fine ' +
+      'grain, the same lifted or crushed blacks. Edges meet the background as a real photograph\'s do — no crisp cut-out ' +
+      'outline, no bright halo, no rim of a different colour along hair, shoulders or product silhouette' +
+      (people ? '; stray strands of hair catch the light and break up the silhouette' : '') + '. Anything cleaner, ' +
+      'sharper or more saturated than the room around it reads as an AI composite.',
+  ];
+}
+
 function framedScaleLines(spec: GenerationSpec): string[] {
   const rs = spec.roomScale;
   if (!rs) return [];
@@ -1258,10 +1323,18 @@ function framedScaleLines(spec: GenerationSpec): string[] {
     );
   }
 
+  /*
+   * 제품 숫자는 '눌리지 않은' 공칭 치수 기준이다. 사람이 앉으면 빈백은 옆으로 퍼져서 투영 길이가 늘어난다 —
+   * 원본 실촬영 사진에서도 그렇다 (사용자 지적 2026-09-28: "원본 이미지 자체도 빈백이 저 느낌으로 나와버려서").
+   * 그래서 제품에는 여유를 주고, 사람 크기만 엄격히 묶는다.
+   */
   L.push(
-    '  If anything in your draft is markedly bigger than these figures, it is wrong no matter how the source photograph ' +
-      'is cropped — pull the camera back and re-place everything until the figures are met. Leave the room reading as the ' +
-      'large space it is, with its floor, walls and ceiling still visible around the subjects.',
+    '  Those product figures are for an UNOCCUPIED product. A bean bag with someone sitting on it spreads sideways under ' +
+      'their weight, so its pressed footprint reads longer and wider than the figure above — that is correct and expected. ' +
+      'What must not happen is the PEOPLE reading larger than their own figures, or an empty product reading larger than its. ' +
+      'If your draft breaks those, it is wrong no matter how the source photograph is cropped — pull the camera back and ' +
+      're-place everything until they are met. Leave the room reading as the large space it is, with its floor, walls and ' +
+      'ceiling still visible around the subjects.',
   );
   return L;
 }
@@ -1969,6 +2042,7 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
 
   L.push(...finalToneLines(spec));
   L.push(...framedScaleLines(spec));
+  L.push(...finalCompositeLines(spec));
   L.push(...finalCandidLines(spec));
   /*
    * 시선 최종 확인 — 표정컷이 정면이라 얼굴을 바꾸면 카메라를 보게 된다. 가운데의 GAZE 규칙만으로는 안 지켜져서
