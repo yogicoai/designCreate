@@ -22,8 +22,11 @@ import { visionModel } from './logo-guard';
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const SCANS = 'base_scans';
-/** 캐시 키의 판정 버전 — 묻는 방식을 바꾸면 올린다 (안 올리면 옛 답이 그대로 나온다) */
-const VERSION = 'rs1';
+/**
+ * 캐시 키의 판정 버전 — 묻는 방식을 바꾸면 올린다 (안 올리면 옛 답이 그대로 나온다).
+ * rs2 (2026-09-28): 작은 기준(소파 시트 42cm)으로 재다 오차가 커져서, 큰 기준을 먼저 쓰게 했다.
+ */
+const VERSION = 'rs2';
 /** 기준 키 — 이 키의 사람이 화면에서 차지하는 비율을 묻는다 */
 export const REF_HEIGHT_CM = 175;
 
@@ -45,7 +48,7 @@ const PROMPT =
   'real sizes: an interior door opening is about 200cm tall, a residential ceiling 230-260cm, a window sill about ' +
   '90cm off the floor, a kitchen counter 85-95cm, a dining chair seat 45cm, a sofa seat 40-45cm, a coffee table or ' +
   'low console top 35-45cm, a skirting board 8-12cm, a floorboard 12-20cm wide, a brick course 7.5cm. ' +
-  'Use whichever of these you can actually see, and say which one you used.\n' +
+  'Use whichever of these you can actually see, and say which one you used. PREFER A LARGE ANCHOR — a door opening, the ceiling height, a full window — over a small one such as a seat height or a skirting board: a small anchor multiplies its own measurement error across the whole room.\n' +
   'STEP 2 — imagine a 175cm adult standing upright on that floor, feet on the ground, and measure how much of the ' +
   'WHOLE IMAGE HEIGHT they would span, from the top of their head down to the floor at their feet. Give it as a ' +
   'percentage of the image height (50 means they fill half the picture from top to bottom).\n' +

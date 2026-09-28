@@ -1241,10 +1241,20 @@ function framedScaleLines(spec: GenerationSpec): string[] {
     const longest = Math.max(d.w ?? 0, d.d ?? 0, d.h ?? 0);
     if (!longest) continue;
     const lying = d.d ?? 0;
+    const h = d.h ?? longest;
+    const w = d.w ?? longest;
+    /*
+     * '눕혔을 때' 를 말해도 되는 건 눕혀 쓰는 긴 필로형(맥스·더블)뿐이다.
+     * 라운저·팟·드롭은 늘 세워져 있는데도 "lying flat" 이 붙어서, 앞뒤 깊이(라운저 80cm)를
+     * 눕혔을 때의 높이처럼 읽히게 만들었다 (사용자 지적 2026-09-28).
+     */
+    const canLie = !!lying && longest > lying * 1.5;
     L.push(
-      `  The Yogibo ${p.line} is ${longest}cm at its longest: lying flat its length runs about ${ph(longest)}% of the picture WIDTH` +
-        (lying ? ` and it rises only about ${pv(lying)}% of the picture height` : '') +
-        `; stood upright it spans about ${pv(d.h ?? longest)}% of the picture height.`,
+      canLie
+        ? `  The Yogibo ${p.line} lying flat on the floor: its ${longest}cm length runs about ${ph(longest)}% of the picture WIDTH ` +
+          `and it rises only about ${pv(lying)}% of the picture height. Stood upright instead it spans about ${pv(h)}% of the picture height.`
+        : `  The Yogibo ${p.line} is ${h}cm tall and ${w}cm wide: it stands about ${pv(h)}% of the picture height ` +
+          `and about ${ph(w)}% of the picture width.`,
     );
   }
 
@@ -1747,6 +1757,15 @@ function recastsPeople(spec: GenerationSpec): boolean {
 function framePreserveLines(spec: GenerationSpec): string[] {
   const hasBase = !!spec.baseCut || (spec.uploadedRefs ?? []).some((u) => u.role === 'base');
   if (!hasBase || !spec.baseAspect || spec.baseCut?.usage === 'pose') return [];
+  /*
+   * 배경을 통째로 바꾸는 컷에서는 이 블록을 내지 않는다 (2026-09-28).
+   * 여기서 지켜야 할 구도는 원본이 아니라 배경이다 — 원본은 포즈만 준다. 그런데 이 블록은
+   * "원본의 구도를 그대로, 카메라를 움직이지 마, 이게 뒤의 지시를 이긴다" 라고 선언해서,
+   * 프레이밍을 배경에서 가져오라는 FINAL SCALE CHECK 와 정면으로 부딪혔다. 둘 다 "내가 이긴다" 를
+   * 달고 있으면 앞에 있고 더 구체적인 쪽이 이긴다 — 그래서 원본의 클로즈업이 그대로 남아 방을 압도했다.
+   * 합성 컷의 프레이밍은 FINAL SCALE CHECK 와 INTERIOR SCENE(가장자리 확장)이 책임진다.
+   */
+  if (isBackgroundSwap(spec)) return [];
   const [gw, gh] = String(spec.size.genAspect || '').split(':').map(Number);
   const target = gw && gh ? gw / gh : spec.size.width / spec.size.height;
   if (!target) return [];
