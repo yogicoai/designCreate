@@ -1,0 +1,19 @@
+{
+  "_설명": "cf_full.py 가 쓰는 자산. 다시 렌더링하려면 이 파일들을 한 폴더에 받고 python cf_full.py <출력.mp4> <그 폴더>. Fraunces.ttf 는 google/fonts ofl/fraunces 에서 받는다(OFL).",
+  "ref_pod33_audio.m4a": "https://yogibo.openhost.cafe24.com/web/design/video/ref_yogibo_pod_33s.jpg (mp4 — ffmpeg -vn -c:a copy 로 음원만 추출)",
+  "yogibo_logo3_on.png": "https://yogibo.kr/web/img/icon/logo3_on.png",
+  "cf_ring.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_080210_4296a13f-5f8a-4b54-8dad-886ea6c660dc.png",
+  "prod_navy.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_081804_b8f0b9ca-ea00-44b3-8586-684e2c5a63a2.png",
+  "prod_cluster.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_081804_1ed08e1d-106a-4a97-95f2-5ad1c03dbe03.png",
+  "prod_red.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_081804_497a6c01-98d0-40a1-9f45-f1e6e15153c0.png",
+  "cfA.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_082103_5403a5f0-cc20-42b9-ae6a-fc0ffb35f5a8.mp4",
+  "cfB.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_082103_9bf6f154-ad63-470b-84da-26c6bbd2edea.mp4",
+  "cfC.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_082103_3be2b00b-b1d4-4174-8489-9782a9db2bce.mp4",
+  "cfD.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_082103_c8624225-13ca-4851-9159-c44f27ac58f9.mp4",
+  "cfE.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_082103_4c6e0f41-34b4-47aa-bff7-499e9c1df10c.mp4",
+  "cfF.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_082103_f5e7e2b5-be0b-43fe-98ec-cff88f28b83d.mp4",
+  "cfG.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_080656_e44a4328-f6d3-45f2-93b2-0e5d72219b3f.mp4",
+  "cfH.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_084500_61be3ea4-9e1d-4b19-bd07-cd1d079c0ca7.mp4",
+  "cfI.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_084500_6d2caba5-740f-43fa-8595-0388137afe76.mp4",
+  "cfJ.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_084500_156c9531-aa1e-4276-bb5e-60094effb9ad.mp4"
+}
