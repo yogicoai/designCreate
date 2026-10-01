@@ -19,5 +19,10 @@
   "p_attach.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151218_10d05c0f-b444-4878-aa83-dcf3f52fb8a6.mp4",
   "p_durable.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151217_0ec305c8-a63f-4a6d-88fd-d74202cfaa73.mp4",
   "p_colors.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151644_151cb9a0-178d-4746-adbe-ad1cb0c3ac93.mp4",
-  "p_rest.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151643_b4c25f0e-b83b-40e6-8c35-9a7bcab49f94.mp4"
+  "p_rest.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151643_b4c25f0e-b83b-40e6-8c35-9a7bcab49f94.mp4",
+  "_숏폼": "세로 9:16 판(cf_pyramid_shorts.py) — 위 p_*.mp4 · giza.png · yogibo_logo3_on.png 에 아래 넷을 같은 폴더에 더 둔다. python cf_pyramid_shorts.py <출력.mp4> <그 폴더>.",
+  "pyr_base_gray.png": "가로 최종본에서 다시 뗀 제품 그림(명암만) — python cf_pyramid_shorts.py --extract-base <가로 최종본.mp4> pyr_base_gray.png. 가로 최종본: https://yogibo.openhost.cafe24.com/web/design/video/cf_pyramid_remake_v2_final3_20261001065022_22po9.jpg (mp4)",
+  "pyr_audio_cut.m4a": "같은 가로 최종본의 소리(HOT Colors 에서 2박 1.1초를 잘라 이은 것) — ffmpeg -i <가로 최종본> -vn -c:a copy pyr_audio_cut.m4a",
+  "plate_colors.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20261001_081715_1cb7c166-146c-49f6-8d87-5515458926d0.png (HOT Colors 첫 프레임을 위아래로 넓힌 배경 · Outpaint 9:16)",
+  "plate_rest.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20261001_082023_d352b763-6fc8-428b-9553-75be45d36673.png (휴식 첫 프레임을 위아래로 넓힌 배경 · 나노바나나 프로 4K 9:16 — Outpaint 는 원본을 무시해 실패)"
 }
