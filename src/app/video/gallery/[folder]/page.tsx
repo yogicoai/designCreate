@@ -18,7 +18,8 @@ export default async function VideoFolderPage({ params }: { params: Promise<{ fo
 
   return (
     <div className="p-4 sm:p-6 2xl:p-8 max-w-[1600px]">
-      <PageHeader title={meta.name} desc="영상 제작물 안의 폴더입니다. 묶음마다 원본 → 리메이크 순서로 놓았고, 카드마다 만든 과정을 적어 두었습니다." />
+      {/* 폴더마다 하는 일이 달라(최종본 · 과정 기록) 설명은 아래 폴더 소개 카드가 맡는다 */}
+      <PageHeader title={meta.name} desc="영상 제작물 안의 폴더입니다. 카드마다 만든 과정을 적어 두었습니다." />
       {/* key — 폴더끼리 옮겨 다닐 때 열린 폴더 상태를 새로 잡는다 */}
       <VideoGallery key={meta.name} initial={videos} folders={folders} initialFolder={meta.name} />
     </div>
