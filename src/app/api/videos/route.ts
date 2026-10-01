@@ -11,7 +11,9 @@ import { getDb, COLLECTIONS } from '@/lib/db';
  * GET     목록
  * POST    등록 { title, key, note?, project?, aspect?, poster? }
  *           key = 사이트 루트 기준 경로 (예: web/design/video/fam3_final.jpg)
- * PATCH   { id, title?, note?, project?, aspect? }
+ * PATCH   { id, title?, note?, project?, aspect?, folder?, summary? }
+ *           folder  = 폴더 이름 (예: 리뉴얼 영상 제작) — 폴더에 든 영상은 '전체'가 아니라 폴더 안에서 보인다
+ *           summary = 카드에 보이는 짧은 과정 설명 (긴 note 는 '자세히'로 접힌다)
  * DELETE  ?id=   목록에서 제거 (파일은 남는다)
  */
 
@@ -42,6 +44,8 @@ export async function GET() {
         title: r.title ?? '무제',
         note: r.note ?? '',
         project: r.project ?? '',
+        folder: r.folder ?? '',
+        summary: r.summary ?? '',
         aspect: r.aspect ?? '9:16',
         key: r.key ?? '',
         src: `/api/video/${r.key ?? ''}`,
@@ -91,6 +95,8 @@ export async function PATCH(req: Request) {
     if (body.note !== undefined) set.note = clean(body.note, 400);
     if (body.project !== undefined) set.project = clean(body.project, 60);
     if (body.aspect !== undefined) set.aspect = clean(body.aspect, 10);
+    if (body.folder !== undefined) set.folder = clean(body.folder, 60);
+    if (body.summary !== undefined) set.summary = clean(body.summary, 300);
     if (!Object.keys(set).length) return NextResponse.json({ ok: false, error: '변경할 값이 없습니다.' }, { status: 400 });
     const db = await getDb();
     await db.collection(COLLECTIONS.videos).updateOne({ _id: new ObjectId(id) }, { $set: set });

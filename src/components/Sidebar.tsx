@@ -112,14 +112,17 @@ const NAV = [
   // },
 ];
 
+/** 메뉴 항목 아래에 붙는 하위 항목 — 지금은 '영상 제작물' 아래 폴더들 (DB 에서 온다) */
+interface SubItem { href: string; label: string; count?: number }
+
 /**
  * 지금 보고 있는 항목 하나를 고른다.
  * 앞부분만 맞으면 켜는 방식이면 /design/manage 에서 /design 까지 같이 켜진다.
- * 가장 길게 맞는 것 하나만 남긴다.
+ * 가장 길게 맞는 것 하나만 남긴다 — 하위 폴더(/video/gallery/renewal)에 있으면 '영상 제작물' 대신 그 폴더가 켜진다.
  */
-function activeHrefFor(path: string): string {
+function activeHrefFor(path: string, subs: SubItem[] = []): string {
   let best = '';
-  for (const it of NAV.flatMap((g) => g.items)) {
+  for (const it of [...NAV.flatMap((g) => g.items), ...subs]) {
     const hit = path === it.href || (it.href !== '/' && path.startsWith(`${it.href}/`));
     if (hit && it.href.length > best.length) best = it.href;
   }
@@ -146,7 +149,7 @@ function ToggleButton({ collapsed, onClick }: { collapsed: boolean; onClick: () 
 }
 
 function NavBody({
-  path, onNavigate, collapsed, onToggle, badges = {},
+  path, onNavigate, collapsed, onToggle, badges = {}, subItems = {},
 }: {
   path: string;
   onNavigate?: () => void;
@@ -154,9 +157,11 @@ function NavBody({
   onToggle?: () => void;
   /** 메뉴 주소 → 배지 글자 — 하루 안에 새 데이터가 들어온 메뉴 (/api/nav-badges) */
   badges?: Record<string, string>;
+  /** 메뉴 주소 → 그 아래 하위 항목 (/api/video-folders) */
+  subItems?: Record<string, SubItem[]>;
 }) {
   const narrow = !!collapsed;
-  const activeHref = activeHrefFor(path);
+  const activeHref = activeHrefFor(path, Object.values(subItems).flat());
   return (
     <>
       <div className={`pt-4 pb-4 ${narrow ? 'px-2' : 'px-4'}`}>
@@ -199,9 +204,11 @@ function NavBody({
               const active = it.href === activeHref;
               // 고정 배지(새 메뉴) 또는 서버가 알려준 "새 데이터" 배지
               const badge = ('badge' in it && it.badge) || badges[it.href] || '';
+              // 하위 항목은 펼친 메뉴에서만 — 접힌 52px 에는 글자가 들어갈 자리가 없다
+              const subs = narrow ? [] : (subItems[it.href] ?? []);
               return (
+                <div key={it.href}>
                 <Link
-                  key={it.href}
                   href={it.href}
                   onClick={onNavigate}
                   title={it.label}
@@ -227,6 +234,33 @@ function NavBody({
                           style={{ background: 'var(--accent)' }} aria-label="새 항목" />
                   )}
                 </Link>
+                {subs.length > 0 && (
+                  <div className="mt-0.5 mb-1 grid gap-0.5">
+                    {subs.map((s) => {
+                      const on = s.href === activeHref;
+                      return (
+                        <Link
+                          key={s.href}
+                          href={s.href}
+                          onClick={onNavigate}
+                          title={s.label}
+                          className="flex items-center gap-2 rounded-lg text-[12.5px] font-medium pl-[36px] pr-2.5 py-1.5 transition-colors"
+                          style={{
+                            background: on ? 'var(--accent-soft)' : 'transparent',
+                            color: on ? 'var(--accent)' : 'var(--text-mute)',
+                          }}
+                        >
+                          <span className="text-[10px] opacity-80">📁</span>
+                          <span className="truncate">{s.label}</span>
+                          {s.count != null && (
+                            <span className="ml-auto text-[10.5px] tabular-nums opacity-80">{s.count}</span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+                </div>
               );
             })}
           </div>
@@ -250,12 +284,28 @@ export default function Sidebar() {
    * (방금 등록하고 다른 화면으로 가면 바로 뜨고, 하루가 지나면 사라진다).
    */
   const [badges, setBadges] = useState<Record<string, string>>({});
+  /*
+   * '영상 제작물' 아래 하위 폴더 (사용자 요청 2026-10-01 — 리뉴얼 영상 제작 · 레퍼런스 영상 제작).
+   * 폴더는 대화에서 DB 로 만들고 옮기므로 메뉴에 박아 두지 않고 배지처럼 주소가 바뀔 때마다 다시 묻는다.
+   */
+  const [subItems, setSubItems] = useState<Record<string, SubItem[]>>({});
   useEffect(() => {
     let alive = true;
     fetch('/api/nav-badges', { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => { if (alive && j?.badges) setBadges(j.badges); })
       .catch(() => { /* 배지는 부가 정보 — 실패해도 메뉴는 그대로 */ });
+    fetch('/api/video-folders', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive || !Array.isArray(j?.folders)) return;
+        setSubItems({
+          '/video/gallery': j.folders.map((f: { name: string; slug: string; count: number }) => ({
+            href: `/video/gallery/${f.slug}`, label: f.name, count: f.count,
+          })),
+        });
+      })
+      .catch(() => { /* 하위 폴더도 부가 정보 — 실패하면 '영상 제작물'만 보인다 */ });
     return () => { alive = false; };
   }, [path]);
 
@@ -268,7 +318,8 @@ export default function Sidebar() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
-  const current = NAV.flatMap((g) => g.items).find((it) => it.href === activeHrefFor(path));
+  const allSubs = Object.values(subItems).flat();
+  const current = [...NAV.flatMap((g) => g.items), ...allSubs].find((it) => it.href === activeHrefFor(path, allSubs));
 
   return (
     <>
@@ -279,7 +330,7 @@ export default function Sidebar() {
         }`}
         style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
       >
-        <NavBody path={path} collapsed={collapsed} onToggle={toggleCollapsed} badges={badges} />
+        <NavBody path={path} collapsed={collapsed} onToggle={toggleCollapsed} badges={badges} subItems={subItems} />
       </aside>
 
       {/* 모바일·태블릿 — 상단 바 */}
@@ -311,7 +362,7 @@ export default function Sidebar() {
             className="flex flex-col w-[248px] max-w-[82vw] border-r"
             style={{ borderColor: 'var(--line)', background: 'var(--surface)' }}
           >
-            <NavBody path={path} onNavigate={() => setOpen(false)} badges={badges} />
+            <NavBody path={path} onNavigate={() => setOpen(false)} badges={badges} subItems={subItems} />
           </div>
           <div className="flex-1" onClick={() => setOpen(false)} style={{ background: 'rgba(0,0,0,.6)' }} />
         </div>

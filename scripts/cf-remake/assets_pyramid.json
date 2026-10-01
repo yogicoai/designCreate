@@ -1,0 +1,23 @@
+{
+  "_설명": "cf_pyramid.py 가 쓰는 자산. 다시 렌더링하려면 이 파일들을 한 폴더에 받고 python cf_pyramid.py <출력.mp4> <그 폴더>. 제품 컷아웃(sp*, hero_*)은 노란 배경(#F9DB06) 원본 그대로 두면 스크립트가 뺀다.",
+  "pyr_audio.m4a": "https://yogibo.openhost.cafe24.com/web/design/video/ref_yogibo_pyramid_35s.jpg (mp4 — ffmpeg -vn -c:a copy 로 음원만 추출)",
+  "yogibo_logo3_on.png": "https://yogibo.kr/web/img/icon/logo3_on.png",
+  "Fraunces.ttf": "google/fonts ofl/fraunces (cf_full.py 가 불러오므로 같이 둔다 — 이 영상 글자는 전부 Pretendard)",
+  "sp8.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151336_6ec528b1-f96f-45d8-8cc6-521ef343aaa4.png",
+  "sp6.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151338_a1804c21-02bb-4ad7-a362-9fd63b231f7f.png",
+  "hero_pink.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151336_1c1ce308-0453-49f4-9a62-7780da4495e8.png",
+  "hero_mint.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151337_e6bf3d3b-0154-4a3e-ad14-ad2b6c6f1329.png",
+  "hero_stripe.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151336_6c40983a-4aa7-406c-978f-86dca21cfbee.png",
+  "giza.png": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_141932_bed4dc0f-efd2-4faf-a881-167102ef3860.png",
+  "p_tok.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151219_3360cb27-1ab4-471e-b84e-b6e0dbc78ef6.mp4",
+  "p_size.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151218_3c8f83b6-b276-4acd-a345-154ece5b2cd2.mp4",
+  "p_relax.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151218_73452ec7-41f8-4644-a4c0-7f6d7c5e4811.mp4",
+  "p_q1.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151218_0857deb5-a327-4035-b629-3707fea2c2a9.mp4",
+  "p_q2.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151218_cf46e47a-3a4b-497f-b669-5a259913c808.mp4",
+  "p_q3.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151217_8dff1324-1a7b-4339-ba54-46c3b0b8ff58.mp4",
+  "p_q4.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151218_fcf80a0f-168d-4f80-affc-4a0f20632e03.mp4",
+  "p_attach.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151218_10d05c0f-b444-4878-aa83-dcf3f52fb8a6.mp4",
+  "p_durable.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151217_0ec305c8-a63f-4a6d-88fd-d74202cfaa73.mp4",
+  "p_colors.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151644_151cb9a0-178d-4746-adbe-ad1cb0c3ac93.mp4",
+  "p_rest.mp4": "https://d8j0ntlcm91z4.cloudfront.net/user_3GqUAvuXPXzI4QTJXVT0jqaM2ll/hf_20260930_151643_b4c25f0e-b83b-40e6-8c35-9a7bcab49f94.mp4"
+}

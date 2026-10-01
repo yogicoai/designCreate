@@ -8,7 +8,9 @@
  * 포스터(썸네일)는 ffmpeg 로 첫 프레임 근처를 뽑아 같이 올린다 — 갤러리가 poster 로 목록을 그린다.
  *
  * 사용: node --env-file=.env.local scripts/import-external-video.mjs <영상URL|로컬경로> <meta.json>
- *   meta: { namePart, title, project, note, aspect, order }
+ *   meta: { namePart, title, project, note, aspect, order, folder?, summary? }
+ *   folder  = 갤러리 폴더 (예: 「리뉴얼 영상 제작」 — CF 리메이크는 여기로)
+ *   summary = 카드에 먼저 보이는 1~2문장 과정 설명 (긴 note 는 '자세히'로 접힌다)
  */
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -88,6 +90,8 @@ const doc = {
   key, poster: posterUrl,
   title: meta.title ?? base,
   project: meta.project ?? '',
+  ...(meta.folder ? { folder: meta.folder } : {}),
+  ...(meta.summary ? { summary: meta.summary } : {}),
   note: [meta.note, `${seconds}초 · ${width}x${height}`].filter(Boolean).join('\n'),
   aspect: meta.aspect ?? (width && height ? (width >= height ? '16:9' : '9:16') : ''),
   order: meta.order ?? maxOrder + 1,

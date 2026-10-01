@@ -16,7 +16,7 @@ W, H = 1920, 1080
 FPS_NUM, FPS_DEN = 24000, 1001
 FPS = FPS_NUM / FPS_DEN
 A = sys.argv[2] if len(sys.argv) > 2 else os.path.dirname(os.path.abspath(__file__))
-KR_FONT = r"C:/Users/Yogibo Design/Desktop/imgCreate/fonts/PretendardVariable.ttf"
+KR_FONT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "fonts", "PretendardVariable.ttf")   # 저장소 fonts/ — PC 가 바뀌어도 그대로
 EN_FONT = os.path.join(A, "Fraunces.ttf")          # OFL — Cooper Black 라이선스가 확인되면 여기만 바꾼다
 
 GREEN, PINK, TEAL, MINT = (40, 136, 24), (248, 88, 88), (88, 184, 200), (62, 224, 197)
@@ -33,6 +33,11 @@ CLIPS = {
     # v2 — 노란 제품 카드 대신 장점을 직접 보여주는 실사 (사용자 요청 2026-09-30)
     "H": ("cfH.mp4", 2.4), "I": ("cfI.mp4", 3.2), "J": ("cfJ.mp4", 1.7),
 }
+# v3 — 사용자 요청 2026-09-30: A 여성B→여성E, E 여성E→여성B(원본은 컷 중간에 얼굴이 바뀜),
+# I 팟이 너무 작게 나와 실측(95×85cm, 여성D 173cm)으로 다시. 세 컷 모두 Seedance 2.5 1080p.
+CLIPS.update({"A": ("cfA3.mp4", 2.3), "E": ("cfE3.mp4", 1.9), "I": ("cfI3.mp4", 3.0)})
+# v4 — D 도 팟이 발받침처럼 작게 나와 다시(사용자 요청 2026-09-30): 서 있을 때 팟 윗면이 허리, 앉으면 발이 뜬다.
+CLIPS.update({"D": ("cfD4.mp4", 1.7)})
 
 
 # ── 기본 도구 ─────────────────────────────────────────────

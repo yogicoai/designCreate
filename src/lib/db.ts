@@ -58,4 +58,5 @@ export const COLLECTIONS = {
   designTemplates: 'design_templates',     // 디자인 생성 — 저장한 텍스트 배치 (배경 없이 배치만)
   videos: 'videos',                        // 완성 영상 (cafe24 에 .jpg 로 위장 저장, 프록시로 재생)
   aiProducts: 'ai_products',               // AI 생성 제품 시트 (힉스필드 한 장 → 칸별로 잘라 형태 기준으로)
+  settings: 'settings',                    // 문자열 _id 로 두는 설정 묶음 (expression_alias · video_folders …)
 } as const;
