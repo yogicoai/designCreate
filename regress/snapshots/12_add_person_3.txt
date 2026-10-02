@@ -1,0 +1,66 @@
+# 12_add_person_3 — 편집 · 사람 없는 원본 소파 사진에 인물 3명 추가
+# 참조 4장: base · talent · talent · talent
+# 생성 비율 1:1 → 2048x2048
+The FIRST image is the base photograph to edit — keep it as-is and change only what is specified below.
+The SECOND image is the PRIMARY identity reference for PERSON 1 (counting people from the LEFT of the base image) — an approved portrait of ONE model; treat it as ground truth for face construction, eye/nose/lip shape, skin tone, hairline and hairstyle.
+The THIRD image is the PRIMARY identity reference for PERSON 2 (counting people from the LEFT of the base image) — an approved portrait of ONE model; treat it as ground truth for face construction, eye/nose/lip shape, skin tone, hairline and hairstyle.
+The FOURTH image is the PRIMARY identity reference for PERSON 3 (counting people from the LEFT of the base image) — an approved portrait of ONE model; treat it as ground truth for face construction, eye/nose/lip shape, skin tone, hairline and hairstyle.
+
+Reproduce the base photograph EXACTLY — same camera angle, same poses, same body positions and limb placement, same product shapes and compression, same lighting, same background, same framing and crop. Change ONLY what is specified below. Everything unspecified must stay pixel-faithful to the base.
+
+EDIT — change ONLY the following, and leave everything else pixel-faithful to the base image:
+  - ADD the specified people into the scene, seated naturally on the bean bags already in the photo — one person per seat, counting seats from the LEFT. The bean bags in the photo ARE the product being advertised: keep their shape, fabric texture, colour and position exactly as photographed — do not replace, recolour, move or add any furniture. The fabric must visibly compress and dent under each body; shadows, perspective and colour temperature must match the photo so the people look photographed in place, not pasted
+Everything other than the added people must stay exactly as in the base image — same composition, camera angle, object positions, scale and lighting direction.
+
+IMAGE PRESERVATION LEVEL: MODERATE
+Maintain the overall composition, color palette, and lighting mood
+of the source image. The main subject's general pose and placement
+should be similar, but allow some artistic reinterpretation in details
+(textures, background elements, etc.).
+This reinterpretation licence applies to scenery details ONLY. It NEVER overrides the product rules: product shape, true physical scale and colour stay exactly as specified below, and every product stays plain with no logo or tag.
+
+If the base image contains MORE people than the 3 listed here, remove the extra ones completely — erase the whole person, not just the face. Reconstruct whatever was behind them: the product surface, its seams and silhouette, the floor, the rug and the background, all consistent with the surrounding lighting and shadows. No ghosting, no leftover limbs, no blurred smear where a person used to be. The product must read as a complete, undistorted form where it becomes visible again.
+PEOPLE — exactly 3 people, assigned by position COUNTING FROM THE LEFT of the frame. No extra people, no background bystanders, no duplicated faces.
+PERSON 1 (leftmost) — identity from the SECOND image: a European woman in her early twenties, soft oval face, long chestnut-brown waves, light freckles, fresh and natural presence.
+  BODY: 172cm, slim long-limbed build — slightly taller than the 170cm Max.
+  EXPRESSION: a bright, open smile.
+  OUTFIT: a cream oversized shirt with wide-leg trousers (B_W_C_02), barefoot unless stated otherwise.
+PERSON 2 (second from left) — identity from the THIRD image: a European man in his late twenties to early thirties, clean-cut, medium tousled dark brown waves, relaxed and approachable.
+  BODY: 180cm, slim athletic build — clearly taller than the 170cm Max.
+  EXPRESSION: a bright, open smile.
+  OUTFIT: a white tee with black slacks (A_M_C_02), barefoot unless stated otherwise.
+PERSON 3 (third from left) — identity from the FOURTH image: a European woman in her mid-to-late twenties, slim oval face, blonde layered lob with curtain bangs, cool and minimal presence.
+  BODY: 169cm, slim build — slightly shorter than the 170cm Max.
+  EXPRESSION: a soft, subtle smile.
+  OUTFIT: a white tee with navy slacks (C_W_C_01), barefoot unless stated otherwise.
+Each person keeps their own distinct identity — those with a reference sheet must match it exactly; never blend faces between people, never give two people the same face.
+GAZE & HEAD DIRECTION — direct eye contact with the camera is the EXCEPTION, not the default. The people are candid, absorbed in the scene: looking at each other, at the product, out the window, at a prop, or into the middle distance, with relaxed three-quarter head angles. At most ONE person may glance toward the camera, and only when it feels natural — never the whole group locking eyes with the lens like a posed studio photo.
+FACE IDENTITY IS THE SINGLE HIGHEST PRIORITY OF THIS IMAGE — above pose, above composition, above styling. For every person that has an identity sheet, that sheet is absolute ground truth. The rendered face must be unmistakably the SAME person: same skull and jaw shape, same cheekbones, same eye shape and spacing, same nose, same lips, same hairline and hair texture.
+HAIR COMES FROM THE SHEET, NOT FROM THE BASE: length, cut, parting, volume, curl or straightness and colour must all match the identity sheet. Never keep the haircut of the person being replaced.
+DO NOT AVERAGE. Never blend the sheet face with whatever face is already in the base image — the base face is to be discarded completely and rebuilt from the sheet. A result that looks like a mix of the two is a failure.
+AGE IS LOCKED to what the sheet and the stated age say. Do not age a person up or down to suit the body, pose, clothing or seat of the figure they are replacing. If the person being replaced is visibly younger or older (a different age group), the SHEET WINS — rebuild the head, face and proportions to match the sheet and let the pose adapt around them; body size follows SCALE.
+Do not beautify, slim, smooth, de-age or drift toward a generic attractive face. Keep the real skin texture, pores and asymmetry.
+THE IDENTITY REFERENCES ARE STUDIO PORTRAITS — take ONLY the person from them: face geometry, features, skin character and hairstyle. Do NOT copy their flat studio lighting, white balance or head-on frontal angle. Light every face with THIS scene's light — same direction, warmth and softness as the room, with matching shadows on the face and neck — and turn the head to whatever angle the pose calls for.
+NO COMPOSITE LOOK — each person must read as ONE continuous photograph: face, ears, neck, chest and hands share one skin tone; no brightness, colour or sharpness step at the jawline or collar; hair (at whatever length the sheet shows) sits naturally and casts a soft shadow where it meets the skin or clothing; the head's size, angle and perspective sit correctly on the body. A result that looks like a face pasted onto a photo is a failure.
+SEATED POSTURE — keep every pose relaxed but modest and commercially usable. Knees stay together, crossed, angled to one side, or tucked up; legs may stretch forward but never splay wide apart. No wide-open straddling posture, no crotch-forward framing, no upward angle between the legs. Skirts and dresses fall naturally over the knees. This applies to everyone in the frame regardless of how deeply the seat sinks under their weight.
+
+
+SCALE — the base photograph's bean bags and furniture are the SIZE YARDSTICK. Seat each added person at their own stated real height against them, on the same floor plane, with the photo's own camera height and perspective. Heads and faces must not be enlarged.
+  Real heights: PERSON 1 172cm, PERSON 2 180cm, PERSON 3 169cm. Keep these height proportions between the people.
+  Keep the Yogibo furniture at its true real-world size against these people — the largest of them, the Yogibo Max, is about as long as an adult is tall (170cm); the others are smaller. Do NOT shrink the people so the furniture looks oversized, nor enlarge them so a large bean bag reads like a small cushion.
+  Integrate every person and product seamlessly INTO the photograph, not pasted on top: match the photo's lighting direction and softness, its depth of field and photographic grain. Where a person touches a bean bag or the floor, the surface must visibly dent and compress under their weight, with a soft contact shadow in the crease and correct ambient occlusion. The product casts a soft grounded shadow on the room's floor. No hard cut-out edges, no floating, no sticker look — same lens, same grain, same colour temperature as the photo.
+  CONSISTENT LIGHTING — every person is lit by the SAME light in the SAME room: identical key-light direction, intensity, colour temperature and shadow softness on each face and body. No one is brighter, darker, warmer, cooler or more contrasty than the others; their skin tones and exposure read as a single photograph taken at one moment, not separate cut-outs lit differently.
+
+INTERIOR SCENE (2048x2048). The product and model stand at TRUE physical scale inside the photographed room — modest within the space, with generous floor and room visible around them. Do NOT enlarge the products to fill the frame; the room's furniture sets their size. THE PRODUCT IS THE HERO of this frame, not the people. Shoot it like an editorial interior photograph: the camera stands back far enough that the bean bag is fully visible with breathing room around it, surrounded by its interior context — floor, rug, surrounding furniture, walls. The people are supporting cast, naturally absorbed into the scene, never so large that they dominate the frame or crop the product. FILL THE ENTIRE FRAME edge to edge — absolutely no blank, white, grey, transparent, black-bar or letterboxed area, and no empty corners. If the reference does not cover the whole target shape, EXTEND (outpaint) the scene naturally to every edge — continue the walls, floor, window, curtains and background seamlessly so the whole rectangle is a single continuous photograph.
+HEADROOM: every head must be fully inside the frame with visible margin above the hair. Never crop a head, hand or foot at any edge.
+
+FINAL STAGING CHECK — a candid moment between them, NOT a portrait. Turn each head 25-40° away from the lens: PERSON 1 turns toward PERSON 2 and looks AT THEIR FACE, PERSON 2 answers — talking, listening or laughing — and looks back at PERSON 1 or down at what they hold. Shoulders are angled, not squared to the camera. NEITHER of them looks into the lens. A frame where both faces are turned to the camera and smiling is a failure — if you have drawn that, turn the heads toward each other instead.
+
+ADDITIONAL DIRECTION FROM THE ART DIRECTOR (written in Korean). Read it, translate it faithfully, and apply it to the scene, lighting, props, camera and pose. Where it conflicts with any rule above, THIS DIRECTION WINS:
+내가 선택한 모델들의 해당 소파에 앉아 있는 모습을 연출하면될듯한데 모델들이 너무 크게 연출안되도 될듯해
+
+The model must wear a natural, gentle smile - never a blank expression. Head-to-body ratio must be realistic: adults about 1:7.5, a pre-teen about 1:6.5, a young child about 1:6 — children are not scaled-down adults; their heads are proportionally larger.
+
+ABSOLUTELY NO TEXT: no typography, no Korean or English lettering, no numbers, no badges, no price tags, no logos, no watermarks. Photorealistic commercial product photography only.
+WATERMARK CLEANUP: any overlaid watermark, copyright line, credit, username handle, timestamp, UI element or caption text PRINTED ON a base or reference photo is NOT part of the scene — remove it completely and reconstruct the image beneath it, matching the surrounding texture, colour and lighting. This overrides "stay faithful to the base": the output must carry no inherited overlay text of any kind.
+NO LOGO — MANDATORY: every product in this image is plain fabric with NO brand tag, NO sewn label, NO patch, NO logo, NO wordmark and NO lettering anywhere on it. If a reference photograph or the base photograph shows a tag or logo on a product, REMOVE it and render that spot as plain, continuous fabric of the same colour. Never draw, invent or add any logo, brand mark or tag.

@@ -10,10 +10,44 @@
  *   node --env-file=.env.local scripts/read-handoff.mjs --list     # 최근 10건 목록
  *   node --env-file=.env.local scripts/read-handoff.mjs <id>       # 특정 건
  *   node --env-file=.env.local scripts/read-handoff.mjs --used <id> # 처리 완료 표시
+ *   node --env-file=.env.local scripts/read-handoff.mjs --compose <요청.json>   # 화면 없이 대화에서 바로 조립
+ *   (어느 경우든 뒤에 --prompt-file <경로> 를 붙이면 프롬프트를 그 파일로 쓰고 화면에는 길이만 보여 준다)
+ *
+ * --compose (점검 2026-10-02 5번):
+ *   화면에서 고르지 않고 대화에서 바로 시작한 컷은 앱 규칙(형태·크기 짝짓기·톤·시선·보존)을 하나도 안 탔다 —
+ *   그런 컷 43장의 프롬프트가 17~405자였다. 요청 본문(JSON, regress/cases.json 의 body 와 같은 모양:
+ *   products·talents·uploadedRefs·direction·sizeValue…)을 주면 앱이 무과금 템플릿으로 조립해 넘기기 기록으로 남긴다.
+ *   대화에서는 그 본문 위에 쓰고, 뽑은 그림은 import-external-cut.mjs --handoff <id> 로 등록한다(앱 검사를 그대로 탄다).
+ *   개발 서버(http://localhost:6100)가 떠 있어야 한다.
  */
+import fs from 'node:fs';
 import { MongoClient, ObjectId } from 'mongodb';
 
-const arg = process.argv[2];
+const argv = process.argv.slice(2);
+const pfIdx = argv.indexOf('--prompt-file');
+const PROMPT_FILE = pfIdx >= 0 ? argv[pfIdx + 1] : '';
+if (pfIdx >= 0) argv.splice(pfIdx, 2);
+let arg = argv[0];
+const API = process.env.GENERATE_API || 'http://localhost:6100/api/generate';
+
+if (arg === '--compose') {
+  const file = argv[1];
+  if (!file || !fs.existsSync(file)) { console.error('사용: read-handoff.mjs --compose <요청.json>'); process.exit(1); }
+  const body = JSON.parse(fs.readFileSync(file, 'utf8'));
+  let json;
+  try {
+    const res = await fetch(API, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...body, dryRun: true, handoff: true, promptMode: 'local', handoffTitle: body.handoffTitle || body.title || '대화에서 조립' }),
+    });
+    json = await res.json();
+  } catch (e) {
+    console.error('개발 서버에 닿지 못했습니다 (npm run dev 가 떠 있나요?)', e.message);
+    process.exit(1);
+  }
+  if (!json.ok || !json.handoffId) { console.error('조립 실패:', json.error || '넘기기 기록이 만들어지지 않았습니다'); process.exit(1); }
+  arg = json.handoffId;
+}
 const client = new MongoClient(process.env.MONGODB_URI);
 await client.connect();
 const col = client.db(process.env.MONGODB_DB || undefined).collection('handoffs');
@@ -31,7 +65,7 @@ if (arg === '--list') {
 }
 
 if (arg === '--used') {
-  await col.updateOne({ _id: new ObjectId(process.argv[3]) }, { $set: { used: true, usedAt: new Date() } });
+  await col.updateOne({ _id: new ObjectId(argv[1]) }, { $set: { used: true, usedAt: new Date() } });
   console.log('처리 완료로 표시했습니다.');
   await client.close();
   process.exit(0);
@@ -80,6 +114,12 @@ for (const [i, r] of (doc.refs ?? []).entries()) {
   console.log(`      ${r.url || 'SWATCH ' + r.swatchHex}`);
 }
 
-console.log('\n── 프롬프트 ──\n');
-console.log(doc.prompt);
+if (PROMPT_FILE) {
+  fs.writeFileSync(PROMPT_FILE, doc.prompt);
+  console.log(`\n── 프롬프트 ── ${doc.prompt.length.toLocaleString()}자 → ${PROMPT_FILE}`);
+} else {
+  console.log('\n── 프롬프트 ──\n');
+  console.log(doc.prompt);
+}
+console.log(`\n뽑은 뒤 등록: node scripts/import-external-cut.mjs <결과 URL> --handoff ${String(doc._id)} [--prompt-file <보낸 프롬프트>]`);
 await client.close();

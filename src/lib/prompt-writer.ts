@@ -252,6 +252,12 @@ export interface GenerationSpec {
 
   /** MD 가 한글로 적은 방향 지시 */
   direction?: string;
+  /**
+   * 앱이 스스로 넣는 한국어 문장(자동 연출 지시·톤 맞춤 한 줄)을 영문으로 쓴다 — 제미나이가 아닌 엔진용 (점검 2026-10-02 7번).
+   * 그 문장들은 "사람이 한국어로 쓴 지시가 제미나이에서 잘 먹혔다" 는 실측으로 한국어가 됐다. GPT(gpt-image-1)·힉스필드 soul 에는
+   * 그 근거가 없다. 사람이 직접 쓴 지시는 번역하지 않고 그대로 둔다(머리말이 "한국어다, 옮겨서 따르라" 고 알려 준다).
+   */
+  englishOnly?: boolean;
 
   /** 활성화된 전 컷 공통 규칙 (영문) */
   houseRules?: string[];
@@ -599,13 +605,22 @@ export function buildReferences(spec: GenerationSpec): RefSlot[] {
     if (!p.color?.hex) continue;
     if (slots.length >= MAX_REFS) break;
     const multi = (spec.products ?? []).length > 1;
+    /*
+     * 배경·편집 원본이 있는 컷에서는 "채도·명도까지 정확히" 라고 하지 않는다 — 뒤의 PRODUCT RELIGHT·PHOTOGRAPHIC MATCH 가
+     * "방의 빛에 맞춰 누그러뜨려라" 고 해서 두 지시가 부딪혔다 (점검 2026-10-02). 스와치는 염색 색(중립광 기준)이고,
+     * 장면에서는 그 천이 방 조명을 받은 모습으로 보인다 — 색이 딴 색으로 바뀌는 것만 금지한다. 스튜디오 컷은 그대로 "정확히".
+     */
+    const lit = hasEditBase(spec) || (spec.uploadedRefs ?? []).some((u) => u.role === 'background');
+    const match = lit
+      ? "this is the fabric's true dye colour under neutral daylight: keep this hue identity, shown as that fabric photographs under the scene's own light (its brightness and warmth shift with the room, but it never becomes a different colour)"
+      : 'match this hue, saturation and darkness precisely';
     slots.push({
       kind: 'swatch',
       title: `컬러 스와치 · ${p.color.name}${multi ? ` (${p.line})` : ''}`,
       swatchHex: p.color.hex,
       role: multi
-        ? `the exact official colour swatch (${p.color.hex}) for the Yogibo ${p.line}${p.placement ? ` ${wherePhrase(p.placement)}` : ''} — match this hue, saturation and darkness precisely on that product only`
-        : `the exact official colour swatch (${p.color.hex}) — match this hue, saturation and darkness precisely`,
+        ? `the exact official colour swatch (${p.color.hex}) for the Yogibo ${p.line}${p.placement ? ` ${wherePhrase(p.placement)}` : ''} — ${match}, on that product only`
+        : `the exact official colour swatch (${p.color.hex}) — ${match}`,
     });
   }
 
@@ -740,7 +755,7 @@ function compositionFor(spec: GenerationSpec): string {
  * 제품마다 칸을 꽉 채워 찍혀 있어 참조 이미지끼리는 크기 차이가 전혀 안 보인다 — 크기는 숫자로만 전달된다.
  * 그래서 가장 긴 변 기준으로 큰 순서와 배율을 따로 적는다.
  */
-function relativeSizeLines(products: Pick<ProductSpec, 'line' | 'dims' | 'placement'>[]): string[] {
+function relativeSizeLines(products: Pick<ProductSpec, 'line' | 'dims' | 'placement'>[], stacked = false): string[] {
   const sized = products
     .map((p, i) => {
       const d = p.dims ?? {};
@@ -757,7 +772,13 @@ function relativeSizeLines(products: Pick<ProductSpec, 'line' | 'dims' | 'placem
   const dimsText = (d: ProductSpec['dims']) =>
     [d.w && `${d.w}cm wide`, d.d && `${d.d}cm deep`, d.h && `${d.h}cm tall/long`].filter(Boolean).join(' x ');
   const L = [
-    'RELATIVE SIZE BETWEEN THE PRODUCTS — they stand on the same floor, so their sizes must compare exactly as these real measurements do. ' +
+    /*
+     * 조합(맥스 위에 서포트)에서는 "같은 바닥에 서 있다" 를 쓰지 않는다 — 바로 위의 배치 지시("서포트는 맥스 위에 얹힌다")와
+     * 정면으로 부딪힌다 (점검 2026-10-02: 조합 컷 61장에 두 문장이 같이 들어가 있었다).
+     */
+    (stacked
+      ? 'RELATIVE SIZE BETWEEN THE PRODUCTS — how they sit on each other is described above; their sizes must compare exactly as these real measurements do. '
+      : 'RELATIVE SIZE BETWEEN THE PRODUCTS — they stand on the same floor, so their sizes must compare exactly as these real measurements do. ') +
       'The reference images are each cropped to fill their own frame, so they do NOT show relative size; use these numbers:',
   ];
   for (const x of order) {
@@ -792,7 +813,10 @@ function finalToneLines(spec: GenerationSpec): string[] {
       'sources (its windows, lamps or coloured lights), from their direction and in their colour, with the room\'s own shadows falling on them. ' +
       'In a dim or night room they are dim too, lit only where that light reaches them; nothing in the frame is brighter, cleaner or more evenly ' +
       'lit than the room allows. Each product keeps its own colour identity — only the light on it changes.',
-    `배경 이미지의 조명·톤에 맞춰서 ${whoKr}의 명도·대비·색감·그림자가 조절되게 해줘 — 배경 속 조명(창·스탠드·네온 등)의 방향과 색이 ${whoKr}에도 그대로 비쳐야 한다.`,
+    // 같은 내용의 한국어 한 줄 — 제미나이에서 한국어 지시가 잘 먹혀서 덧붙였다. 다른 엔진에는 위 영문만 보낸다
+    ...(spec.englishOnly
+      ? []
+      : [`배경 이미지의 조명·톤에 맞춰서 ${whoKr}의 명도·대비·색감·그림자가 조절되게 해줘 — 배경 속 조명(창·스탠드·네온 등)의 방향과 색이 ${whoKr}에도 그대로 비쳐야 한다.`]),
   ];
 }
 
@@ -886,6 +910,13 @@ function pickFaceAngle(spec: GenerationSpec, i: number): { url: string; kr: stri
 function autoDirection(spec: GenerationSpec): string {
   const n = spec.talents?.length ?? 0;
   if (!n || recastsPeople(spec) || spec.direction) return '';
+  if (spec.englishOnly) {
+    return n > 1
+      ? 'Stage it as a moment of the people facing each other in conversation — one is speaking, the other listens with a smile. ' +
+        'Their heads are turned 25-40 degrees away from the lens and neither looks at the camera.'
+      : 'Stage it as an unposed moment, unaware of the camera — the head turned 25-40 degrees away from the lens, ' +
+        'the eyes on something held in the hands or out of a window.';
+  }
   return n > 1
     ? '두 사람이 서로 마주 보며 대화하는 순간으로 연출해줘 — 한 사람은 말하고 다른 사람은 웃으며 듣는다. 고개는 렌즈에서 25~40도 돌아가 있고, 둘 다 카메라를 보지 않는다.'
     : '카메라를 의식하지 않는 순간으로 연출해줘 — 고개를 렌즈에서 25~40도 돌리고, 시선은 손에 든 것이나 창밖을 향한다.';
@@ -986,7 +1017,7 @@ function productBlock(spec: GenerationSpec): string[] {
     L.push('');
   }
 
-  L.push(...relativeSizeLines(products));
+  L.push(...relativeSizeLines(products, !!spec.combo?.staging?.length));
 
   products.forEach((p, i) => {
     const colorEn = p.color?.nameEn || p.color?.name || '';
@@ -1049,7 +1080,13 @@ function productBlock(spec: GenerationSpec): string[] {
           'fully inflated and taut: no dents, no seat hollow, no slumped or sagging top, no sitting creases, never tipped over or laid down on its side.',
       );
     } else {
-      L.push(`  USE: ${p.staging || p.modes}.`);
+      /*
+       * 제품 메모의 연출 문장이 카메라 방향으로 시작하는 경우가 있다 (라운저: "seen from its front-right three-quarter angle — …;").
+       * 배치 각도 칸이나 포즈 소스가 각도를 정하는 컷에서는 그 앞머리를 뺀다 — 안 빼면 한 제품에 각도 지시가 둘이 된다
+       * (점검 2026-10-02: "위에서 본 3/4" 칸 + "오른쪽 앞 3/4" 문장이 한 프롬프트에).
+       */
+      const use = p.staging || p.modes;
+      L.push(`  USE: ${placeRef || poseControls ? use.replace(/^seen from [^;]*;\s*/i, '') : use}.`);
     }
   });
   /*
@@ -1547,11 +1584,16 @@ function scaleBlock(spec: GenerationSpec): string[] {
      * 제품끼리 크기 비교(relativeSizeLines)는 넣지 않는다 — 원본 사진이 실제 크기 관계를 이미 보여 주고,
      * 그 문장의 "같은 바닥에 서 있다" 가 "위에 얹힌 제품은 그대로 얹혀 있게"(사진 속 제품 블록)와 부딪힌다.
      */
-  } else if (talents.length) {
+  } else if (talents.length && !spec.products?.length) {
+    /*
+     * 제품을 하나도 모를 때만 쓰는 폴백이다. 예전엔 ③ 에서 제품을 골라도 나가서, 라운저(80cm)·드롭 컷에
+     * "요기보 라운저는 성인 키만 하다(170cm)" 가 들어갔다 — 바로 위 SIZE PAIRING 의 숫자와 정면충돌
+     * (점검 2026-10-02: 맥스가 아닌 컷 96장). "floor lounger" 라는 말도 제품 Lounger 로 읽혀서 맥스라고 이름을 적는다.
+     */
     L.push(
-      '  Keep the Yogibo furniture at its true real-world size against these people — a Yogibo floor lounger is ' +
-        'roughly as long as an adult is tall (about 170cm). Do NOT shrink the people so the furniture looks oversized, ' +
-        'nor enlarge them so a large floor lounger reads like a small cushion.',
+      '  Keep the Yogibo furniture at its true real-world size against these people — the largest of them, the Yogibo Max, ' +
+        'is about as long as an adult is tall (170cm); the others are smaller. Do NOT shrink the people so the furniture looks oversized, ' +
+        'nor enlarge them so a large bean bag reads like a small cushion.',
     );
   }
 
@@ -2069,9 +2111,11 @@ export function buildPromptLocal(spec: GenerationSpec, refs: RefSlot[]): string 
      * 라이브(Opus) 모드에서는 Opus 가 이 지시를 영문으로 옮겨 본문에 녹인다.
      */
     L.push('');
+    // 한글이 없으면(영문 자동 지시·영문으로 쓴 지시) "한국어다, 옮겨라" 를 붙이지 않는다
+    const korean = /[가-힣]/.test(direction);
     L.push(
-      'ADDITIONAL DIRECTION FROM THE ART DIRECTOR (written in Korean). ' +
-        'Read it, translate it faithfully, and apply it to the scene, lighting, props, camera and pose. ' +
+      `ADDITIONAL DIRECTION FROM THE ART DIRECTOR${korean ? ' (written in Korean). Read it, translate it faithfully, and apply it' : '. Apply it'} ` +
+        'to the scene, lighting, props, camera and pose. ' +
         'Where it conflicts with any rule above, THIS DIRECTION WINS:',
     );
     L.push(direction);

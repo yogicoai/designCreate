@@ -1,0 +1,29 @@
+# 02_studio_lounger_recolor — 제품만 · 스튜디오 · 라운저 올리브 (네이비 시트를 색만 바꿔 쓰는 경로)
+# 참조 4장: sheet · sheet · sheet · swatch
+# 생성 비율 1:1 → 1000x1000
+The FIRST image is THE EXACT PRODUCT TO PLACE: an approved reference image of the Yogibo Lounger, seen from the 45-degree three-quarter view. Reproduce this very product — its three-dimensional shape, proportions, seams, plumpness and fabric — and show it in the scene from this same viewing angle (the 45-degree three-quarter view), so the camera sees the product the way this image does. It is already shown in the requested colour. Take nothing else from it: ignore its plain studio background, studio lighting and framing.
+The SECOND image is another angle of the SAME approved Lounger reference (side view) — use it ONLY to understand the product's full three-dimensional shape. Do not show the product from this angle and take nothing else from it. It is already shown in the requested colour.
+The THIRD image is another angle of the SAME approved Lounger reference (front view) — use it ONLY to understand the product's full three-dimensional shape. Do not show the product from this angle and take nothing else from it. It is already shown in the requested colour.
+The FOURTH image is the exact official colour swatch (#668B01) — match this hue, saturation and darkness precisely.
+
+PRODUCT — Yogibo Lounger (olive green).
+  SHAPE: a plump lounge-chair bean bag in ONE continuous inflated body: a tall ROUNDED backrest that curves forward and down into the seat, like a fully stuffed slipper. The SEAT is a full, gently CONVEX cushion — its top surface bulges slightly upward and meets the backrest in a smooth rounded valley, not a crease. A thin contrast piping seam runs from the crown down the side. All surfaces taut and smooth (65cm wide, 80cm deep, 60cm tall); it dents only under an actual sitter.
+  EXACT SIZE: 65cm wide x 80cm deep x 60cm tall/long, 4.4kg.
+  SCALE ANCHOR: a low lounge chair bean bag about knee-height of a standing adult (60cm); a one-person seat whose backrest reaches a seated adult mid-back.
+  NEGATIVE: NOT a ball, NOT a flat cushion, NOT deflated, slack or wrinkle-sagged — no sunken seat pocket, no sitting depression, no deep crease or shadowed hollow where seat meets backrest when unoccupied; the backrest stands full and rounded, never collapsed — and NO sharp angular corners anywhere: every edge and corner of the inflated body rounds off soft and plump, like a fully stuffed cushion.
+  COLOUR: olive green (#668B01) — exact, must not drift toward a neighbouring hue.
+  CAMERA ANGLE ON THIS PRODUCT: the 45-degree three-quarter view, exactly as in its placement reference image.
+  LOGO: none — plain fabric with no brand tag, label, patch or lettering (mandatory).
+  STATE: EMPTY — nobody sits, leans or lies on it. It stands in its normal resting position exactly as in its placement reference image, fully inflated and taut: no dents, no seat hollow, no slumped or sagging top, no sitting creases, never tipped over or laid down on its side.
+PRODUCT VIEWS show each product in its resting orientation, and with nobody in this image each product KEEPS exactly the orientation and stance shown in its placement reference — do not tip it over, lay it down, turn it onto another face or pose it like furniture in use. Its shell keeps the exact shape and true dimensions from the views — never bend, curl, stretch, flatten, deflate or merge a product to fit the composition.
+THE VIEW PHOTOGRAPHS ARE GROUND TRUTH for each product's shape. Match their silhouette EXACTLY — the same backrest angle, the same seat-to-back proportion, the same curvature and stance. If this text and the photographs ever disagree, FOLLOW THE PHOTOGRAPHS.
+UNOCCUPIED PRODUCTS STAY FULLY INFLATED: a bean bag with nobody on it is taut, plump and full — never render dents, sitting hollows, sunken tops, creased pockets or sagging on an empty product. Fabric compresses ONLY at the exact spots where a person is actually in contact, and nowhere else.
+
+SQUARE PRODUCT THUMBNAIL (1000x1000). The product fills the frame with even margin — this is a catalogue thumbnail, so the product must read clearly at small size. There are NO people in this image — the product alone. FILL THE ENTIRE FRAME edge to edge — absolutely no blank, white, grey, transparent, black-bar or letterboxed area, and no empty corners. If the reference does not cover the whole target shape, EXTEND (outpaint) the scene naturally to every edge — continue the walls, floor, window, curtains and background seamlessly so the whole rectangle is a single continuous photograph.
+HEADROOM: every head must be fully inside the frame with visible margin above the hair. Never crop a head, hand or foot at any edge.
+
+Respect the real product proportions against the model body size. It must not read as short and wide. The studio background is flat light grey #f2f2f4, not pure white.
+
+ABSOLUTELY NO TEXT: no typography, no Korean or English lettering, no numbers, no badges, no price tags, no logos, no watermarks. Photorealistic commercial product photography only.
+WATERMARK CLEANUP: any overlaid watermark, copyright line, credit, username handle, timestamp, UI element or caption text PRINTED ON a base or reference photo is NOT part of the scene — remove it completely and reconstruct the image beneath it, matching the surrounding texture, colour and lighting. This overrides "stay faithful to the base": the output must carry no inherited overlay text of any kind.
+NO LOGO — MANDATORY: every product in this image is plain fabric with NO brand tag, NO sewn label, NO patch, NO logo, NO wordmark and NO lettering anywhere on it. If a reference photograph or the base photograph shows a tag or logo on a product, REMOVE it and render that spot as plain, continuous fabric of the same colour. Never draw, invent or add any logo, brand mark or tag.

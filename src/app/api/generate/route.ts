@@ -23,9 +23,11 @@ import { measureSceneTone } from '@/lib/scene-tone';
 import { scrubReferenceUrl, guardOutput, referenceTagCount } from '@/lib/logo-guard';
 import { checkFaces } from '@/lib/face-guard';
 import { checkScene } from '@/lib/scene-check';
+import { fixStudioColor, readStudio } from '@/lib/color-fix';
 import sharp from 'sharp';
 import { readBaseGaze } from '@/lib/base-gaze';
 import { readRoomScale } from '@/lib/room-scale';
+import { readFile } from 'node:fs/promises';
 
 /**
  * POST /api/generate — 자산 조합 → 프롬프트 → 나노바나나 → 크롭 → FTP → DB.
@@ -137,6 +139,11 @@ interface Body {
   variationIds?: string[];
   direction?: string;
   samples?: number;
+  /**
+   * 검사에서 "다시 뽑아야 고쳐지는" 경고(얼굴 변형·제품 불일치·윗부분 말림)가 나오면 같은 프롬프트로 한 장 더 뽑는다.
+   * 요청당 최대 1장 — 켠 화면(이미지 생성)만 보낸다. 자동화 화면은 안 보내므로 비용이 몰래 늘지 않는다.
+   */
+  autoRetry?: boolean;
   tier?: 'pro' | 'draft';
   /** 생성 엔진 — gemini(나노바나나) | higgs(힉스필드 Element) */
   engine?: 'gemini' | 'higgs' | 'gpt';
@@ -150,12 +157,48 @@ interface Body {
   resolution?: '2k' | '4k';
   /** 대기열에서 알아보기 위해 사람이 붙인 이름 */
   handoffTitle?: string;
+  /**
+   * 대화(힉스필드 MCP)에서 이미 뽑은 그림을 "엔진 결과" 자리에 꽂는다 — 로컬 전용 (점검 2026-10-02 5번).
+   *
+   * 왜 필요한가: 대화에서 뽑은 컷 43장은 프롬프트가 17~405자였고, 검사(로고·얼굴·장면·색)를 하나도 안 탔고,
+   * 어떤 제품·모델·참조로 만들었는지도 기록에 없었다. 앱 경로와 품질 기준이 달랐다.
+   * 넘기기 기록(handoffs)의 선택값으로 이 요청을 다시 보내면서 그림만 밖에서 가져오면,
+   * 자르기 → 로고 지우기 → 색 보정 → 얼굴·장면 검사 → 기록까지 앱에서 만든 컷과 똑같이 지나간다.
+   * 엔진을 부르지 않으므로 생성 비용은 없다(검사 비전 호출만 든다).
+   */
+  external?: {
+    /** 힉스필드 결과 URL 또는 로컬 파일 경로(후보정한 파일) */
+    url: string;
+    /** 기록용 모델 이름 — 기본 nano_banana_pro */
+    model?: string;
+    /** 실제로 힉스필드에 보낸 프롬프트 — 없으면 앱 템플릿을 그대로 보낸 것으로 기록한다 */
+    prompt?: string;
+    /** 이 컷이 나온 넘기기 기록 — 처리 완료로 표시한다 */
+    handoffId?: string;
+  };
+}
+
+/** 밖에서 만든 그림을 읽는다 — 주소면 내려받고, 아니면 로컬 파일 (로컬 전용 경로에서만 불린다) */
+async function loadExternalImage(src: string): Promise<Buffer> {
+  if (src.startsWith('http://') || src.startsWith('https://')) {
+    const res = await fetch(src, { signal: AbortSignal.timeout(60000) });
+    if (!res.ok) throw new Error(`그림을 받지 못했습니다 (${res.status})`);
+    return Buffer.from(await res.arrayBuffer());
+  }
+  return readFile(src);
 }
 
 /** 생성 화면에서 고른 AI 생성 제품 칸 — 승인된 시트의 칸 하나가 "배치 각도"가 된다 */
 interface SheetPanelPick {
   sheetId: string;
   key: string;
+}
+
+/** 넘기기 기록에 남길 요청 본문 — 미리보기·넘기기 표시는 빼고, 다시 보낼 수 있는 선택값만 */
+function handoffRequest(body: Body): Record<string, unknown> {
+  const request: Record<string, unknown> = { ...body };
+  for (const k of ['dryRun', 'handoff', 'handoffTitle', 'count', 'resolution', 'external', 'promptOverride', 'samples', 'autoRetry']) delete request[k];
+  return request;
 }
 
 interface SizeDocLike {
@@ -316,9 +359,10 @@ export async function POST(req: Request) {
       .map((t) => {
         const doc = talentDocs.find((d) => String(d.code) === t.code);
         const url = String(doc?.sheets?.face || doc?.rep || '');
-        return url ? { code: t.code, faceUrl: url } : null;
+        // who — 여러 명 컷에서 "이 시트의 사람이 누구인지" 를 고르는 힌트 (성별·나이·머리). 얼굴 판정 자체에는 안 쓴다
+        return url ? { code: t.code, faceUrl: url, who: t.identityEn.slice(0, 220) } : null;
       })
-      .filter((x): x is { code: string; faceUrl: string } => !!x);
+      .filter((x): x is { code: string; faceUrl: string; who: string } => !!x);
 
     const uploadedRefs: UploadedRefSpec[] = (body.uploadedRefs ?? []).map((u) => ({
       url: u.url,
@@ -343,10 +387,20 @@ export async function POST(req: Request) {
      */
     const hasTalent = talents.length > 0;
     const hasProduct = (body.products?.length ?? 0) > 0 || !!body.line;
+    /*
+     *  - lines: 그 제품이 이 컷에 있을 때만 (점검 2026-10-02 — "맥스에는 지퍼가 없다" 가 라운저·드롭 컷 79장에 들어가 있었다).
+     *    ③ 에서 고른 제품과 ② 사진 속 제품을 둘 다 본다.
+     */
+    const cutLines = new Set<string>([
+      ...(body.products?.length ? body.products.map((x) => x.line) : body.line ? [body.line] : []),
+      ...(body.refProducts ?? []),
+      ...(body.refProduct ? [body.refProduct] : []),
+    ]);
     const activeRules = rules.filter((r) => {
       if (r.conditional === 'no-scene' && hasScene) return false;
       if (r.requires === 'talent' && !hasTalent) return false;
       if (r.requires === 'product' && !hasProduct) return false;
+      if (Array.isArray(r.lines) && r.lines.length && !r.lines.some((l: string) => cutLines.has(l))) return false;
       return true;
     });
 
@@ -634,6 +688,8 @@ export async function POST(req: Request) {
       houseRules: activeRules.map((r) => r.en).filter(Boolean),
       // 스토리보드 연속 컷은 앞 컷을 배경으로 넘긴다 — 가구를 지우면 컷끼리 안 이어진다
       clearBlockingFurniture: body.origin !== 'storyboard',
+      // GPT·힉스필드(soul) 에는 앱이 넣는 한국어 문장을 영문으로 — 대화로 넘기는 건(나노바나나)은 한국어 그대로
+      englishOnly: !body.handoff && !body.external && (body.engine === 'gpt' || body.engine === 'higgs'),
     };
 
     /*
@@ -729,6 +785,8 @@ export async function POST(req: Request) {
         title: (body.handoffTitle || '').trim() || size.label,
         status: 'queued',
         used: false,
+        // 요청 본문 그대로 — 대화에서 뽑은 그림을 등록할 때 이 요청을 다시 보내 같은 검사·기록을 태운다 (external)
+        request: handoffRequest(body),
       });
       handoffId = String(r.insertedId);
     }
@@ -759,8 +817,13 @@ export async function POST(req: Request) {
      * 제미나이 프로젝트가 월 지출 한도(429 "exceeded its monthly spending cap")에 걸리면 GPT 가 유일한 길이다.
      * 단 실측상 GPT 는 제품 형태를 참조대로 못 그린다(맥스·라운저가 다른 의자로) — 화면에서 경고한다.
      */
-    const engine = body.engine === 'higgs' ? 'higgs' : body.engine === 'gpt' ? 'gpt' : 'gemini';
-    if (engine === 'higgs' && !higgsfieldConfigured()) {
+    // 밖에서 만든 그림을 꽂는 요청 — 로컬에서만 받는다 (배포에 열면 아무 그림이나 갤러리에 넣는 문이 된다)
+    const ext = body.external?.url ? body.external : null;
+    if (ext && process.env.NODE_ENV === 'production') {
+      return NextResponse.json({ ok: false, error: '로컬 전용' }, { status: 403 });
+    }
+    const engine = ext ? 'higgs' : body.engine === 'higgs' ? 'higgs' : body.engine === 'gpt' ? 'gpt' : 'gemini';
+    if (!ext && engine === 'higgs' && !higgsfieldConfigured()) {
       return NextResponse.json({ ok: false, error: 'Higgsfield 설정이 없습니다 (.env.local).' }, { status: 500 });
     }
     if (engine === 'gpt' && !openaiConfigured()) {
@@ -779,7 +842,11 @@ export async function POST(req: Request) {
     }
 
     // ── 4) 사용량 한도 ────────────────────────────────────────────
-    const samples = Math.max(1, Math.min(2, body.samples ?? 1));
+    /*
+     * 한 번에 최대 4장 (점검 2026-10-02 3번, 예전 상한 2장). 얼굴·형태는 같은 프롬프트에서도 결과 편차가 커서
+     * 프롬프트를 다듬는 것보다 여러 장 뽑아 고르는 쪽이 적중률을 더 올린다. 장수는 화면에서 사람이 고른다.
+     */
+    const samples = ext ? 1 : Math.max(1, Math.min(4, Math.round(Number(body.samples) || 1)));
     const limit = Number(process.env.GEMINI_USAGE_LIMIT) || 300;
     const usageCol = db.collection(COLLECTIONS.apiUsage);
     const usage = await usageCol.findOneAndUpdate(
@@ -800,7 +867,9 @@ export async function POST(req: Request) {
     // ── 5) 참조 이미지 적재 (순서가 프롬프트와 일치해야 한다) ─────
     const inline: InlineImage[] = [];
     const usedRefs: RefSlot[] = [];
-    for (const slot of refsToLoad) {
+    // 밖에서 만든 그림이면 참조를 엔진에 보낼 일이 없다 — 내려받지 않고 기록용 목록만 채운다
+    if (ext) usedRefs.push(...refsToLoad);
+    for (const slot of ext ? [] : refsToLoad) {
       let r = slot;
       // 모델 시트는 다패널이라 덜 줄인다 — 1024 로 줄이면 얼굴이 판독 불가 크기가 된다
       let img = r.swatchHex
@@ -843,14 +912,32 @@ export async function POST(req: Request) {
     const isoNow = new Date().toISOString();
     const results: Record<string, unknown>[] = [];
     let produced = 0;
+    /*
+     * 자동 재생성 (점검 2026-10-02 1번) — 검사 결과가 기록만 되고 돌아오지 않던 것을 고친다.
+     * 얼굴 변형·제품 불일치·윗부분 말림은 같은 프롬프트로 다시 뽑으면 풀리는 경우가 많다(결과 편차가 크다).
+     * 크기·조명은 프롬프트가 원인이라 다시 뽑아도 같아서 대상이 아니다. 요청당 1장만 — 실패 컷도 그대로 남긴다(비교·기록용).
+     */
+    let target = samples;
+    // 3장 이상 뽑을 때는 이미 골라 쓸 수 있으므로 더 뽑지 않는다 — 한 요청이 5장(함수 실행 시간 한도)을 넘지 않게
+    let retriesLeft = !ext && body.autoRetry && samples <= 2 ? 1 : 0;
+    let retry: { of: string; reason: string } | null = null;
 
-    for (let n = 1; n <= samples; n++) {
+    for (let n = 1; n <= target; n++) {
+      // 이번 장이 자동 재생성이면 무엇을 왜 다시 뽑는지 — 컷 기록과 응답에 남긴다
+      const thisRetry = retry;
+      retry = null;
       let gen: {
         buffer: Buffer; model: string; elapsedMs: number; requestBytes: number;
         usage?: { promptTokens: number; imageTokens: number; thoughtTokens: number; totalTokens: number };
       };
       try {
-        if (engine === 'higgs') {
+        if (ext) {
+          gen = {
+            buffer: await loadExternalImage(ext.url),
+            model: `higgsfield/${(ext.model || 'nano_banana_pro').replace('higgsfield/', '')}`,
+            elapsedMs: 0, requestBytes: 0,
+          };
+        } else if (engine === 'higgs') {
           const r = await hfGenerate({
             prompt: written.prompt,
             // 힉스필드는 공개 URL 을 자체 스토리지로 가져간다 (스와치는 URL 이 없어 제외)
@@ -912,26 +999,46 @@ export async function POST(req: Request) {
         exemptProducts: productSpecs.filter((p) => !TOP_FORM_LINES.has(p.line)).map((p) => `the Yogibo ${p.line}`),
         ...(keepRealTags ? { keepReal: { max: realTagMax, ...(baseUrls[0] ? { refUrl: baseUrls[0] } : {}) } } : {}),
       });
-      const cropped = { ...croppedRaw, buffer: guard.buffer };
+      /*
+       * 색 (점검 2026-10-02 4번) — 그림을 직접 보고 스튜디오 컷(네 모서리가 단색)인지 가른다.
+       *   스튜디오 + 제품 하나 + 사람 없음: 생성으로는 색이 계속 틀려서(올리브·코랄 ΔE 16~21) 천의 색만 컬러칩 hex 로 옮긴다.
+       *     형태·주름·명암은 그대로다. 보정 전 원본은 아래에서 따로 올려 둔다 — 오판이면 되돌릴 수 있게.
+       *   씬 컷(배경·편집 원본·방): 방 조명으로 색이 바뀌는 게 정답이라 픽셀을 건드리지 않는다. 색 계열은 장면 검사가 본다.
+       * 사람·방·여러 색이 섞인 컷은 fixStudioColor 가 스스로 물러난다(시험에서 피부가 초록이 됐다).
+       */
+      const studioRead = await readStudio(guard.buffer).catch(() => null);
+      const isStudio = !!studioRead?.plain;
+      const colorFix = isStudio && !talents.length && productSpecs.length === 1 && color?.hex
+        && !uploadedRefs.length && !baseCut && !keepRealTags
+        ? await fixStudioColor(guard.buffer, String(color.hex))
+        : null;
+      const cropped = { ...croppedRaw, buffer: colorFix?.buffer ?? guard.buffer };
       /*
        * 얼굴 대조 — 로고와 달리 픽셀로 못 고친다. 어긋났다고 알려만 주고 결과는 그대로 둔다
        * (고치려면 다시 생성해야 하고, 그건 사람이 정할 일이다 — 사용자 지적 2026-09-16 "얼굴 변형 체크").
        * 로고를 지운 뒤의 버퍼로 검사한다: 사람이 실제로 보게 될 그림이 검사 대상이어야 한다.
        */
-      const faceCheck = await checkFaces(cropped.buffer, faceRefs);
       /*
        * 장면 검사 — 제품이 그 제품으로 나왔는지 · 방 가구 대비 크기 · 조명 일치(합성 티)를 한 번에 본다.
        * 왜 필요한가 (사용자 요청 2026-09-23): 실패한 컷을 사람이 하나씩 열어 봐야 원인을 알 수 있었다.
-       * 고치지는 않고 기록만 한다 — 다시 뽑을지는 사람이 정한다 (얼굴 검사와 같은 원칙).
+       * 검사는 컷을 고치지 않고 기록한다 — 얼굴 변형·제품 불일치·말림은 아래에서 한 장 더 뽑는 근거가 된다(autoRetry).
+       *
+       * 얼굴·장면·색 검사는 서로 독립이라 같이 돌린다 (2026-10-02) — 한 장에 10초쯤 줄어든다.
+       * 한 번에 4장까지 뽑게 되면서 순서대로 돌리면 함수 실행 시간 한도(300초)에 닿을 수 있다.
        */
-      const sceneCheck = await checkScene(cropped.buffer, {
-        products: productSpecs.length
-          ? productSpecs.map((p) => ({ line: p.line, shape: p.shape }))
-          : scaleProducts.map((p) => ({ line: p.line, shape: p.shape ?? p.scalePrompt })),
-        people: talents.map((t, i) => `${talents.length > 1 ? `PERSON ${i + 1}` : 'the model'} ${t.sizeEn}`),
-        hasBackground: uploadedRefs.some((u) => u.role === 'background'),
-      });
-      const colorCheck = color?.hex ? await measureProductColor(cropped.buffer, color.hex) : null;
+      const [faceCheck, sceneCheck, colorCheck] = await Promise.all([
+        checkFaces(cropped.buffer, faceRefs, talents.length),
+        checkScene(cropped.buffer, {
+          products: productSpecs.length
+            ? productSpecs.map((p) => ({ line: p.line, shape: p.shape }))
+            : scaleProducts.map((p) => ({ line: p.line, shape: p.shape ?? p.scalePrompt })),
+          people: talents.map((t, i) => `${talents.length > 1 ? `PERSON ${i + 1}` : 'the model'} ${t.sizeEn}`),
+          hasBackground: uploadedRefs.some((u) => u.role === 'background'),
+          // 고른 색 — 방 조명을 감안해도 그 색 계열로 보이는지 (씬 컷의 ΔE 를 대신한다)
+          colours: productSpecs.filter((p) => p.color?.hex).map((p) => ({ line: p.line, name: p.color!.nameEn || p.color!.name, hex: p.color!.hex })),
+        }),
+        color?.hex ? measureProductColor(cropped.buffer, color.hex) : Promise.resolve(null),
+      ]);
 
       const stamp = isoNow.replace(/[-:T]/g, '').slice(0, 14);
       const rand = Math.random().toString(36).slice(2, 7);
@@ -948,6 +1055,10 @@ export async function POST(req: Request) {
       const rawUrl = guard.erased.length
         ? await uploadBuffer(dailySubpath(isoNow), `${namePart}_${stamp}_${rand}_${n}_raw.jpg`, croppedRaw.buffer).catch(() => '')
         : '';
+      // 색을 보정했으면 보정 전 그림도 남긴다 (태그 지우기와 같은 원칙)
+      const preColorUrl = colorFix
+        ? await uploadBuffer(dailySubpath(isoNow), `${namePart}_${stamp}_${rand}_${n}_precolor.jpg`, guard.buffer).catch(() => '')
+        : '';
       const qc = {
         checked: guard.checked,
         model: guard.model,
@@ -958,6 +1069,9 @@ export async function POST(req: Request) {
         ...(guard.erased.length ? { logoBoxes: guard.erased, rawUrl } : {}),
         topFold: guard.topFold,
         refsCleaned: originalOf.size,
+        // 스튜디오 컷인가(그림 기준) — ΔE 숫자를 믿어도 되는 컷인지 화면이 이걸로 가른다 (cut-kind.ts)
+        studio: isStudio,
+        ...(colorFix ? { colorFix: { before: colorFix.before, after: colorFix.after, ...(preColorUrl ? { rawUrl: preColorUrl } : {}) } } : {}),
         scene: sceneCheck,
         ...(guard.usage ? { usage: guard.usage } : {}),
         face: { checked: faceCheck.checked, verdicts: faceCheck.verdicts, ...(faceCheck.usage ? { usage: faceCheck.usage } : {}) },
@@ -994,8 +1108,10 @@ export async function POST(req: Request) {
         },
         source: 'imgcreate' as const,
         ...(body.origin ? { origin: String(body.origin).slice(0, 40) } : {}),
-        prompt: written.prompt,
-        promptMode: written.mode,
+        // 대화에서 뽑은 컷은 실제로 보낸 프롬프트를 남긴다 — 앱 템플릿은 넘기기 기록(handoffId)에 있다
+        prompt: ext?.prompt?.trim() || written.prompt,
+        promptMode: ext ? 'manual' : written.mode,
+        ...(ext ? { external: true, promptBase: 'template' as const, ...(ext.handoffId ? { handoffId: ext.handoffId } : {}) } : {}),
         aiModel: gen.model,
         provider: engine,
         sizeValue: size.value,
@@ -1022,16 +1138,37 @@ export async function POST(req: Request) {
         // 프롬프트를 Opus 가 썼다면 그 원가도 컷에 남긴다 (이미지 생성비와 별개)
         ...(written.usage ? { promptUsage: written.usage, promptCost: promptCostFromUsage(written.usage) } : {}),
         hidden: false,
-        note: '',
+        note: ext ? '대화에서 힉스필드로 생성해 등록' : '',
+        // 자동 재생성으로 나온 컷이면 원래 컷과 이유 — 생성 품질 화면이 "재생성이 실제로 고쳤나" 를 센다
+        ...(thisRetry ? { retryOf: thisRetry.of, retryReason: thisRetry.reason } : {}),
         createdAt: new Date(isoNow),
         updatedAt: new Date(isoNow),
       };
       const ins = await db.collection('cuts').insertOne(doc as never);
       produced++;
+      /*
+       * 다시 뽑을지 — 재생성 컷 자신은 또 재생성하지 않는다(요청당 1장).
+       * 제미나이는 사용량 한도 안에서만: 이미 뽑은 것 + 남은 계획 + 1 이 한도를 넘으면 건너뛴다.
+       */
+      if (retriesLeft > 0 && !thisRetry) {
+        const why = faceCheck.verdicts.some((v) => v.verdict === 'drift') ? '얼굴 변형'
+          : sceneCheck.checked && !sceneCheck.product.ok ? '제품 불일치'
+            : guard.topFold?.suspected ? '윗부분 말림'
+              : '';
+        const room = engine !== 'gemini' || cur + produced + (target - n) + 1 <= cap;
+        if (why && room) {
+          retriesLeft--;
+          target++;
+          retry = { of: String(ins.insertedId), reason: why };
+        }
+      }
       results.push({
         ok: true,
         id: String(ins.insertedId),
         url,
+        ...(thisRetry ? { retry: thisRetry } : {}),
+        // 이 컷 때문에 한 장 더 뽑는다 — 화면이 "재생성 중이던 컷" 을 표시한다
+        ...(retry ? { retried: retry.reason } : {}),
         // 실측 토큰 기반 실제 원가 — 화면이 추정치 대신 이 값을 쓴다
         cost: costFromUsage(gen.usage),
         tokenUsage: gen.usage ?? null,
@@ -1044,6 +1181,8 @@ export async function POST(req: Request) {
         elapsedMs: gen.elapsedMs,
         qc: {
           checked: qc.checked, logoErased: qc.logoErased, topFold: qc.topFold, refsCleaned: qc.refsCleaned,
+          studio: isStudio,
+          ...(colorFix ? { colorFix: { before: colorFix.before, after: colorFix.after } } : {}),
           face: { checked: faceCheck.checked, verdicts: faceCheck.verdicts },
           scene: sceneCheck,
         },
@@ -1051,7 +1190,14 @@ export async function POST(req: Request) {
     }
 
     // 엔진별로 다른 카운터 — gemini 는 월 한도, higgs 는 크레딧 추정 차감
-    if (produced > 0) {
+    // 밖에서 만든 그림은 앱 지갑을 쓰지 않았다 — 카운터를 건드리지 않고, 넘기기 기록만 처리 완료로 바꾼다
+    if (ext?.handoffId && produced > 0 && ObjectId.isValid(ext.handoffId)) {
+      await db.collection('handoffs').updateOne(
+        { _id: new ObjectId(ext.handoffId) },
+        { $set: { used: true, usedAt: new Date(), status: 'done' }, $addToSet: { cutIds: { $each: results.filter((r) => r.ok).map((r) => String(r.id)) } } } as never,
+      );
+    }
+    if (produced > 0 && !ext) {
       await usageCol.updateOne(
         { _id: (engine === 'higgs' ? 'higgs-image' : USAGE_KEY) as never },
         { $inc: { count: produced } },

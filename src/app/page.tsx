@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import DashboardCut from '@/components/DashboardCut';
 import { getOverview, getCuts } from '@/lib/queries';
+import { isStudioCut } from '@/lib/cut-kind';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,10 +70,12 @@ export default async function DashboardPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 2xl:grid-cols-6 gap-2.5">
               {recent.map((c) => {
                 const label = c.line ? `${c.line} · ${c.colorName}` : (c.title || c.spec || '생성 컷');
+                // ΔE 는 스튜디오 컷에만 — 씬 컷은 방 조명으로 색이 바뀌는 게 정답이다 (cut-kind.ts)
+                const dE = typeof c.deltaE === 'number' && isStudioCut(c) ? `ΔE ${c.deltaE}` : '';
                 const meta = [
                   String(c.createdAt).slice(0, 10),
                   c.width && c.height ? `${c.width}×${c.height}` : '',
-                  typeof c.deltaE === 'number' ? `ΔE ${c.deltaE}` : '',
+                  dE,
                   c.aiModel ?? '',
                 ].filter(Boolean).join(' · ');
                 return (
@@ -81,7 +84,7 @@ export default async function DashboardPage() {
                     id={c.id}
                     url={c.url}
                     label={label}
-                    sub={[String(c.createdAt).slice(0, 10), typeof c.deltaE === 'number' ? `ΔE ${c.deltaE}` : '']
+                    sub={[String(c.createdAt).slice(0, 10), dE]
                       .filter(Boolean)
                       .join(' · ')}
                     caption={[c.title && c.title !== label ? `${label} — ${c.title}` : label, meta]

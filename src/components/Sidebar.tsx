@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { LOCAL_ONLY } from '@/lib/local-only';
 
 /*
  * 접힘 상태는 브라우저 저장소에 산다 — React 밖의 값이라 useSyncExternalStore 로 읽는다.
@@ -44,6 +45,11 @@ const NAV = [
       { href: '/', label: '대시보드', icon: '◆' },
       { href: '/create', label: '이미지 생성', icon: '✦' },
       { href: '/cuts', label: '생성이미지 갤러리', icon: '▣' },
+      /*
+       * 자동 검사 결과·숨김 사유를 모아 보는 곳 — 무엇이 가장 많이 틀리는지 숫자로 (점검 2026-10-02).
+       * localOnly (사용자 결정 2026-10-02): 운영자 혼자 보는 화면이다 — 이 PC 의 개발 서버에서만 보이고 배포에서는 메뉴에서 빠진다.
+       */
+      { href: '/qc', label: '생성 품질', icon: '◔', localOnly: true },
     ],
   },
   {
@@ -97,6 +103,11 @@ const NAV = [
       { href: '/automation/sns', label: 'SNS 인물 자동화', icon: '⚡' },
       { href: '/automation/sns-product', label: 'SNS 제품 자동화', icon: '📦' },
       { href: '/automation/gallery', label: '자동화 생성이미지', icon: '▦' },
+      /*
+       * 포켓몬 — 사용자와 Claude 둘만 쓰는 작업 폴더(사용자 요청 2026-10-02).
+       * localOnly: 이 PC 의 개발 서버에서만 보이고 배포(서버)에서는 메뉴에서 빠진다 — src/lib/local-only.ts
+       */
+      { href: '/automation/pokemon', label: '포켓몬', icon: '◓', localOnly: true },
     ],
   },
   /*
@@ -200,7 +211,7 @@ function NavBody({
             {narrow
               ? <div className="mx-2 mb-1.5" style={{ borderTop: '1px solid var(--line)' }} />
               : <div className="label px-2.5 mb-1.5">{g.group}</div>}
-            {g.items.map((it) => {
+            {g.items.filter((it) => LOCAL_ONLY || !('localOnly' in it && it.localOnly)).map((it) => {
               const active = it.href === activeHref;
               // 고정 배지(새 메뉴) 또는 서버가 알려준 "새 데이터" 배지
               const badge = ('badge' in it && it.badge) || badges[it.href] || '';
@@ -299,13 +310,29 @@ export default function Sidebar() {
       .then((r) => r.json())
       .then((j) => {
         if (!alive || !Array.isArray(j?.folders)) return;
-        setSubItems({
+        setSubItems((s) => ({
+          ...s,
           '/video/gallery': j.folders.map((f: { name: string; slug: string; count: number }) => ({
             href: `/video/gallery/${f.slug}`, label: f.name, count: f.count,
           })),
-        });
+        }));
       })
       .catch(() => { /* 하위 폴더도 부가 정보 — 실패하면 '영상 제작물'만 보인다 */ });
+    // '포켓몬' 아래 카테고리 (사용자 요청 2026-10-02) — 로컬 전용이라 배포에서는 묻지도 않는다
+    if (LOCAL_ONLY) {
+      fetch('/api/pokemon/categories', { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((j) => {
+          if (!alive || !Array.isArray(j?.categories)) return;
+          setSubItems((s) => ({
+            ...s,
+            '/automation/pokemon': j.categories.map((c: { slug: string; name: string; references: number; results: number }) => ({
+              href: `/automation/pokemon/${c.slug}`, label: c.name, count: c.references + c.results,
+            })),
+          }));
+        })
+        .catch(() => { /* 실패하면 '포켓몬'만 보인다 */ });
+    }
     return () => { alive = false; };
   }, [path]);
 

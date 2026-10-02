@@ -3,6 +3,7 @@ import PageHeader from '@/components/PageHeader';
 import Zoomable from '@/components/Zoomable';
 import CutActions from '@/components/CutActions';
 import QcFlags, { qcSummary } from '@/components/QcFlags';
+import { isStudioCut } from '@/lib/cut-kind';
 import { getCuts, getProducts, getTalents } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
@@ -158,9 +159,18 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
                   <div className="text-[9.5px] flex gap-1.5 flex-wrap" style={{ color: 'var(--text-mute)' }}>
                     {(c.recipe?.talentCodes ?? []).map((t) => <span key={t}>{TALENT_LABEL[t] ?? t}</span>)}
                     {c.recipe?.pose && <span>{c.recipe.pose}</span>}
-                    {typeof c.deltaE === 'number' && (
+                    {/* ΔE 는 스튜디오 컷에만 — 씬 컷은 방 조명으로 색이 바뀌는 게 정답이라 숫자가 사람을 속인다 (cut-kind.ts) */}
+                    {typeof c.deltaE === 'number' && isStudioCut(c) && (
                       <span style={{ color: c.deltaE < 5 ? 'var(--ok)' : c.deltaE < 15 ? 'var(--warn)' : 'var(--danger)' }}>
                         ΔE{c.deltaE}
+                      </span>
+                    )}
+                    {c.qc?.colorFix && (
+                      <span style={{ color: 'var(--info)' }}
+                            title={`제품 색을 컬러칩에 맞춰 보정했습니다 (ΔE ${c.qc.colorFix.before} → ${c.qc.colorFix.after}). 보정 전 그림도 보관돼 있습니다.`}>
+                        {c.qc.colorFix.rawUrl
+                          ? <a href={c.qc.colorFix.rawUrl} target="_blank" rel="noreferrer noopener">색 보정 {c.qc.colorFix.before}→{c.qc.colorFix.after}</a>
+                          : <>색 보정 {c.qc.colorFix.before}→{c.qc.colorFix.after}</>}
                       </span>
                     )}
                   </div>

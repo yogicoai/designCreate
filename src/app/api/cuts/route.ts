@@ -6,7 +6,7 @@ import { deleteRemote } from '@/lib/ftp';
 /**
  * 컷 관리.
  *
- * DELETE { id }                       — 숨김 (갤러리·대시보드에서 제외, 파일·기록 유지)
+ * DELETE { id[, reason] }             — 숨김 (갤러리·대시보드에서 제외, 파일·기록 유지). reason = 숨긴 사유(생성 품질 집계용)
  * DELETE { id, hard: true[, force] }  — 완전 삭제. 이 앱이 생성한 컷(source=imgcreate)만.
  *   - FTP 파일(/web/design/<날짜>/...)까지 지운다
  *   - 다른 생성 컷의 베이스/입력으로 쓰였으면 409 + usedIn — force 로만 삭제
@@ -18,7 +18,7 @@ export const runtime = 'nodejs';
 
 export async function DELETE(req: Request) {
   try {
-    const body = (await req.json()) as { id?: string; hard?: boolean; force?: boolean };
+    const body = (await req.json()) as { id?: string; hard?: boolean; force?: boolean; reason?: string };
     if (!body.id || !ObjectId.isValid(body.id)) {
       return NextResponse.json({ ok: false, error: '유효한 id 가 필요합니다.' }, { status: 400 });
     }
@@ -29,7 +29,8 @@ export async function DELETE(req: Request) {
     if (!cut) return NextResponse.json({ ok: false, error: '컷을 찾을 수 없습니다.' }, { status: 404 });
 
     if (!body.hard) {
-      await cuts.updateOne({ _id }, { $set: { hidden: true, updatedAt: new Date() } });
+      const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 20) : '';
+      await cuts.updateOne({ _id }, { $set: { hidden: true, ...(reason ? { hideReason: reason } : {}), updatedAt: new Date() } });
       return NextResponse.json({ ok: true, mode: 'hidden' });
     }
 
@@ -55,7 +56,9 @@ export async function DELETE(req: Request) {
     const base = (process.env.FTP_PUBLIC_BASE || '').replace(/\/$/, '');
     // 태그를 지운 컷은 지우기 전 원본(qc.rawUrl)도 날짜 폴더에 있다 — 같이 정리한다 (실패해도 삭제는 진행)
     const rawUrl = typeof cut.qc?.rawUrl === 'string' ? cut.qc.rawUrl : '';
-    for (const u of [String(cut.url), rawUrl].filter(Boolean)) {
+    // 색 보정 전 그림(qc.colorFix.rawUrl)도 같은 폴더에 있다
+    const preColorUrl = typeof cut.qc?.colorFix?.rawUrl === 'string' ? cut.qc.colorFix.rawUrl : '';
+    for (const u of [String(cut.url), rawUrl, preColorUrl].filter(Boolean)) {
       if (!base || !u.startsWith(`${base}/`)) continue;
       const rel = u.slice(base.length + 1); // '2026-08-31/Max_olive_...jpg'
       const slash = rel.lastIndexOf('/');

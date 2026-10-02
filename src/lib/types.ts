@@ -214,6 +214,8 @@ export interface CutDoc {
   /** MD 가 붙인 작업 제목 */
   title?: string;
   prompt?: string;
+  /** local = 앱 템플릿 / opus = Opus 가 씀 / manual = 사람(대화)이 쓴 프롬프트 */
+  promptMode?: 'local' | 'opus' | 'manual';
   aiModel?: string;
   provider?: string;
   inputImages?: InputImage[];
@@ -245,16 +247,36 @@ export interface CutDoc {
     logoErased?: number;
     logoKept?: number;
     topFold?: { suspected: boolean; note: string } | null;
-    face?: { checked: boolean; verdicts: { code: string; score: number; verdict: string; note: string; headFrac: number }[] };
+    /** 스튜디오 컷인가 — 생성할 때 그림의 네 모서리가 단색인지로 판정 (cut-kind.ts). ΔE 는 이 컷에서만 의미가 있다 */
+    studio?: boolean;
+    /** 스튜디오 제품 컷의 색을 컬러칩 hex 로 옮겼다 — 보정 전·후 ΔE 와 보정 전 그림 (color-fix.ts) */
+    colorFix?: { before: number; after: number; rawUrl?: string };
+    face?: { checked: boolean; verdicts: { code: string; score: number; verdict: string; note: string; headFrac: number; headBox?: [number, number, number, number] }[] };
     scene?: {
       checked: boolean;
       product: { ok: boolean; note: string; missing: string[] };
       scale: { ok: boolean; note: string };
       light: { score: number; note: string };
+      /** 방 조명을 감안해도 고른 색 계열로 보이는가 (씬 컷의 ΔE 를 대신한다) */
+      colour?: { ok: boolean; note: string };
     };
   };
 
   hidden: boolean;
+  /** 숨길 때 고른 사유 (얼굴·형태·크기·색·합성 티·구도·기타) — 생성 품질 화면이 센다 */
+  hideReason?: string;
+  /** 대화(힉스필드 MCP)에서 뽑아 앱 검사·기록을 태운 컷 (generate 의 external) */
+  external?: boolean;
+  /**
+   * 대화에서 쓴 프롬프트가 무엇 위에 쓰였나 — template = 앱 템플릿(넘기기 기록)을 받아 그 위에 / conversation = 대화에서 처음부터.
+   * 생성 품질 화면이 두 경로의 숨김 비율을 따로 센다.
+   */
+  promptBase?: 'template' | 'conversation';
+  /** 이 컷이 나온 넘기기 기록 */
+  handoffId?: string;
+  /** 자동 재생성으로 나온 컷이면 원래 컷의 id 와 이유 (generate route autoRetry) */
+  retryOf?: string;
+  retryReason?: string;
   note: string;
   createdAt: Date;
   updatedAt: Date;
@@ -283,6 +305,8 @@ export interface HouseRuleDoc {
   appliesTo: 'image' | 'operator';
   /** 'no-scene' = MD 가 장면을 지정하면 이 규칙은 빠진다 (스튜디오 배경 규칙이 거실 지시와 충돌) */
   conditional: string | null;
+  /** 이 제품 라인이 컷에 있을 때만 넣는다 (예: ['Max']) — 없으면 제품과 무관하게 적용 */
+  lines?: string[];
   enabled: boolean;
 }
 

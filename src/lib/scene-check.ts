@@ -25,6 +25,11 @@ export interface SceneCheck {
   scale: { ok: boolean; note: string };
   /** 사람·제품이 그 방 조명으로 찍힌 것처럼 보이는가 (0~100, 낮을수록 합성 티) */
   light: { score: number; note: string };
+  /**
+   * 고른 색으로 보이는가 — 방 조명으로 따뜻해지거나 어두워진 것은 정상, 색 계열이 바뀐 것만 false (2026-10-02).
+   * 씬 컷의 ΔE(목표 hex 와의 거리)는 조명 때문에 늘 크게 나와 쓸모가 없어서 이 판정이 대신한다. 색을 안 골랐으면 없다.
+   */
+  colour?: { ok: boolean; note: string };
   usage?: VisionUsage;
 }
 
@@ -35,6 +40,8 @@ export interface SceneCheckInput {
   people: string[];
   /** 배경 사진을 따로 넣었는가 — 조명 판정 문구를 그에 맞춘다 */
   hasBackground: boolean;
+  /** 제품마다 고른 색 (영문 이름 + hex) — 있으면 색 계열 판정을 같이 한다 */
+  colours?: { line: string; name: string; hex: string }[];
 }
 
 const EMPTY = (model: string): SceneCheck => ({
@@ -54,6 +61,7 @@ export async function checkScene(buf: Buffer, input: SceneCheckInput): Promise<S
       ? input.products.map((p) => `- Yogibo ${p.line}: ${p.shape}`).join('\n')
       : '(no specific product list — judge only whether the bean bags look like real, undistorted furniture)';
     const people = input.people.length ? input.people.join('; ') : '(no people expected)';
+    const colours = input.colours ?? [];
     const text =
       'You are checking a finished commercial interior photo of Yogibo bean bags. Judge three things, strictly and independently.\n\n' +
       `1) PRODUCTS — the photo should show these products:\n${wanted}\n` +
@@ -85,7 +93,14 @@ export async function checkScene(buf: Buffer, input: SceneCheckInput): Promise<S
       '  74-60 = clear tells: the subject is evenly, softly lit (studio-like) while the room has directional or coloured light; the subject\'s own shadows do not follow the room\'s light; fabric looks flat and untextured by the room\'s light.\n' +
       '  59-0 = light comes from the wrong side entirely, or the subject sits in a dim room while being brightly lit; it reads as pasted on.\n' +
       'In the note name the strongest cue in one short sentence.\n\n' +
-      'Return JSON only: {"product":{"ok":true,"missing":[],"note":"..."},"scale":{"ok":true,"note":"..."},"light":{"score":0,"note":"..."}}';
+      (colours.length
+        ? `4) COLOUR — each product was ordered in this fabric colour:\n${colours.map((c) => `- Yogibo ${c.line}: ${c.name} (${c.hex})`).join('\n')}\n` +
+          "Allow for the room's light: under a warm lamp the fabric looks warmer, in a dim room darker, in shade less saturated — all of that is CORRECT and is not a fault. " +
+          'colour.ok is false ONLY when a product reads as a different colour FAMILY from the one ordered — navy that has become purple, black or royal blue; ' +
+          'olive green that has become khaki-brown, teal or lime; coral that has become pink or pure red; light grey that has become beige or white; and so on. ' +
+          'In the note say which product and what colour it actually reads as.\n\n'
+        : '') +
+      `Return JSON only: {"product":{"ok":true,"missing":[],"note":"..."},"scale":{"ok":true,"note":"..."},"light":{"score":0,"note":"..."}${colours.length ? ',"colour":{"ok":true,"note":"..."}' : ''}}`;
     const res = await fetch(`${API_BASE}/${model}:generateContent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
@@ -105,6 +120,7 @@ export async function checkScene(buf: Buffer, input: SceneCheckInput): Promise<S
       product?: { ok?: unknown; missing?: unknown; note?: unknown };
       scale?: { ok?: unknown; note?: unknown };
       light?: { score?: unknown; note?: unknown };
+      colour?: { ok?: unknown; note?: unknown };
     };
     // 응답 모양이 다르면 "이상 없음" 이 아니라 "검사 실패" 다 — 빈 응답을 합격으로 받으면 경고가 영영 안 뜬다
     if (!j?.product || !j?.scale || !j?.light) throw new Error(`응답 모양이 다릅니다: ${raw.slice(0, 120)}`);
@@ -115,6 +131,8 @@ export async function checkScene(buf: Buffer, input: SceneCheckInput): Promise<S
       product: { ok: j.product.ok !== false && !missing.length, missing, note: String(j.product.note ?? '').slice(0, 200) },
       scale: { ok: j.scale.ok !== false, note: String(j.scale.note ?? '').slice(0, 200) },
       light: { score: Math.max(0, Math.min(100, Math.round(Number(j.light.score) || 0))), note: String(j.light.note ?? '').slice(0, 200) },
+      // 색을 물었는데 답이 없으면 판정하지 않은 것으로 둔다 (없는 답을 합격으로 받지 않는다)
+      ...(colours.length && j.colour ? { colour: { ok: j.colour.ok !== false, note: String(j.colour.note ?? '').slice(0, 200) } } : {}),
       ...(um ? {
         usage: {
           promptTokens: um.promptTokenCount ?? 0, outputTokens: um.candidatesTokenCount ?? 0,

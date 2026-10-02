@@ -40,6 +40,8 @@ export interface FaceVerdict {
   note: string;
   /** 머리 높이 / 이미지 높이 */
   headFrac: number;
+  /** 대조한 머리의 위치 [ymin, xmin, ymax, xmax] (0~1000) — 같은 모델 컷끼리 얼굴을 나란히 놓을 때 쓴다 (series-check.ts) */
+  headBox?: [number, number, number, number];
 }
 
 export interface FaceCheck {
@@ -49,11 +51,25 @@ export interface FaceCheck {
   checked: boolean;
 }
 
-const PROMPT =
+/*
+ * 누구의 얼굴을 볼지 — 여러 명이 나오는 컷에서 "가장 잘 보이는 얼굴" 을 고르게 하면 모든 모델을 같은 한 사람과 비교한다.
+ * 실측 2026-10-02: 2명 이상 컷의 판정 36건 중 16건이 어긋남이었는데, 두 모델의 머리 크기가 소수 셋째 자리까지 같았고
+ * (같은 머리를 본 것) 메모에 "성별·머리색까지 전혀 다르다" 가 있었다 — 아이 시트를 옆의 다른 아이와 비교한 것이다.
+ * 그래서 여러 명이면 "이 시트의 사람으로 그려진 인물" 을 먼저 고르게 하고, 그 인물이 누구인지 힌트(성별·나이·머리)를 준다.
+ */
+const pickLine = (people: number, who?: string) =>
+  people > 1
+    ? `The FIRST image shows ${people} people; only ONE of them was supposed to be the person on the sheet` +
+      `${who ? ` (${who})` : ''}. First decide WHICH person in the FIRST image is meant to be that person — ` +
+      'the one whose gender, apparent age, hair colour and hair length best match the sheet. Do NOT simply take the most visible ' +
+      "or the largest face. Then compare THAT person's face with the SECOND image.\n"
+    : 'Find the person in the FIRST image whose face is most visible, and compare that face with the SECOND image.\n';
+
+const promptFor = (people: number, who?: string) =>
   'The FIRST image is a generated marketing photograph. The SECOND image is an identity sheet: the face of ONE specific ' +
   'person photographed from five angles in a row — front, three-quarter, profile, three-quarter, profile. ' +
   'It is five views of the SAME person, not five people. This is the person the photograph was supposed to depict.\n' +
-  'Find the person in the FIRST image whose face is most visible, and compare that face with the SECOND image.\n' +
+  pickLine(people, who) +
   'Judge IDENTITY only — the bone structure, the shape and spacing of the eyes, the eyebrow shape, the nose width and tip, ' +
   'the lip shape, the jaw and chin, the cheek width, and any freckles or moles. ' +
   'IGNORE expression, head angle, lighting, hair styling, make-up, clothing and image quality.\n' +
@@ -83,6 +99,16 @@ const VERDICT_SCORE: Record<string, { score: number; verdict: FaceVerdict['verdi
   different: { score: 15, verdict: 'drift' },
 };
 
+/** 두 상자가 겹치는 비율 (교집합 / 합집합) */
+function boxIou(a: number[], b: number[]): number {
+  const ih = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
+  const iw = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+  const inter = ih * iw;
+  const area = (x: number[]) => Math.max(0, x[2] - x[0]) * Math.max(0, x[3] - x[1]);
+  const uni = area(a) + area(b) - inter;
+  return uni > 0 ? inter / uni : 0;
+}
+
 async function fetchRef(url: string): Promise<Buffer | null> {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
@@ -106,7 +132,9 @@ async function forVision(buf: Buffer, px: number): Promise<string> {
  */
 export async function checkFaces(
   buf: Buffer,
-  talents: { code: string; faceUrl: string }[],
+  talents: { code: string; faceUrl: string; who?: string }[],
+  /** 컷에 나오는 사람 수(자유 서술 인물·원본 속 인물 포함) — 2 이상이면 "누구를 볼지" 부터 고르게 한다 */
+  people = talents.length,
 ): Promise<FaceCheck> {
   const key = process.env.GEMINI_API_KEY;
   const model = visionModel();
@@ -128,45 +156,79 @@ export async function checkFaces(
       if (!refRaw) continue;
       const ref = await forVision(refRaw, 1024);
 
-      const res = await fetch(`${API_BASE}/${model}:generateContent`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { inlineData: { mimeType: 'image/jpeg', data: shot } },
-              { inlineData: { mimeType: 'image/jpeg', data: ref } },
-              { text: PROMPT },
-            ],
-          }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0 },
-        }),
-        signal: AbortSignal.timeout(45_000),
-      });
-      if (!res.ok) {
-        console.warn('[face-guard] 비전 호출 실패', res.status);
-        continue;
-      }
-      const json = (await res.json()) as {
-        candidates?: { content?: { parts?: { text?: string }[] } }[];
-        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; totalTokenCount?: number };
+      /** 한 번 묻는다 — 호출 실패면 null, 응답 모양이 다르면 던진다(검사 실패) */
+      const ask = async () => {
+        const res = await fetch(`${API_BASE}/${model}:generateContent`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { inlineData: { mimeType: 'image/jpeg', data: shot } },
+                { inlineData: { mimeType: 'image/jpeg', data: ref } },
+                { text: promptFor(Math.max(people, talents.length), t.who) },
+              ],
+            }],
+            generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+          }),
+          signal: AbortSignal.timeout(45_000),
+        });
+        if (!res.ok) {
+          console.warn('[face-guard] 비전 호출 실패', res.status);
+          return null;
+        }
+        const json = (await res.json()) as {
+          candidates?: { content?: { parts?: { text?: string }[] } }[];
+          usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; totalTokenCount?: number };
+        };
+        const raw = (json.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('');
+        const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, '')) as {
+          verdict?: unknown; head_box?: unknown; face_visible?: unknown; difference?: unknown;
+        };
+        // 응답 모양 검사 — 아는 단어가 아니면 "검사 실패" 다. 낮은 점수로 받으면 멀쩡한 컷에 경고가 뜬다
+        const word = String(parsed?.verdict ?? '').trim().toLowerCase();
+        const mapped = VERDICT_SCORE[word];
+        if (!mapped) throw new Error(`비전 응답 모양이 다릅니다: ${raw.slice(0, 120)}`);
+        const um = json.usageMetadata;
+        if (um) {
+          usage = {
+            promptTokens: (usage?.promptTokens ?? 0) + (um.promptTokenCount ?? 0),
+            outputTokens: (usage?.outputTokens ?? 0) + (um.candidatesTokenCount ?? 0),
+            thoughtTokens: (usage?.thoughtTokens ?? 0) + (um.thoughtsTokenCount ?? 0),
+            totalTokens: (usage?.totalTokens ?? 0) + (um.totalTokenCount ?? 0),
+          };
+        }
+        return { parsed, mapped };
       };
-      const raw = (json.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('');
-      const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, '')) as {
-        verdict?: unknown; head_box?: unknown; face_visible?: unknown; difference?: unknown;
-      };
-      // 응답 모양 검사 — 아는 단어가 아니면 "검사 실패" 다. 낮은 점수로 받으면 멀쩡한 컷에 경고가 뜬다
-      const word = String(parsed?.verdict ?? '').trim().toLowerCase();
-      const mapped = VERDICT_SCORE[word];
-      if (!mapped) throw new Error(`비전 응답 모양이 다릅니다: ${raw.slice(0, 120)}`);
+
+      const first = await ask();
+      if (!first) continue;
+      const { parsed } = first;
+      let mapped = first.mapped;
 
       const box = Array.isArray(parsed.head_box) ? (parsed.head_box as number[]) : null;
-      const headFrac = box && box.length === 4 && box.every((v) => Number.isFinite(v))
-        ? Math.abs(Number(box[2]) - Number(box[0])) / 1000
-        : 0;
+      const boxOk = !!box && box.length === 4 && box.every((v) => Number.isFinite(v));
+      const headFrac = boxOk ? Math.abs(Number(box![2]) - Number(box![0])) / 1000 : 0;
+      const headBox = boxOk
+        ? (box!.map((v) => Math.max(0, Math.min(1000, Math.round(Number(v))))) as [number, number, number, number])
+        : undefined;
+
+      let note = String(parsed.difference ?? '').slice(0, 200);
+      const judgeable = parsed.face_visible !== false && !(headFrac > 0 && headFrac < MIN_HEAD_FRAC);
+      /*
+       * "어긋남" 은 한 번 더 물어 둘 다 어긋남일 때만 찍는다 (2026-10-02).
+       * 같은 컷·같은 질문을 다시 돌렸더니 23건 중 5건이 ok↔어긋남으로 뒤집혔다(주근깨 있는 여성 B 가 4건) — 한 번의 판정은 그만큼 흔들린다.
+       * 어긋남은 자동 재생성(한 장 값)의 근거라, 가벼운 검사 한 번을 더 써서 확인하는 쪽이 싸다. 갈리면 "애매" 로 둔다.
+       */
+      if (judgeable && mapped.verdict === 'drift') {
+        const second = await ask().catch(() => null);
+        if (second && second.mapped.verdict !== 'drift') {
+          mapped = { score: Math.round((mapped.score + second.mapped.score) / 2), verdict: 'weak' };
+          note = `(두 번 물어 판정이 갈렸습니다) ${note}`.slice(0, 200);
+        }
+      }
 
       const s = mapped.score;
-      const note = String(parsed.difference ?? '').slice(0, 200);
       /*
        * 판정 순서가 중요하다 — 얼굴이 안 보이거나 너무 작은 건 "틀렸다" 가 아니라 "못 본다" 다.
        * 뒷모습 컷에 "얼굴 어긋남" 을 띄우면 경고를 아무도 안 믿게 된다.
@@ -176,20 +238,25 @@ export async function checkFaces(
         : headFrac > 0 && headFrac < MIN_HEAD_FRAC ? 'tooSmall'
         : mapped.verdict;
 
-      verdicts.push({ code: t.code, score: s, verdict, note, headFrac: Number(headFrac.toFixed(3)) });
-
-      const um = json.usageMetadata;
-      if (um) {
-        usage = {
-          promptTokens: (usage?.promptTokens ?? 0) + (um.promptTokenCount ?? 0),
-          outputTokens: (usage?.outputTokens ?? 0) + (um.candidatesTokenCount ?? 0),
-          thoughtTokens: (usage?.thoughtTokens ?? 0) + (um.thoughtsTokenCount ?? 0),
-          totalTokens: (usage?.totalTokens ?? 0) + (um.totalTokenCount ?? 0),
-        };
-      }
+      verdicts.push({ code: t.code, score: s, verdict, note, headFrac: Number(headFrac.toFixed(3)), ...(headBox ? { headBox } : {}) });
     }
 
     if (!verdicts.length) return empty;
+    /*
+     * 두 모델이 같은 머리를 가리키면 적어도 한쪽은 엉뚱한 사람을 본 것이다 — 그 근거로 "어긋남" 을 찍으면 안 된다
+     * (어긋남은 자동 재생성의 근거라 헛돈이 나간다). 점수가 낮은 쪽을 "애매" 로 낮추고 이유를 적는다.
+     */
+    for (let i = 0; i < verdicts.length; i++) {
+      for (let j = i + 1; j < verdicts.length; j++) {
+        const a = verdicts[i], b = verdicts[j];
+        if (!a.headBox || !b.headBox || boxIou(a.headBox, b.headBox) < 0.6) continue;
+        const lower = a.score <= b.score ? a : b;
+        if (lower.verdict === 'drift') {
+          lower.verdict = 'weak';
+          lower.note = `(다른 모델과 같은 얼굴을 봤습니다 — 판정 보류) ${lower.note}`.slice(0, 200);
+        }
+      }
+    }
     return { verdicts, ...(usage ? { usage } : {}), model, checked: true };
   } catch (e) {
     // 얼굴 검사 실패로 생성물을 버리지 않는다

@@ -1,0 +1,173 @@
+{
+  "_about": "프롬프트 고정 테스트 세트 — scripts/prompt-regress.mjs 가 읽는다. 각 body 는 /api/generate 요청 본문(dryRun 은 스크립트가 붙인다). 실제 자산 ID 라서 자산을 지우면 그 케이스가 실패한다. 2026-10-02 작성.",
+  "refs": {
+    "bgLiving": "https://yogibo.openhost.cafe24.com/web/design/update/ref_20260902084249_04mud9.jpg",
+    "bgEvening": "https://yogibo.openhost.cafe24.com/web/design/update/ref_higgs_40f58cc2c11f45cc.jpg",
+    "baseAutumn": "https://yogibo.openhost.cafe24.com/web/design/brand/xeab8b0eca1b4/xeab8b0eca1b4_br_0036.jpg",
+    "baseStarwars": "https://yogibo.openhost.cafe24.com/web/design/brand/xeab8b0eca1b4/xeab8b0eca1b4_br_0056.jpg",
+    "baseCouch": "https://yogibo.openhost.cafe24.com/web/design/update/ref_20260901053802_dv5p0f.jpg"
+  },
+  "sheets": {
+    "max": "6aa7580c5d156efb2272c9fe",
+    "drop": "6aa75a37fbba0d158d535fee",
+    "pyramid": "6aa75e22bdff2293579fcf42",
+    "lounger": "6aa76e8029f9cc7c5600c15b",
+    "pod": "6aa787a73dc9883930a00b02",
+    "support": "6aa78bc4079894aaafd8c8f7",
+    "comboMaxSupport": "6aaa2c40ea4552bee4ef4b6b"
+  },
+  "cases": [
+    {
+      "name": "01_studio_drop",
+      "what": "제품만 · 스튜디오 · 드롭 리빙코랄 (가장 단순한 기준선)",
+      "expect": { "lines": ["Drop"], "people": 0 },
+      "body": {
+        "mode": "thumbnail", "composition": "product", "sizeValue": "1000x1000",
+        "products": [{ "line": "Drop", "colorKey": "livingcoral", "placement": "", "sheetPanel": { "sheetId": "@drop", "key": "d45" } }]
+      }
+    },
+    {
+      "name": "02_studio_lounger_recolor",
+      "what": "제품만 · 스튜디오 · 라운저 올리브 (네이비 시트를 색만 바꿔 쓰는 경로)",
+      "expect": { "lines": ["Lounger"], "people": 0 },
+      "body": {
+        "mode": "thumbnail", "composition": "product", "sizeValue": "1000x1000",
+        "products": [{ "line": "Lounger", "colorKey": "olive", "placement": "", "sheetPanel": { "sheetId": "@lounger", "key": "fl34" } }]
+      }
+    },
+    {
+      "name": "03_bg_pyramid",
+      "what": "제품만 · 배경 사진 · 피라미드 (가구 치우기·톤 맞춤·방 크기)",
+      "expect": { "lines": ["Pyramid"], "people": 0 },
+      "body": {
+        "mode": "thumbnail", "composition": "product", "sizeValue": "1000x1000",
+        "products": [{ "line": "Pyramid", "colorKey": "cherryred", "placement": "", "sheetPanel": { "sheetId": "@pyramid", "key": "d45" } }],
+        "uploadedRefs": [{ "url": "@bgLiving", "title": "거실 배경", "role": "background" }]
+      }
+    },
+    {
+      "name": "04_model1_max_studio",
+      "what": "모델 1인(W_B) · 스튜디오 · 맥스 네이비",
+      "expect": { "lines": ["Max"], "people": 1 },
+      "body": {
+        "mode": "thumbnail", "composition": "model", "sizeValue": "1000x1000",
+        "products": [{ "line": "Max", "colorKey": "navy", "placement": "", "sheetPanel": { "sheetId": "@max", "key": "d45" } }],
+        "talents": [{ "code": "W_B", "expression": "soft_smile", "outfitCode": "B_W_C_02" }]
+      }
+    },
+    {
+      "name": "05_child_lounger_bg",
+      "what": "아동 1인(K_D 115cm) · 배경 · 라운저 — 아동 크기 짝짓기와 '170cm' 문장 사고가 났던 조합",
+      "expect": { "lines": ["Lounger"], "people": 1 },
+      "body": {
+        "mode": "thumbnail", "composition": "model", "sizeValue": "1000x1000", "preservation": "similar",
+        "products": [{ "line": "Lounger", "colorKey": "navy", "placement": "centre", "sheetPanel": { "sheetId": "@lounger", "key": "high34" } }],
+        "talents": [{ "code": "K_D", "expression": "soft_smile" }],
+        "uploadedRefs": [{ "url": "@bgEvening", "title": "저녁 조명 인테리어", "role": "background" }],
+        "direction": "책보고 있는 모습"
+      }
+    },
+    {
+      "name": "06_model2_max_bg",
+      "what": "모델 2인(W_B·M_A) · 배경 · 맥스 — 대화 연출·얼굴 참조 6장",
+      "expect": { "lines": ["Max"], "people": 2 },
+      "body": {
+        "mode": "thumbnail", "composition": "model", "sizeValue": "1080x1350", "preservation": "similar",
+        "products": [{ "line": "Max", "colorKey": "navy", "placement": "", "sheetPanel": { "sheetId": "@max", "key": "d45" } }],
+        "talents": [{ "code": "W_B", "expression": "bright_smile", "outfitCode": "B_W_C_02" }, { "code": "M_A", "expression": "soft_smile", "outfitCode": "A_M_C_02" }],
+        "uploadedRefs": [{ "url": "@bgLiving", "title": "거실 배경", "role": "background" }]
+      }
+    },
+    {
+      "name": "07_edit_person_2",
+      "what": "편집 · 실촬영 원본의 인물 2명 교체(K_B·K_E) · 사진 속 제품 라운저",
+      "expect": { "lines": ["Lounger"], "people": 2 },
+      "body": {
+        "mode": "thumbnail", "composition": "model", "sizeValue": "1080x1350", "preservation": "similar",
+        "talents": [{ "code": "K_B", "expression": "bright_smile", "outfitCode": "KID_B_02" }, { "code": "K_E", "expression": "bright_smile" }],
+        "uploadedRefs": [{ "url": "@baseAutumn", "title": "10월 (autumn's here) 01", "role": "base" }],
+        "editTargets": ["person"], "refProducts": ["Lounger"],
+        "direction": "두 사람이 서로 마주 보며 이야기하는 순간 — 한 사람은 말하고 다른 사람은 웃으며 듣는다. 카메라는 보지 않는다"
+      }
+    },
+    {
+      "name": "08_bgswap_person",
+      "what": "배경 합성 · 원본(인물·제품) + 새 배경 · 인물 2명 교체 · 맥스 네이비로 색 변경",
+      "expect": { "lines": ["Max"], "people": 2 },
+      "body": {
+        "mode": "thumbnail", "composition": "model", "sizeValue": "1080x1350", "preservation": "similar",
+        "products": [{ "line": "Max", "colorKey": "navy", "placement": "" }],
+        "talents": [{ "code": "W_B", "expression": "soft_smile", "outfitCode": "B_W_C_02" }, { "code": "W_A", "expression": "soft_smile" }],
+        "uploadedRefs": [
+          { "url": "@baseStarwars", "title": "스페셜에디션(스타워즈) 02", "role": "base" },
+          { "url": "@bgEvening", "title": "저녁 조명 인테리어", "role": "background" }
+        ],
+        "editTargets": ["person", "product-color", "background"], "backgroundSwap": true, "refProducts": ["Max"]
+      }
+    },
+    {
+      "name": "09_combo_max_support",
+      "what": "조합 · 맥스(네이비) 위에 서포트(라이트그레이) · 모델 1인 — '같은 바닥' 충돌이 났던 조합",
+      "expect": { "lines": ["Max", "Support"], "people": 1 },
+      "body": {
+        "mode": "thumbnail", "composition": "model", "sizeValue": "1000x1000",
+        "products": [
+          { "line": "Max", "colorKey": "navy", "placement": "", "sheetPanel": { "sheetId": "@comboMaxSupport", "key": "fit2" } },
+          { "line": "Support", "colorKey": "lightgrey", "placement": "", "sheetPanel": { "sheetId": "@support", "key": "d45" } }
+        ],
+        "talents": [{ "code": "W_B", "expression": "soft_smile", "outfitCode": "B_W_C_02" }]
+      }
+    },
+    {
+      "name": "10_multi3_bg",
+      "what": "제품 3종 배치(왼쪽 라운저·가운데 맥스·오른쪽 팟) · 배경 · 사람 없음 — 제품끼리 크기 비교",
+      "expect": { "lines": ["Lounger", "Max", "Pod"], "people": 0 },
+      "body": {
+        "mode": "thumbnail", "composition": "product", "sizeValue": "1920x680",
+        "products": [
+          { "line": "Lounger", "colorKey": "navy", "placement": "left", "sheetPanel": { "sheetId": "@lounger", "key": "fl34" } },
+          { "line": "Max", "colorKey": "navy", "placement": "centre", "sheetPanel": { "sheetId": "@max", "key": "d45" } },
+          { "line": "Pod", "colorKey": "6d4bd71b", "placement": "right", "sheetPanel": { "sheetId": "@pod", "key": "front" } }
+        ],
+        "uploadedRefs": [{ "url": "@bgLiving", "title": "거실 배경", "role": "background" }]
+      }
+    },
+    {
+      "name": "11_banner_wide_model",
+      "what": "배너(1920×680, 카피 자리) · 모델 1인(W_B) · 맥스 — 크롭 안전 프레이밍",
+      "expect": { "lines": ["Max"], "people": 1 },
+      "body": {
+        "mode": "banner", "composition": "model", "sizeValue": "1920x680",
+        "products": [{ "line": "Max", "colorKey": "navy", "placement": "", "sheetPanel": { "sheetId": "@max", "key": "d45" } }],
+        "talents": [{ "code": "W_B", "expression": "soft_smile", "outfitCode": "B_W_C_02" }]
+      }
+    },
+    {
+      "name": "12_add_person_3",
+      "what": "편집 · 사람 없는 원본 소파 사진에 인물 3명 추가",
+      "expect": { "lines": [], "people": 3 },
+      "body": {
+        "mode": "thumbnail", "composition": "model", "sizeValue": "1000x1000", "preservation": "similar",
+        "talents": [
+          { "code": "W_B", "expression": "bright_smile", "outfitCode": "B_W_C_02" },
+          { "code": "M_A", "expression": "bright_smile", "outfitCode": "A_M_C_02" },
+          { "code": "W_C", "expression": "soft_smile", "outfitCode": "C_W_C_01" }
+        ],
+        "uploadedRefs": [{ "url": "@baseCouch", "title": "Modju Couch Hero Shot", "role": "base" }],
+        "editTargets": ["add-person"],
+        "direction": "내가 선택한 모델들의 해당 소파에 앉아 있는 모습을 연출하면될듯한데 모델들이 너무 크게 연출안되도 될듯해"
+      }
+    },
+    {
+      "name": "13_gpt_model1_bg",
+      "what": "GPT 엔진 · 모델 1인(W_B) · 배경 · 맥스 — 앱이 넣는 문장이 전부 영문인지 (지시는 일부러 안 적음)",
+      "expect": { "lines": ["Max"], "people": 1, "englishOnly": true },
+      "body": {
+        "mode": "thumbnail", "composition": "model", "sizeValue": "1000x1000", "engine": "gpt", "preservation": "similar",
+        "products": [{ "line": "Max", "colorKey": "navy", "placement": "centre", "sheetPanel": { "sheetId": "@max", "key": "d45" } }],
+        "talents": [{ "code": "W_B", "expression": "soft_smile", "outfitCode": "B_W_C_02" }],
+        "uploadedRefs": [{ "url": "@bgLiving", "title": "거실 배경", "role": "background" }]
+      }
+    }
+  ]
+}

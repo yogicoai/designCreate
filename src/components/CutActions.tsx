@@ -10,6 +10,9 @@ import { useRouter } from 'next/navigation';
  * 내려받기는 형식을 골라서 받는다: 웹 게시는 webp(가장 작다), 편집·인쇄 전달은 png,
  * 그대로면 jpg. 크기·화질은 안 건드린다 — 인쇄용(A1·A3)이 줄어들면 안 된다.
  */
+/** 숨김 사유 — 자동 검사 항목과 같은 축 + 사람만 볼 수 있는 것(구도·기타) */
+const HIDE_REASONS = ['얼굴', '형태', '크기', '색', '합성 티', '구도', '기타'];
+
 export default function CutActions(
   { id, source, url, title }: { id: string; source: string; url?: string; title?: string },
 ) {
@@ -17,6 +20,8 @@ export default function CutActions(
   const [busy, setBusy] = useState(false);
   /** 내려받기 형식 고르기 열림 */
   const [open, setOpen] = useState(false);
+  /** 숨김 사유 고르기 열림 */
+  const [hiding, setHiding] = useState(false);
 
   async function call(payload: Record<string, unknown>) {
     const res = await fetch('/api/cuts', {
@@ -27,12 +32,15 @@ export default function CutActions(
     return res.json();
   }
 
-  async function hide() {
-    if (!window.confirm('이 컷을 갤러리에서 숨길까요? (파일과 기록은 유지)')) return;
+  /*
+   * 숨길 때 사유를 한 번 고른다 (점검 2026-10-02) — 숨김은 곧 "이 컷은 실패" 인데 왜 실패했는지가 안 남아서
+   * 무엇이 가장 많이 틀리는지 셀 수 없었다. 사유는 생성 품질 화면이 모은다. 고르기 싫으면 「그냥 숨김」.
+   */
+  async function hide(reason: string) {
     setBusy(true);
     try {
-      const r = await call({});
-      if (r.ok) router.refresh();
+      const r = await call(reason ? { reason } : {});
+      if (r.ok) { setHiding(false); router.refresh(); }
       else window.alert(r.error || '실패');
     } finally {
       setBusy(false);
@@ -82,8 +90,26 @@ export default function CutActions(
   return (
     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
       {url && btn(open ? '닫기' : '↓ 저장', () => setOpen((c) => !c), 'var(--accent)')}
-      {btn('숨김', hide, 'var(--text-mute)')}
+      {btn(hiding ? '취소' : '숨김', () => setHiding((c) => !c), 'var(--text-mute)')}
       {source === 'imgcreate' && btn('삭제', remove, 'var(--danger)')}
+      {hiding && (
+        <div className="flex items-center gap-1 w-full mt-0.5 flex-wrap">
+          {HIDE_REASONS.map((r) => (
+            <button key={r} onClick={() => hide(r)} disabled={busy} className="text-[9.5px]"
+                    title={`사유: ${r} — 파일과 기록은 유지됩니다`}
+                    style={{
+                      color: 'var(--text-dim)', background: 'var(--surface-2)',
+                      border: '1px solid var(--line)', borderRadius: 6, padding: '1px 5px', cursor: 'pointer',
+                    }}>
+              {r}
+            </button>
+          ))}
+          <button onClick={() => hide('')} disabled={busy} className="text-[9.5px]"
+                  style={{ color: 'var(--text-mute)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+            그냥 숨김
+          </button>
+        </div>
+      )}
       {open && url && (
         <div className="flex items-center gap-1.5 w-full mt-0.5">
           {(['jpg', 'webp', 'png'] as const).map((f) => (

@@ -9,7 +9,7 @@ import type { CutDoc } from '@/lib/types';
  */
 
 export interface QcFlag {
-  kind: 'product' | 'scale' | 'light' | 'face' | 'fold' | 'tag' | 'unchecked';
+  kind: 'product' | 'scale' | 'light' | 'colour' | 'face' | 'fold' | 'tag' | 'unchecked';
   label: string;
   /** 마우스를 올렸을 때 보이는 근거 — 검사가 적어 준 문장 */
   note: string;
@@ -35,6 +35,8 @@ export function qcFlags(qc: CutDoc['qc']): QcFlag[] {
     if (!s.scale.ok) out.push({ kind: 'scale', level: 'bad', label: '크기 어긋남', note: s.scale.note });
     if (s.light.score && s.light.score < LIGHT_BAD) out.push({ kind: 'light', level: 'bad', label: `합성 티 (조명 ${s.light.score}점)`, note: s.light.note });
     else if (s.light.score && s.light.score < LIGHT_WARN) out.push({ kind: 'light', level: 'warn', label: `조명 애매 (${s.light.score}점)`, note: s.light.note });
+    // 색 계열 — 방 조명 탓이 아니라 다른 색으로 나온 경우만 (네이비→보라 등). 씬 컷의 ΔE 를 대신한다
+    if (s.colour && !s.colour.ok) out.push({ kind: 'colour', level: 'bad', label: '색 계열 벗어남', note: s.colour.note });
   }
   for (const v of qc.face?.verdicts ?? []) {
     if (v.verdict === 'drift') out.push({ kind: 'face', level: 'bad', label: `얼굴 변형 · ${v.code} (${v.score}점)`, note: v.note });
@@ -58,7 +60,7 @@ export function qcFlags(qc: CutDoc['qc']): QcFlag[] {
 /** 여러 컷의 원인별 개수 — 갤러리 머리말의 "제품 불일치 3 · 크기 2 …" */
 export function qcSummary(cuts: { qc?: CutDoc['qc'] }[]): { label: string; n: number }[] {
   const KR: Record<QcFlag['kind'], string> = {
-    product: '제품 불일치', scale: '크기 어긋남', light: '합성 티(조명)', face: '얼굴 변형', fold: '윗부분 말림', tag: '태그 뭉개짐', unchecked: '검사 안 됨',
+    product: '제품 불일치', scale: '크기 어긋남', light: '합성 티(조명)', colour: '색 계열 벗어남', face: '얼굴 변형', fold: '윗부분 말림', tag: '태그 뭉개짐', unchecked: '검사 안 됨',
   };
   const n: Partial<Record<QcFlag['kind'], number>> = {};
   for (const c of cuts) for (const f of qcFlags(c.qc)) if (f.level === 'bad') n[f.kind] = (n[f.kind] ?? 0) + 1;

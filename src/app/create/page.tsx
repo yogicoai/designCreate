@@ -2,7 +2,7 @@ import CreateStudio from '@/components/CreateStudio';
 import {
   getProducts, getTalents, getPoseRefs, getSizePresets,
   getPreservationModes, getExpressions, getCuts, getReferences, getApprovedShapeSheets,
-  getDropboxAsRefs,
+  getDropboxAsRefs, getHouseRules,
 } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
@@ -26,6 +26,14 @@ export default async function CreatePage() {
     // 브랜드 정리는 수십 장이라 전부 싣는다 — 「브랜드」 탭, 캠페인 이름이 하위 칩
     getDropboxAsRefs(500, 'brand'),
   ]);
+
+  /*
+   * 작업 규칙 — 공통 규칙 중 사람이 지킬 것(appliesTo='operator'). 이미지 프롬프트에는 안 들어가고
+   * 생성 버튼 옆 「생성 전 확인」 에서 보여 준다 (점검 2026-10-02 10번: 화면에 없어서 기억에 의존했다).
+   */
+  const operatorRules = (await getHouseRules())
+    .filter((r) => r.appliesTo === 'operator' && r.enabled !== false && r.kr)
+    .map((r) => ({ kr: String(r.kr), critical: !!r.critical }));
 
   /*
    * 완성한 배너도 생성 소재로 쓸 수 있게 보관함에 합친다.
@@ -86,6 +94,7 @@ export default async function CreatePage() {
       /* 넘기기 버튼은 로컬 전용 — MD 화면에 나올 기능이 아니다 */
       gptEnabled={Boolean(process.env.OPENAI_API_KEY)}
       localMode={process.env.NODE_ENV !== 'production'}
+      operatorRules={operatorRules}
     />
     </>
   );

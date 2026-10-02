@@ -5,6 +5,7 @@ import type { ProductDoc, TalentDoc, PoseRefDoc, ExpressionDoc } from '@/lib/typ
 import type { SizePresetDoc, PreservationDoc, ReferenceDoc } from '@/lib/queries';
 import { shrinkForUpload, formatBytes } from '@/lib/client-image';
 import Zoomable from '@/components/Zoomable';
+import { refWarnings, type RefRead, type HygieneRole } from '@/lib/ref-hygiene';
 import { thumbUrl } from '@/lib/thumb';
 import { defaultPanelKey, supportPanels, livePanels, isComboSheet, comboLabelKr, lineKr, type AiProductSheet } from '@/lib/ai-products';
 
@@ -34,6 +35,8 @@ interface Props {
   localMode: boolean;
   /** OPENAI_API_KEY 가 설정돼 있으면 GPT 엔진 선택지가 열린다 */
   gptEnabled?: boolean;
+  /** 사람이 지킬 작업 규칙 (공통 규칙 중 appliesTo='operator') — 「생성 전 확인」 에서 펼쳐 본다 */
+  operatorRules?: { kr: string; critical: boolean }[];
 }
 
 /*
@@ -208,9 +211,17 @@ interface GenResult {
   tokenUsage?: { promptTokens: number; imageTokens: number; thoughtTokens: number; totalTokens: number } | null;
   deltaE?: number | null; measuredHex?: string | null; elapsedMs?: number;
   error?: string; blockReason?: string | null;
+  /** 자동 재생성으로 나온 컷 — 어느 컷을 왜 다시 뽑았나 */
+  retry?: { of: string; reason: string } | null;
+  /** 이 컷에 경고가 있어서 한 장 더 뽑았다 (이유) */
+  retried?: string;
   /** 결과물 자동 검사 — 태그는 지웠고, 윗부분 말림은 표시만 (logo-guard.ts) */
   qc?: {
     checked: boolean; logoErased: number; topFold: { suspected: boolean; note: string } | null; refsCleaned: number;
+    /** 스튜디오 컷인가(그림 기준) — ΔE 는 이 컷에서만 보여 준다 */
+    studio?: boolean;
+    /** 스튜디오 제품 컷의 색을 컬러칩에 맞춰 보정했다 — 보정 전·후 ΔE */
+    colorFix?: { before: number; after: number };
     /** 전속 모델 얼굴이 등록된 얼굴과 같은 사람인지 — 고치지는 않고 알리기만 한다 */
     face?: { checked: boolean; verdicts: { code: string; score: number; verdict: string; note: string; headFrac: number }[] };
     /** 제품 일치·방 가구 대비 크기·조명 일치 (scene-check.ts) — 실패 원인을 컷에 남긴다 */
@@ -219,8 +230,47 @@ interface GenResult {
       product: { ok: boolean; note: string; missing: string[] };
       scale: { ok: boolean; note: string };
       light: { score: number; note: string };
+      /** 방 조명을 감안해도 고른 색 계열로 보이는가 */
+      colour?: { ok: boolean; note: string };
     };
   } | null;
+}
+
+/**
+ * 검사 결과로 매긴 감점 — 여러 장을 뽑았을 때 어느 컷부터 볼지 정한다 (낮을수록 양호).
+ * 다시 뽑아야 하는 문제(얼굴 변형·제품 불일치)를 가장 무겁게, 애매한 것은 가볍게 본다. 검사를 못 한 컷은 중간.
+ */
+function qcPenalty(r: GenResult): number {
+  if (!r.ok) return 99;
+  const qc = r.qc;
+  if (!qc) return 2;
+  let n = 0;
+  for (const v of qc.face?.verdicts ?? []) n += v.verdict === 'drift' ? 4 : v.verdict === 'weak' ? 1 : 0;
+  if (qc.scene?.checked) {
+    if (!qc.scene.product.ok) n += 4;
+    if (!qc.scene.scale.ok) n += 2;
+    if (qc.scene.light.score > 0 && qc.scene.light.score < 60) n += 2;
+    else if (qc.scene.light.score > 0 && qc.scene.light.score < 75) n += 1;
+    if (qc.scene.colour && !qc.scene.colour.ok) n += 3;
+  }
+  if (qc.topFold?.suspected) n += 3;
+  return n;
+}
+
+/** 여러 장 중 검사상 가장 양호한 컷의 순번 — 한 장뿐이거나 전부 같으면 -1 (표시하지 않는다) */
+function bestIndex(rs: GenResult[]): number {
+  const ok = rs.map((r, i) => ({ i, p: qcPenalty(r) })).filter((x) => rs[x.i].ok);
+  if (ok.length < 2) return -1;
+  const min = Math.min(...ok.map((x) => x.p));
+  const winners = ok.filter((x) => x.p === min);
+  return winners.length === ok.length ? -1 : winners[0].i;
+}
+
+/** 자동 재생성 표시 — 다시 뽑은 컷과, 그 원인이 된 컷 */
+function RetryChip({ r }: { r: GenResult }) {
+  if (r.retry) return <span style={{ color: 'var(--info)' }} title="앞 컷에 경고가 있어 같은 설정으로 한 장 더 뽑았습니다">⟳ 자동 재생성 — {r.retry.reason}</span>;
+  if (r.retried) return <span style={{ color: 'var(--text-mute)' }} title="이 컷의 경고 때문에 한 장 더 뽑았습니다 — 뒤의 컷과 비교하세요">이 컷 때문에 한 장 더 ({r.retried})</span>;
+  return null;
 }
 
 /** 자동 검사 결과 한 줄 — 결과 목록과 완료 팝업이 같이 쓴다 */
@@ -252,6 +302,15 @@ function QcChips({ qc }: { qc?: GenResult['qc'] }) {
       {qc.scene?.checked && qc.scene.light.score >= 60 && qc.scene.light.score < 75 && (
         <span style={{ color: 'var(--warn)' }} title={qc.scene.light.note}>조명 애매 {qc.scene.light.score}점</span>
       )}
+      {/* 색 — 스튜디오 제품 컷은 컬러칩에 맞춰 보정하고, 방이 있는 컷은 색 계열이 바뀌었는지만 본다 (조명으로 달라진 건 정상) */}
+      {qc.colorFix && (
+        <span style={{ color: 'var(--info)' }} title="제품 색을 컬러칩에 맞춰 보정했습니다. 형태·주름은 그대로이고, 보정 전 그림은 갤러리에서 열 수 있습니다.">
+          색 보정 ΔE {qc.colorFix.before} → {qc.colorFix.after}
+        </span>
+      )}
+      {qc.scene?.checked && qc.scene.colour && !qc.scene.colour.ok && (
+        <span style={{ color: 'var(--danger)' }} title={qc.scene.colour.note}>⚠ 색 계열 벗어남 — 다시 생성 권장</span>
+      )}
       {/*
         얼굴 대조 — 와이드 컷에서 전속 모델 얼굴이 딴사람으로 흐르는 일이 잦다 (실측 2026-09-16).
         'noFace'(뒷모습·측면)와 'ok' 는 표시하지 않는다 — 정상인 컷에 칩이 뜨면 경고를 안 믿게 된다.
@@ -273,6 +332,21 @@ function QcChips({ qc }: { qc?: GenResult['qc'] }) {
         ) : null
       ))}
     </>
+  );
+}
+
+/** 참조 위생 경고 — 고른 쓰임에 안 맞는 점만 (ref-hygiene.ts). 읽기 전이거나 걸린 게 없으면 아무것도 안 그린다 */
+function RefHygiene({ role, read }: { role: HygieneRole; read?: RefRead | null }) {
+  const ws = refWarnings(role, read);
+  if (!ws.length) return null;
+  return (
+    <div className="mt-1.5 flex flex-col gap-0.5">
+      {ws.map((w) => (
+        <div key={w.text} className="text-[10.5px] leading-relaxed" style={{ color: w.level === 'warn' ? 'var(--warn)' : 'var(--text-mute)' }}>
+          {w.level === 'warn' ? '⚠ ' : '· '}{w.text}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -351,6 +425,23 @@ export default function CreateStudio(p: Props) {
   const [poseRefKey, setPoseRefKey] = useState('');
   const [shapeRefKey, setShapeRefKey] = useState('');
   const [uploads, setUploads] = useState<UploadedRef[]>([]);
+  /*
+   * 참조 위생 (점검 2026-10-02 6번) — 올린 사진에 무엇이 찍혀 있는지 한 번 읽어 두고(서버가 기록, 사진당 1회),
+   * 고른 쓰임에 안 맞으면 카드 아래에 알린다. 읽는 중·실패는 조용히 넘어간다 — 경고가 없다고 생성을 막지 않는다.
+   */
+  const [refReads, setRefReads] = useState<Record<string, RefRead | null>>({});
+  const refAsked = useRef<Set<string>>(new Set());
+  const checkRef = useCallback((url: string) => {
+    if (!url || refAsked.current.has(url)) return;
+    refAsked.current.add(url);
+    fetch('/api/ref-check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ urls: [url] }) })
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.ok) setRefReads((cur) => ({ ...cur, [url]: j.reads?.[url] ?? null }));
+        else refAsked.current.delete(url);
+      })
+      .catch(() => { refAsked.current.delete(url); });
+  }, []);
   const [library, setLibrary] = useState<ReferenceDoc[]>(p.references);
   // 보관함 팝업 — 전체 레퍼런스를 분류별로 보고 고른다
   const [libOpen, setLibOpen] = useState(false);
@@ -445,6 +536,7 @@ export default function CreateStudio(p: Props) {
   const applyBgSwap = (ref: { url: string; title: string }) => {
     setBgSwap(ref);
     bgSwapRef.current = ref;
+    checkRef(ref.url);
     setUploads((cur) => cur.map((u) => ({ ...u, role: 'base' as const })));
     setEditTargets((cur) => (cur.includes('background') ? cur : [...cur, 'background']));
     setPreservation((p) => (p === 'overlay-only' ? 'strict' : p));
@@ -466,6 +558,11 @@ export default function CreateStudio(p: Props) {
   const [refAuto, setRefAuto] = useState<string[]>([]);
   const [direction, setDirection] = useState('');
   const [samples, setSamples] = useState(1);
+  /*
+   * 경고 시 자동 재생성 (점검 2026-10-02) — 얼굴 변형·제품 불일치·윗부분 말림이 나오면 한 장 더 뽑는다(요청당 1장).
+   * 기본 켬: 경고 칩을 보고 사람이 다시 누르던 일을 대신한다. 한 장 값이 더 들 수 있어 끌 수 있게 둔다.
+   */
+  const [autoRetry, setAutoRetry] = useState(true);
   /*
    * 출력 화질 — 기본 2K(2048px). 4K(4096px)는 POP·인쇄용.
    * 실측: 4096px = A3 인쇄 248dpi / A2 실사출력 175dpi. 웹·SNS 용도는 2K 로 충분하다.
@@ -767,6 +864,7 @@ export default function CreateStudio(p: Props) {
       return;
     }
     setUploads((cur) => (cur.some((u) => u.url === r.url) ? cur : [...cur, { url: r.url, title: r.title, role: newRefRole() }]));
+    checkRef(r.url);
   }
 
   /** ⑥ 배경 사진을 직접 올린다 — 이번 작업에만 쓰고 보관함에는 쌓지 않는다(② 와 같은 규칙) */
@@ -880,9 +978,45 @@ export default function CreateStudio(p: Props) {
 
   useEffect(() => { refreshQueue(); }, [refreshQueue]);
 
+  /*
+   * 생성 전 확인 (점검 2026-10-02 10번) — 지금 고른 것만 보고 알 수 있는 실수를 생성 버튼 옆에서 짚는다.
+   * 전부 실측에서 나온 규칙인데 화면에 없어서 기억에 의존했다. 막지는 않는다 — 알고도 그렇게 뽑을 때가 있다.
+   */
+  const preflight = useMemo(() => {
+    const out: { level: 'warn' | 'info'; text: string }[] = [];
+    const people = withPeople ? picks.length : 0;
+    // 사람은 있는데 제품이 없다 — 크기를 댈 기준이 사라진다 (사진 편집은 「사진 속 제품」 칸이 따로 막는다)
+    if (people > 0 && !line && !hasBaseUpload) {
+      out.push({ level: 'warn', text: '모델만 고르고 제품을 안 골랐습니다 — 크기를 댈 기준이 없어 사람·가구 비율이 어긋나기 쉽습니다.' });
+    }
+    // 같은 색 제품 둘 — 붙어 있으면 경계가 사라진다 (조합은 투톤)
+    const colours = [line ? colorKey : '', ...extraProducts.filter((x) => x.line).map((x) => x.colorKey)].filter(Boolean);
+    if (colours.length >= 2 && new Set(colours).size < colours.length) {
+      out.push({ level: 'warn', text: '색이 같은 제품이 둘 이상입니다 — 겹치거나 붙어 있으면 경계가 사라져 한 덩어리로 보입니다. 색을 다르게 고르세요.' });
+    }
+    // 와이드 + 사람 — 얼굴이 작아지면 프롬프트로는 변형을 못 막는다
+    const w = sizeValue === 'custom' ? Number(customW) : size?.width ?? 0;
+    const h = sizeValue === 'custom' ? Number(customH) : size?.height ?? 0;
+    if (people > 0 && w && h && w / h >= 1.8) {
+      out.push({ level: 'info', text: '가로로 긴 규격에서는 얼굴이 작아져 등록된 얼굴과 달라지기 쉽습니다(프롬프트로 못 막습니다). 여러 장 뽑아 고르거나, 얼굴이 중요하면 4:3 이하 규격으로.' });
+    }
+    if (people > 0 && samples === 1) {
+      out.push({ level: 'info', text: '모델 컷은 얼굴 결과가 장마다 다릅니다 — 2~4장 뽑아 고르는 쪽이 적중률이 높습니다.' });
+    }
+    // 참조 사진 경고 — 카드 아래에 이미 떠 있지만 스크롤 위쪽이라 놓치기 쉽다
+    const refs: { url: string; role: HygieneRole }[] = [
+      ...uploadsForFlow.map((u) => ({ url: u.url, role: u.role as HygieneRole })),
+      ...(withPeople && bgSwap ? [{ url: bgSwap.url, role: 'background' as HygieneRole }] : []),
+    ];
+    const refWarn = refs.reduce((n, r) => n + refWarnings(r.role, refReads[r.url]).filter((x) => x.level === 'warn').length, 0);
+    if (refWarn) out.push({ level: 'warn', text: `올린 참조 사진에 경고 ${refWarn}건 — 사진 카드 아래의 ⚠ 를 확인하세요.` });
+    return out;
+  }, [withPeople, picks.length, line, colorKey, hasBaseUpload, extraProducts, sizeValue, customW, customH, size, samples, uploadsForFlow, bgSwap, refReads]);
+
   function payload(dryRun: boolean) {
     return {
       mode, dryRun, samples,
+      ...(autoRetry ? { autoRetry: true } : {}),
       sizeValue,
       ...(sizeValue === 'custom' ? { customSize: { width: Number(customW), height: Number(customH) } } : {}),
       // 탭 — 서버가 형태 보조 칸 수를 이걸로 정한다
@@ -991,6 +1125,7 @@ export default function CreateStudio(p: Props) {
         const json = await res.json();
         if (json.ok) {
           setUploads((u) => [...u, { url: json.url, title: json.title, role: newRefRole() }]);
+          checkRef(json.url);
         } else setErr(json.error || '업로드 실패');
       }
     } finally {
@@ -1350,6 +1485,7 @@ export default function CreateStudio(p: Props) {
                   <div className="text-[10px] mt-1" style={{ color: 'var(--text-mute)' }}>
                     {ROLE_META.find((r) => r.value === u.role)?.desc}
                   </div>
+                  <RefHygiene role={u.role} read={refReads[u.url]} />
                 </div>
               </div>
             ))}
@@ -1494,6 +1630,7 @@ export default function CreateStudio(p: Props) {
                   <div className="text-[10px] mt-1" style={{ color: 'var(--text-mute)' }}>
                     {BG_ROLE_META.find((r) => r.value === u.role)?.desc}
                   </div>
+                  <RefHygiene role={u.role} read={refReads[u.url]} />
                 </div>
               </div>
             ))}
@@ -1878,6 +2015,7 @@ ${c.spec}`}
                       ? `② 레퍼런스 ${uploads.filter((u) => u.role === 'base').length}장에서 모델·포즈·제품만 가져와 이 배경에 합성합니다 — 톤도 배경에 맞춥니다.`
                       : '② 레퍼런스가 없어서, 이 공간에 고른 모델·제품을 새로 배치합니다.'}
                   </div>
+                  <RefHygiene role="background" read={refReads[bgSwap.url]} />
                   <div className="flex gap-1.5 mt-1.5 flex-wrap">
                     <button className="chip" onClick={() => openLib('ref', 'bgSwap')}>다른 배경 고르기</button>
                     <button className="chip" onClick={() => bgFileInput.current?.click()} disabled={bgUploading}>
@@ -2385,15 +2523,46 @@ ${hint}` : hint))}>
               <>프롬프트 — <b>템플릿 조립</b> (로컬 개발 모드)</>
             )}
           </div>
+          {/* 생성 전 확인 — 고른 것에서 바로 보이는 실수(자동) + 사람이 지킬 작업 규칙(펼쳐 보기) */}
+          {(preflight.length > 0 || (p.operatorRules?.length ?? 0) > 0) && (
+            <div className="px-2.5 py-2 rounded-[10px] text-[10.5px] leading-relaxed"
+                 style={{ background: 'var(--surface-2)', border: `1px solid ${preflight.some((x) => x.level === 'warn') ? 'var(--warn)' : 'var(--border)'}` }}>
+              <div className="font-semibold mb-0.5" style={{ color: 'var(--text-dim)' }}>
+                생성 전 확인{preflight.length === 0 && ' — 고른 것에서 걸리는 것 없음'}
+              </div>
+              {preflight.map((x) => (
+                <div key={x.text} style={{ color: x.level === 'warn' ? 'var(--warn)' : 'var(--text-mute)' }}>
+                  {x.level === 'warn' ? '⚠ ' : '· '}{x.text}
+                </div>
+              ))}
+              {(p.operatorRules?.length ?? 0) > 0 && (
+                <details className="mt-1">
+                  <summary className="cursor-pointer" style={{ color: 'var(--text-dim)' }}>작업 규칙 {p.operatorRules!.length}개 보기</summary>
+                  <ul className="mt-1 flex flex-col gap-1 list-none p-0">
+                    {[...p.operatorRules!].sort((a, b) => Number(b.critical) - Number(a.critical)).map((r) => (
+                      <li key={r.kr} style={{ color: 'var(--text-mute)' }}>{r.kr}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
           <div className="flex gap-2">
             <select className="input flex-1" value={samples} onChange={(e) => setSamples(Number(e.target.value))}>
               <option value={1}>1장</option>
               <option value={2}>2장 (골라쓰기)</option>
+              <option value={3}>3장 (골라쓰기)</option>
+              <option value={4}>4장 (골라쓰기 · 얼굴·형태 적중률 ↑)</option>
             </select>
             <button className="btn btn-primary flex-1" onClick={() => run(false)} disabled={!!busy}>
               {busy === 'gen' ? '생성 중…' : '생성'}
             </button>
           </div>
+          <label className="flex items-center gap-1.5 text-[10.5px] px-1 cursor-pointer" style={{ color: 'var(--text-dim)' }}
+                 title="얼굴 변형 · 제품 불일치 · 윗부분 말림 경고가 나오면 같은 설정으로 한 장 더 뽑습니다. 요청당 최대 1장, 경고 컷도 그대로 남습니다. 3장 이상을 뽑을 때는 이미 골라 쓸 수 있어서 추가로 뽑지 않습니다.">
+            <input type="checkbox" checked={autoRetry} onChange={(e) => setAutoRetry(e.target.checked)} />
+            경고가 나오면 자동으로 한 장 더 (1~2장 뽑을 때 · 최대 +1장)
+          </label>
           <div className="text-[10.5px] text-center" style={{ color: 'var(--text-mute)' }}>
             25~35초/장
           </div>
@@ -2416,11 +2585,14 @@ ${hint}` : hint))}>
                   <div className="text-[10px] mt-1 flex gap-2 flex-wrap" style={{ color: 'var(--text-mute)' }}>
                     <span>{r.width}×{r.height}</span>
                     <span>{((r.elapsedMs ?? 0) / 1000).toFixed(1)}초</span>
-                    {r.deltaE != null && (
+                    {/* ΔE 는 스튜디오 컷에만 — 방이 있는 컷은 조명으로 색이 바뀌는 게 정답이라 숫자가 사람을 속인다 */}
+                    {r.deltaE != null && r.qc?.studio && (
                       <span style={{ color: r.deltaE < 5 ? 'var(--ok)' : r.deltaE < 15 ? 'var(--warn)' : 'var(--danger)' }}>
                         컬러 ΔE {r.deltaE}
                       </span>
                     )}
+                    {bestIndex(results) === i && <span style={{ color: 'var(--ok)' }} title="자동 검사(얼굴·제품·크기·조명·말림)에서 경고가 가장 적은 컷입니다 — 최종 판단은 눈으로">★ 검사상 가장 양호</span>}
+                    <RetryChip r={r} />
                     <QcChips qc={r.qc} />
                   </div>
                 </div>
@@ -2636,7 +2808,9 @@ ${hint}` : hint))}>
                        style={{ borderColor: 'var(--line-strong)' }} />
                   <div className="text-[10.5px] mt-1 flex gap-2 flex-wrap" style={{ color: 'var(--text-mute)' }}>
                     <span>{r.width}×{r.height}</span>
-                    {r.deltaE != null && <span>컬러 ΔE {r.deltaE}</span>}
+                    {r.deltaE != null && r.qc?.studio && <span>컬러 ΔE {r.deltaE}</span>}
+                    {bestIndex(donePopup) === i && <span style={{ color: 'var(--ok)' }}>★ 검사상 가장 양호</span>}
+                    <RetryChip r={r} />
                     <QcChips qc={r.qc} />
                   </div>
                 </div>

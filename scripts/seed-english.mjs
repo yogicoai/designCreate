@@ -33,13 +33,19 @@ const RULE_CLASS = {
   1: { appliesTo: 'operator' },                    // expr 시트를 함께 투입하라 — 작업 절차
   2: { appliesTo: 'operator' },                    // 등받이 top 을 말로 묘사하지 마라 — 프롬프트 작성 지침
   3: { appliesTo: 'operator' },                    // 각도 중요하면 원본 포즈 프레임을 베이스로 — 작업 절차
-  4: { appliesTo: 'image', requires: 'product' },  // 지퍼·봉제선 없음 — 제품이 있을 때만
+  4: { appliesTo: 'image', requires: 'product', lines: ['Max'] },  // 맥스에 지퍼·봉제선 없음 — 맥스가 컷에 있을 때만 (다른 제품 컷에 넣으면 노이즈)
   5: { appliesTo: 'image', requires: 'product' },  // 실제 비례 지킬 것 — 제품이 있을 때만
   6: { appliesTo: 'operator' },                    // 모델별 의상 매핑 — 선택 단계에서 지킬 일
   7: { appliesTo: 'image', conditional: 'no-scene' }, // 배경 #f2f2f4 — 장면 지시가 있으면 빠진다
   8: { appliesTo: 'operator' },                    // 2048 무손실 업로드
   9: { appliesTo: 'operator' },                    // 생성 전 스펙·크레딧 고지
   10: { appliesTo: 'image', requires: 'talent' },  // 두신비율 — 인물이 있을 때만
+  /*
+   * 11·12 는 seed-knowhow.mjs 가 넣는 규칙(의상 레퍼 얼굴 크롭 · 추상 대신 수치)이다. 둘 다 사람이 지킬 작업 지침인데
+   * 이 표에 없어서 아래 기본값('image')으로 덮였고, 이미지 프롬프트에 그대로 들어가고 있었다 (점검 2026-10-02).
+   */
+  11: { appliesTo: 'operator' },
+  12: { appliesTo: 'operator' },
 };
 
 // ── ② 영문 표기 ────────────────────────────────────────────────────
@@ -52,6 +58,8 @@ const COLOR_EN = {
   라벤더퍼플: 'lavender purple', 파스텔블루: 'pastel blue', 프레시민트: 'fresh mint',
   아보카도그린: 'avocado green', 블랙: 'black', 화이트: 'white', 그린: 'green',
   베이지: 'beige', 모카: 'mocha', 차콜: 'charcoal', 레드: 'red', 브라운: 'brown',
+  // 2026-10-02 — 나중에 추가된 컬러(슬림·미디·미니·드롭·피라미드·팟 등)가 한글 이름 그대로 프롬프트에 들어가고 있었다
+  스톤: 'stone grey', 블루: 'blue',
 };
 
 /** 모델 아이덴티티·체형의 영문 표기. 한글 서술을 그대로 넣으면 프롬프트가 흐려진다. */
@@ -128,11 +136,12 @@ const db = client.db(env.MONGODB_DB || 'imgcreate');
 const rules = await db.collection('house_rules').find({}).sort({ order: 1 }).toArray();
 console.log('── 하우스룰 분류 ──');
 for (const r of rules) {
-  const c = RULE_CLASS[r.order] || { appliesTo: 'image' };
+  // 표에 없는 규칙(나중에 다른 시드가 넣은 것)은 이미 정해진 분류를 지킨다 — 기본값으로 덮으면 작업자용 규칙이 이미지 프롬프트에 들어간다
+  const c = RULE_CLASS[r.order] || { appliesTo: r.appliesTo || 'image', conditional: r.conditional, requires: r.requires, lines: r.lines };
   const tag = c.appliesTo === 'image' ? '🖼  이미지' : '👤 작업자';
   console.log(`  ${tag}${c.conditional ? ` (${c.conditional})` : '      '}  ${r.kr.slice(0, 58)}`);
 }
-const imageRules = rules.filter((r) => (RULE_CLASS[r.order] || {}).appliesTo === 'image');
+const imageRules = rules.filter((r) => (RULE_CLASS[r.order] || { appliesTo: r.appliesTo || 'image' }).appliesTo === 'image');
 console.log(`  → 프롬프트에 들어가는 규칙 ${imageRules.length}개 / 전체 ${rules.length}개`);
 
 const products = await db.collection('products').find({}).toArray();
@@ -146,16 +155,18 @@ if (DRY) { console.log('\n(--dry: DB 미기록)'); await client.close(); process
 
 // ── 적용 ──
 for (const r of rules) {
-  const c = RULE_CLASS[r.order] || { appliesTo: 'image' };
+  // 표에 없는 규칙(나중에 다른 시드가 넣은 것)은 이미 정해진 분류를 지킨다 — 기본값으로 덮으면 작업자용 규칙이 이미지 프롬프트에 들어간다
+  const c = RULE_CLASS[r.order] || { appliesTo: r.appliesTo || 'image', conditional: r.conditional, requires: r.requires, lines: r.lines };
   await db.collection('house_rules').updateOne(
     { _id: r._id },
-    { $set: { appliesTo: c.appliesTo, conditional: c.conditional ?? null, requires: c.requires ?? null } },
+    { $set: { appliesTo: c.appliesTo, conditional: c.conditional ?? null, requires: c.requires ?? null, lines: c.lines ?? null } },
   );
 }
 console.log('\n  ✅ house_rules 분류');
 
 for (const p of products) {
-  const colors = p.colors.map((c) => ({ ...c, nameEn: COLOR_EN[c.name] || '' }));
+  // 표에 없는 이름은 이미 있는 영문 표기를 지우지 않는다 (다시 돌려도 나중에 채운 값이 살아남게)
+  const colors = p.colors.map((c) => ({ ...c, nameEn: COLOR_EN[c.name] || c.nameEn || '' }));
   await db.collection('products').updateOne({ _id: p._id }, { $set: { colors } });
 }
 console.log('  ✅ products 컬러 영문 표기');
@@ -169,7 +180,7 @@ let outfitN = 0;
 for (const t of await db.collection('talents').find({}).toArray()) {
   const outfits = (t.outfits || []).map((o) => {
     if (OUTFIT_EN[o.code]) outfitN++;
-    return { ...o, descEn: OUTFIT_EN[o.code] || '' };
+    return { ...o, descEn: OUTFIT_EN[o.code] || o.descEn || '' };
   });
   await db.collection('talents').updateOne({ _id: t._id }, { $set: { outfits } });
 }
