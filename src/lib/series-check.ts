@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import { ObjectId } from 'mongodb';
 import { getDb, COLLECTIONS } from './db';
 import { checkFaces } from './face-guard';
+import { checkScene } from './scene-check';
 import { visionModel } from './logo-guard';
 
 /**
@@ -195,4 +196,45 @@ export async function recheckFaces(cutId: string): Promise<{ id: string; before:
     },
   );
   return { id: cutId, before, after: show(check.verdicts) };
+}
+
+/**
+ * 컷 한 장의 장면 검사(제품·크기·조명·색)를 다시 돌린다 — 검사 방식을 고친 뒤 예전 판정을 바로잡을 때 쓴다.
+ * (2026-10-02: 크기 검사가 정답을 받아 적어 부풀려진 맥스를 전부 통과시키던 것을 고쳤다.) 예전 판정은 qc.scenePrev 에 한 번만 남긴다.
+ */
+export async function recheckScene(cutId: string): Promise<{ id: string; before: string; after: string; note: string } | null> {
+  if (!ObjectId.isValid(cutId)) return null;
+  const db = await getDb();
+  const cuts = db.collection(COLLECTIONS.cuts);
+  const cut = await cuts.findOne({ _id: new ObjectId(cutId) });
+  if (!cut?.url) return null;
+  const picks: { line: string; colorKey?: string }[] = Array.isArray(cut.products) && cut.products.length
+    ? cut.products
+    : cut.line ? [{ line: String(cut.line), colorKey: String(cut.colorKey || '') }] : [];
+  const docs = picks.length ? await db.collection(COLLECTIONS.products).find({ line: { $in: picks.map((x) => x.line) } }).toArray() : [];
+  const products = picks
+    .map((x) => {
+      const d = docs.find((y) => y.line === x.line);
+      if (!d) return null;
+      const col = (d.colors ?? []).find((c: { key: string }) => c.key === x.colorKey);
+      return { line: String(d.line), shape: String(d.geometry?.shape ?? d.line), dims: d.dims as { w?: number; d?: number; h?: number } | undefined, col };
+    })
+    .filter((x): x is NonNullable<typeof x> => !!x);
+  const codes: string[] = (cut.recipe?.talentCodes ?? []).map(String);
+  const tdocs = codes.length ? await db.collection(COLLECTIONS.talents).find({ code: { $in: codes } }).toArray() : [];
+  const sizes = codes.map((c) => String(tdocs.find((t) => String(t.code) === c)?.sizeEn ?? ''));
+  const check = await checkScene(await fetchBuf(String(cut.url)), {
+    products: products.map((x) => ({ line: x.line, shape: x.shape, dims: x.dims })),
+    people: sizes.map((sz, i) => `${sizes.length > 1 ? `PERSON ${i + 1}` : 'the model'} ${sz}`),
+    heights: sizes.map((sz) => Number(sz.match(/(\d{2,3})\s*cm/)?.[1]) || 0),
+    hasBackground: (cut.inputImages ?? []).some((r: { kind?: string }) => r.kind === 'background'),
+    colours: products.filter((x) => x.col?.hex).map((x) => ({ line: x.line, name: String(x.col.nameEn || x.col.name), hex: String(x.col.hex) })),
+  });
+  if (!check.checked) return null;
+  const show = (sc: { product?: { ok: boolean }; scale?: { ok: boolean } } | undefined) => (sc ? `제품${sc.product?.ok ? 'O' : 'X'} 크기${sc.scale?.ok ? 'O' : 'X'}` : '-');
+  await cuts.updateOne(
+    { _id: cut._id },
+    { $set: { 'qc.scene': { ...check, recheckedAt: new Date() }, ...(cut.qc?.scene && !cut.qc?.scenePrev ? { 'qc.scenePrev': cut.qc.scene } : {}) } },
+  );
+  return { id: cutId, before: show(cut.qc?.scene), after: show(check), note: check.scale.note };
 }

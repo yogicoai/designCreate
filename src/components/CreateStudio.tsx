@@ -2559,7 +2559,7 @@ ${hint}` : hint))}>
             </button>
           </div>
           <label className="flex items-center gap-1.5 text-[10.5px] px-1 cursor-pointer" style={{ color: 'var(--text-dim)' }}
-                 title="얼굴 변형 · 제품 불일치 · 윗부분 말림 경고가 나오면 같은 설정으로 한 장 더 뽑습니다. 요청당 최대 1장, 경고 컷도 그대로 남습니다. 3장 이상을 뽑을 때는 이미 골라 쓸 수 있어서 추가로 뽑지 않습니다.">
+                 title="얼굴 변형 · 제품 불일치 · 크기 어긋남 · 윗부분 말림 경고가 나오면 무엇이 틀렸는지 알려 주고 한 장 더 뽑습니다. 요청당 최대 1장, 경고 컷도 그대로 남습니다. 3장 이상을 뽑을 때는 이미 골라 쓸 수 있어서 추가로 뽑지 않습니다.">
             <input type="checkbox" checked={autoRetry} onChange={(e) => setAutoRetry(e.target.checked)} />
             경고가 나오면 자동으로 한 장 더 (1~2장 뽑을 때 · 최대 +1장)
           </label>

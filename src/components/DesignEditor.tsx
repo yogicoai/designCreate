@@ -19,6 +19,7 @@ import {
   type DesignDoc, type DesignLayer,
 } from '@/lib/design-render';
 import { shrinkForUpload } from '@/lib/client-image';
+import PhotoCraftModal from '@/components/PhotoCraftModal';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -159,6 +160,13 @@ export default function DesignEditor(p: Props) {
 
   /** AI 도구 상태 */
   const [aiBusy, setAiBusy] = useState<'merge' | 'erase' | 'outpaint' | null>(null);
+  /*
+   * PhotoCraft(오픈소스 포토샵 대체) — 사진 자체를 고칠 때 전체 화면으로 띄운다.
+   * whole=false 는 배경만 넘기고(글자·도형은 여기 남는다), true 는 화면 전체를 한 장으로 넘긴다.
+   */
+  const [pc, setPc] = useState<{ image: Blob; whole: boolean } | null>(null);
+  const [pcMenu, setPcMenu] = useState(false);
+  const [pcBusy, setPcBusy] = useState(false);
   /*
    * 선택 — 포토샵처럼 Shift+클릭으로 여러 개를 모아 함께 끈다.
    * 핸들·속성 패널은 정확히 1개일 때만, 이동·복제·삭제·방향키는 전체에 적용.
@@ -522,6 +530,7 @@ export default function DesignEditor(p: Props) {
      */
     const onKey = (e: KeyboardEvent) => {
       if (editing) return; // 텍스트 인라인 편집 중엔 캔버스 단축키 비활성
+      if (pc) return;      // PhotoCraft 창이 떠 있으면 단축키는 그쪽 것이다
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       const mod = e.ctrlKey || e.metaKey;
@@ -585,7 +594,7 @@ export default function DesignEditor(p: Props) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selIds, editing, layers, undo, redo, apply, fitScale, tool]);
+  }, [selIds, editing, layers, undo, redo, apply, fitScale, tool, pc]);
 
   // ── 레이어 조작 ──
   const patchSel = useCallback((patch: Partial<DesignLayer>, live = false) => {
@@ -742,6 +751,50 @@ export default function DesignEditor(p: Props) {
     } catch (e) { setErr((e as Error).message); } finally { setAiBusy(null); }
   }
 
+  /*
+   * PhotoCraft 로 보내기 — 지금 배너를 서버에서 한 장으로 구워(저장본과 같은 렌더) 넘긴다.
+   * 돌려받는 길이 /api/upload(2048px·4MB)라, 그보다 큰 포스터 규격은 화질이 깎여 막아 둔다.
+   */
+  async function openPhotoCraft(whole: boolean) {
+    setPcMenu(false);
+    if (pcBusy) return;
+    if (W > 2048 || H > 2048) { setErr('2048px 가 넘는 규격(포스터)은 아직 PhotoCraft 로 보낼 수 없습니다.'); return; }
+    setPcBusy(true); setErr(''); setNote('');
+    try {
+      const r = await fetch('/api/design', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ design: whole ? design : { ...design, layers: [] }, save: false }),
+      });
+      const j = await r.json();
+      if (!j.ok) { setErr(j.error || '그림을 만들지 못했습니다'); return; }
+      setPc({ image: await (await fetch(j.preview)).blob(), whole });
+    } catch (e) { setErr((e as Error).message); } finally { setPcBusy(false); }
+  }
+
+  /** PhotoCraft 에서 저장한 그림이 돌아왔다 — 새 배경으로 삼는다 (AI 도구와 같은 처리) */
+  async function fromPhotoCraft(jpeg: Blob) {
+    const whole = !!pc?.whole;
+    const fd = new FormData();
+    fd.append('file', new File([jpeg], 'photocraft.jpg', { type: 'image/jpeg' }));
+    fd.append('title', 'PhotoCraft 편집');
+    fd.append('register', '0');         // 보관함엔 넣지 않는다 — 이 배너의 배경일 뿐
+    const r = await fetch('/api/upload', { method: 'POST', body: fd });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '업로드 실패');
+    if (whole) {
+      // 글자·도형까지 한 장에 구워 왔으니 레이어는 비운다 (Ctrl+Z 로 레이어는 되살릴 수 있다)
+      begin();
+      setLayers([]);
+      clearSel();
+      commit();
+    }
+    setBgUrl(j.url);
+    setFitState({ mode: 'cover', fx: 0.5, fy: 0.5 }); // 결과에 구워졌으니 변형 초기화
+    setPc(null);
+    setNote(whole ? 'PhotoCraft 에서 고친 그림이 배경이 됐습니다 — 글자·도형은 그림에 구워졌습니다.'
+      : 'PhotoCraft 에서 고친 그림이 배경이 됐습니다 — 글자·도형은 그대로입니다.');
+  }
+
   // ── 저장·미리보기 ──
   async function render(save: boolean) {
     setBusy(save ? 'save' : 'preview'); setErr(''); setNote('');
@@ -795,6 +848,28 @@ export default function DesignEditor(p: Props) {
         <button className="chip" title="블러/모자이크 영역 — 배경 사진의 얼굴·번호판 가리기" onClick={addBlurpatch}>
           ▨ 블러영역
         </button>
+        {/* PhotoCraft — 사진 자체를 고치는 일은 오픈소스 포토샵 대체에 맡긴다 */}
+        <div className="relative">
+          <button className="chip" disabled={pcBusy}
+                  title="오픈소스 포토샵(PhotoCraft)에서 사진을 직접 고칩니다 — 지우기·보정·합성. 고친 뒤 Ctrl+S 를 누르면 배경으로 돌아옵니다."
+                  onClick={() => setPcMenu((v) => !v)}
+                  style={pcMenu ? { borderColor: 'var(--accent)', color: 'var(--accent)', background: 'var(--accent-soft)' } : {}}>
+            {pcBusy ? '그림 준비 중…' : '🖌 PhotoCraft'}
+          </button>
+          {pcMenu && (
+            <div className="absolute left-0 top-[34px] z-50 w-[300px] p-1.5 rounded-[10px] text-left"
+                 style={{ background: 'var(--surface)', border: '1px solid var(--line-strong)', boxShadow: '0 8px 24px rgba(0,0,0,0.35)' }}>
+              <button className="w-full text-left px-2.5 py-2 rounded-[8px] hover:opacity-80" onClick={() => openPhotoCraft(false)}>
+                <div className="text-[12px] font-semibold">배경만 보내기</div>
+                <div className="text-[11px]" style={{ color: 'var(--text-mute)' }}>사진만 고칩니다. 글자·도형은 여기 그대로 남아 계속 고칠 수 있습니다.</div>
+              </button>
+              <button className="w-full text-left px-2.5 py-2 rounded-[8px] hover:opacity-80" onClick={() => openPhotoCraft(true)}>
+                <div className="text-[12px] font-semibold">화면 전체 보내기</div>
+                <div className="text-[11px]" style={{ color: 'var(--text-mute)' }}>글자·도형까지 한 장으로 넘깁니다. 돌아오면 전부 배경 그림이 됩니다.</div>
+              </button>
+            </div>
+          )}
+        </div>
         <span className="mx-1" style={{ color: 'var(--line-strong)' }}>|</span>
         <button className="chip" title="실행취소 (Ctrl+Z)" onClick={undo}>↶</button>
         <button className="chip" title="다시실행 (Ctrl+Y)" onClick={redo}>↷</button>
@@ -1622,6 +1697,17 @@ export default function DesignEditor(p: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── PhotoCraft (전체 화면) ── */}
+      {pc && (
+        <PhotoCraftModal
+          image={pc.image}
+          size={{ w: W, h: H }}
+          what={pc.whole ? '화면 전체를 한 장으로' : '배경 사진만'}
+          onResult={fromPhotoCraft}
+          onClose={() => setPc(null)}
+        />
       )}
     </div>
   );

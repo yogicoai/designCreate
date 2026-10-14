@@ -22,6 +22,7 @@ export async function loadGallery(): Promise<{ videos: VideoRow[]; folders: Vide
     src: `/api/video/${r.key ?? ''}`,
     poster: (r.poster as string) ?? '',
     createdAt: r.createdAt ? new Date(r.createdAt as Date).toISOString() : null,
+    fileAt: r.fileAt ? new Date(r.fileAt as Date).toISOString() : null,
   }));
 
   // 폴더 소개와 폴더 안 묶음 순서·소개 — 2026-10-01 「리뉴얼 영상 제작」·「레퍼런스 영상 제작」

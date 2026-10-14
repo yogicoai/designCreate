@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { NEW_VIDEO_BADGE_MS, isRecent } from '@/lib/recent';
 
 /**
  * 영상 갤러리 — 완성된 영상을 모아 보는 곳.
@@ -27,6 +28,8 @@ export interface VideoRow {
   src: string;
   poster: string;
   createdAt: string | null;
+  /** 카드는 그대로 두고 파일만 새 것으로 바꾼 시각 — 새 영상 표시(N)에 createdAt 과 함께 쓴다 */
+  fileAt?: string | null;
 }
 
 export interface VideoFolder {
@@ -135,7 +138,14 @@ export default function VideoGallery({ initial, folders = [], initialFolder = ''
               <button className="chip" onClick={() => saveTitle(v.id)} disabled={busy}>저장</button>
             </div>
           ) : (
-            <div className="text-[12.5px] font-bold leading-snug">{v.title}</div>
+            <div className="text-[12.5px] font-bold leading-snug">
+              {/* 새로 올라온(또는 파일이 바뀐) 영상 — 사흘 동안 N. 왼쪽 메뉴의 N 과 같은 기준 */}
+              {(isRecent(v.createdAt, undefined, NEW_VIDEO_BADGE_MS) || isRecent(v.fileAt, undefined, NEW_VIDEO_BADGE_MS)) && (
+                <span className="inline-block align-[1px] mr-1.5 text-[9.5px] font-bold leading-none px-1.5 py-[3px] rounded-full"
+                      style={{ background: 'var(--accent)', color: '#fff' }} title="최근 사흘 안에 올라온 영상">N</span>
+              )}
+              {v.title}
+            </div>
           )}
           {v.summary ? (
             <>

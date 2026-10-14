@@ -61,13 +61,19 @@ const NAV = [
     ],
   },
   {
-    // 영상은 시트(요청서)까지 앱에서 만들고 렌더는 오너가 힉스필드에서 돌린다.
-    // 만드는 화면과 완성본이 쌓이는 화면으로 나눈다 — 디자인 무리와 같은 결.
+    // 영상은 대화에서 만들고(힉스필드 + 코드) 여기에는 과정 기록과 완성본만 둔다.
     group: '영상 제작',
     items: [
-      { href: '/video', label: '영상 스토리보드', icon: '🎬' },
-      // 어떤 방식으로 만들지 — 실제로 두 방식을 돌려보고 정한 근거를 남겨둔 문서
-      { href: '/video/proposal', label: '영상 스토리보드 제안', icon: '📄' },
+      /*
+       * 영상 스토리보드 · 영상 스토리보드 제안 — 사용자 요청으로 메뉴에서 숨김 (2026-10-14:
+       * "스토리보드 제안이랑 스토리보드는 없애도 될 듯 · 제작 과정만 있으면 될 듯 · 어차피 개발자인 나만 쓰는 듯하니깐").
+       * 화면(/video · /video/proposal)은 그대로 살아 있어서 주소로는 들어가지고,
+       * 다시 보이려면 아래 두 줄의 주석만 풀면 된다.
+       */
+      // { href: '/video', label: '영상 스토리보드', icon: '🎬' },
+      // { href: '/video/proposal', label: '영상 스토리보드 제안', icon: '📄' },
+      // 최종본을 어떻게 만들었고 힉스필드 크레딧을 얼마나 썼는지 — 다음 영상 계획·견적의 기준 (사용자 요청 2026-10-14)
+      { href: '/video/process', label: '영상 제작 과정', icon: '🧾', badge: 'N' },
       /*
        * 영상 제작물 — 완성 영상이 쌓이는 곳 (예전 "영상 갤러리").
        * 2026-09-09 에 메뉴에서 숨겼다가 2026-09-15 사용자 요청으로 이름을 바꿔 다시 연다
@@ -166,7 +172,7 @@ function NavBody({
   onNavigate?: () => void;
   collapsed?: boolean;
   onToggle?: () => void;
-  /** 메뉴 주소 → 배지 글자 — 하루 안에 새 데이터가 들어온 메뉴 (/api/nav-badges) */
+  /** 메뉴 주소 → 배지 글자 — 최근에 새 데이터가 들어온 메뉴·하위 폴더 (/api/nav-badges) */
   badges?: Record<string, string>;
   /** 메뉴 주소 → 그 아래 하위 항목 (/api/video-folders) */
   subItems?: Record<string, SubItem[]>;
@@ -263,6 +269,13 @@ function NavBody({
                         >
                           <span className="text-[10px] opacity-80">📁</span>
                           <span className="truncate">{s.label}</span>
+                          {/* 새 영상이 든 폴더 — 폴더 안 영상은 '전체'에 안 보여서 여기까지 짚어 준다 */}
+                          {badges[s.href] && (
+                            <span className="shrink-0 text-[9.5px] font-bold leading-none px-1.5 py-[3px] rounded-full"
+                                  style={{ background: 'var(--accent)', color: '#fff' }}>
+                              {badges[s.href]}
+                            </span>
+                          )}
                           {s.count != null && (
                             <span className="ml-auto text-[10.5px] tabular-nums opacity-80">{s.count}</span>
                           )}
@@ -290,7 +303,8 @@ export default function Sidebar() {
   const toggleCollapsed = () => setNavCollapsed(!navCollapsed);
 
   /*
-   * 새 데이터 배지 — 모델 레퍼런스가 새로 등록되면 하루 동안 N (사용자 요청 2026-09-15).
+   * 새 데이터 배지 — 모델 레퍼런스가 새로 등록되면 하루 동안 N (사용자 요청 2026-09-15),
+   * 영상 제작물에 새 영상이 올라오면 사흘 동안 N (사용자 요청 2026-10-13).
    * 레이아웃은 화면을 옮겨도 다시 그려지지 않아서, 주소가 바뀔 때마다 다시 묻는다
    * (방금 등록하고 다른 화면으로 가면 바로 뜨고, 하루가 지나면 사라진다).
    */

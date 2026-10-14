@@ -920,12 +920,17 @@ export async function POST(req: Request) {
     let target = samples;
     // 3장 이상 뽑을 때는 이미 골라 쓸 수 있으므로 더 뽑지 않는다 — 한 요청이 5장(함수 실행 시간 한도)을 넘지 않게
     let retriesLeft = !ext && body.autoRetry && samples <= 2 ? 1 : 0;
-    let retry: { of: string; reason: string } | null = null;
+    let retry: { of: string; reason: string; fix?: string } | null = null;
 
     for (let n = 1; n <= target; n++) {
       // 이번 장이 자동 재생성이면 무엇을 왜 다시 뽑는지 — 컷 기록과 응답에 남긴다
       const thisRetry = retry;
       retry = null;
+      /*
+       * 다시 뽑는 장에는 "앞 장이 왜 떨어졌는지" 를 프롬프트 끝에 붙인다 (2026-10-02).
+       * 같은 프롬프트로 그냥 다시 뽑으면 같은 실수를 되풀이하기 쉽다 — 검사가 적어 준 내용(다른 사람으로 그려짐·맥스가 폭 1.5배)을 그대로 돌려준다.
+       */
+      const promptForThis = thisRetry?.fix ? `${written.prompt}\n\n${thisRetry.fix}` : written.prompt;
       let gen: {
         buffer: Buffer; model: string; elapsedMs: number; requestBytes: number;
         usage?: { promptTokens: number; imageTokens: number; thoughtTokens: number; totalTokens: number };
@@ -939,7 +944,7 @@ export async function POST(req: Request) {
           };
         } else if (engine === 'higgs') {
           const r = await hfGenerate({
-            prompt: written.prompt,
+            prompt: promptForThis,
             // 힉스필드는 공개 URL 을 자체 스토리지로 가져간다 (스와치는 URL 이 없어 제외)
             referenceUrls: usedRefs.filter((x) => x.url).map((x) => x.url as string),
             aspect: size.genAspect,
@@ -949,14 +954,14 @@ export async function POST(req: Request) {
         } else if (engine === 'gpt') {
           // GPT(gpt-image-1) — 최대 1536px 라 imageSize(4K)는 받지 않는다. 참조는 edits 로 들어간다.
           const r = await generateImageGpt({
-            prompt: written.prompt,
+            prompt: promptForThis,
             references: inline,
             aspect: size.genAspect,
           });
           gen = { buffer: r.buffer, model: r.model, elapsedMs: r.elapsedMs, requestBytes: r.requestBytes };
         } else {
           gen = await generateImage({
-            prompt: written.prompt,
+            prompt: promptForThis,
             references: inline,
             aspect: size.genAspect as GenAspect,
             tier: body.tier ?? 'pro',
@@ -1030,9 +1035,11 @@ export async function POST(req: Request) {
         checkFaces(cropped.buffer, faceRefs, talents.length),
         checkScene(cropped.buffer, {
           products: productSpecs.length
-            ? productSpecs.map((p) => ({ line: p.line, shape: p.shape }))
+            ? productSpecs.map((p) => ({ line: p.line, shape: p.shape, dims: p.dims }))
             : scaleProducts.map((p) => ({ line: p.line, shape: p.shape ?? p.scalePrompt })),
           people: talents.map((t, i) => `${talents.length > 1 ? `PERSON ${i + 1}` : 'the model'} ${t.sizeEn}`),
+          // 실제 키(cm) — "169cm, slim build" 의 첫 숫자. 크기 판정이 이 값과 가구 기준으로 잰 키를 대조한다
+          heights: talents.map((t) => Number(String(t.sizeEn).match(/(\d{2,3})\s*cm/)?.[1]) || 0),
           hasBackground: uploadedRefs.some((u) => u.role === 'background'),
           // 고른 색 — 방 조명을 감안해도 그 색 계열로 보이는지 (씬 컷의 ΔE 를 대신한다)
           colours: productSpecs.filter((p) => p.color?.hex).map((p) => ({ line: p.line, name: p.color!.nameEn || p.color!.name, hex: p.color!.hex })),
@@ -1109,7 +1116,7 @@ export async function POST(req: Request) {
         source: 'imgcreate' as const,
         ...(body.origin ? { origin: String(body.origin).slice(0, 40) } : {}),
         // 대화에서 뽑은 컷은 실제로 보낸 프롬프트를 남긴다 — 앱 템플릿은 넘기기 기록(handoffId)에 있다
-        prompt: ext?.prompt?.trim() || written.prompt,
+        prompt: ext?.prompt?.trim() || promptForThis,
         promptMode: ext ? 'manual' : written.mode,
         ...(ext ? { external: true, promptBase: 'template' as const, ...(ext.handoffId ? { handoffId: ext.handoffId } : {}) } : {}),
         aiModel: gen.model,
@@ -1151,22 +1158,44 @@ export async function POST(req: Request) {
        * 제미나이는 사용량 한도 안에서만: 이미 뽑은 것 + 남은 계획 + 1 이 한도를 넘으면 건너뛴다.
        */
       if (retriesLeft > 0 && !thisRetry) {
-        const why = faceCheck.verdicts.some((v) => v.verdict === 'drift') ? '얼굴 변형'
-          : sceneCheck.checked && !sceneCheck.product.ok ? '제품 불일치'
-            : guard.topFold?.suspected ? '윗부분 말림'
-              : '';
+        /*
+         * 크기 어긋남도 다시 뽑는다 (사용자 지시 2026-10-02: "배경 가구 크기에 맞는 모델과 빈백 사이즈 — 이 부분이 강력해야 됨").
+         * 예전엔 "크기는 프롬프트가 원인이라 다시 뽑아도 같다" 고 뺐는데, 같은 설정으로 뽑은 6컷 중 2컷은 맞고 4컷은 부풀려졌다 — 장마다 다르다.
+         */
+        const drift = faceCheck.verdicts.filter((v) => v.verdict === 'drift');
+        const fails = [
+          drift.length ? {
+            label: '얼굴 변형',
+            fix: `IDENTITY: the face was not the person on the identity references${drift.map((v) => v.note).filter(Boolean).length ? ` (${drift.map((v) => v.note).filter(Boolean).join(' ')})` : ''}. ` +
+              'Rebuild the face, the hair colour and the hairstyle strictly from the identity references — the same person, recognisable at a glance.',
+          } : null,
+          sceneCheck.checked && !sceneCheck.product.ok ? {
+            label: '제품 불일치',
+            fix: `PRODUCT: ${sceneCheck.product.note} Draw exactly the product shown in the product reference images.`,
+          } : null,
+          sceneCheck.checked && !sceneCheck.scale.ok ? { label: '크기 어긋남', fix: `SIZE: ${sceneCheck.scale.fix ?? sceneCheck.scale.note}` } : null,
+          guard.topFold?.suspected ? {
+            label: '윗부분 말림',
+            fix: `TOP SHAPE: ${guard.topFold.note} Keep the top of the bean bag full and rounded, as in the product reference.`,
+          } : null,
+        ].filter((x): x is { label: string; fix: string } => !!x);
+        const why = fails.map((f) => f.label).join('·');
+        const fix = fails.length
+          ? 'CORRECTION — a previous attempt at this exact image was rejected for the reasons below. Keep everything else as specified and fix these:\n' +
+            fails.map((f) => `- ${f.fix}`).join('\n')
+          : '';
         const room = engine !== 'gemini' || cur + produced + (target - n) + 1 <= cap;
         if (why && room) {
           retriesLeft--;
           target++;
-          retry = { of: String(ins.insertedId), reason: why };
+          retry = { of: String(ins.insertedId), reason: why, fix };
         }
       }
       results.push({
         ok: true,
         id: String(ins.insertedId),
         url,
-        ...(thisRetry ? { retry: thisRetry } : {}),
+        ...(thisRetry ? { retry: { of: thisRetry.of, reason: thisRetry.reason } } : {}),
         // 이 컷 때문에 한 장 더 뽑는다 — 화면이 "재생성 중이던 컷" 을 표시한다
         ...(retry ? { retried: retry.reason } : {}),
         // 실측 토큰 기반 실제 원가 — 화면이 추정치 대신 이 값을 쓴다

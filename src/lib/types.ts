@@ -255,7 +255,7 @@ export interface CutDoc {
     scene?: {
       checked: boolean;
       product: { ok: boolean; note: string; missing: string[] };
-      scale: { ok: boolean; note: string };
+      scale: { ok: boolean; note: string; fix?: string };
       light: { score: number; note: string };
       /** 방 조명을 감안해도 고른 색 계열로 보이는가 (씬 컷의 ΔE 를 대신한다) */
       colour?: { ok: boolean; note: string };

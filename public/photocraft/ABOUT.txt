@@ -1,0 +1,14 @@
+PhotoCraft 웹 버전 (오픈소스 포토샵 대체) — 이 폴더는 받아 온 파일 그대로입니다.
+
+  버전   : v0.8.2 (2026-10-12 배포, 2026-10-13 에 넣음)
+  출처   : https://github.com/storytold/photocraft/releases  →  photocraft-web-<버전>.zip
+  라이선스: MIT 또는 Apache-2.0 (LICENSE-MIT, LICENSE-APACHE 를 같이 둡니다)
+  쓰는 곳 : 배너 디자인 → 포토샵 방식 → 「PhotoCraft」 버튼 (src/components/PhotoCraftModal.tsx, src/lib/photocraft-bridge.ts)
+
+새 버전으로 바꾸기
+  1. 위 주소에서 photocraft-web-<버전>.zip 을 받아 풉니다.
+  2. index.html · photocraft-web-<해시>.js · photocraft-web-<해시>_bg.wasm 세 파일을 이 폴더의 것과 바꿉니다
+     (예전 .js · .wasm 은 지웁니다 — index.html 이 새 이름을 가리킵니다).
+  3. fonts/ 폴더와 이 파일은 그대로 둡니다.
+
+fonts/ 는 PhotoCraft 글자 도구에서 한글을 쓰기 위해 곁들인 Pretendard(OFL) 입니다.

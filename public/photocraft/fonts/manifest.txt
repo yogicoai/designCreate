@@ -1,0 +1,2 @@
+# family | style | file (site root 기준) | scripts | licence | licence file
+Pretendard Variable | Regular | fonts/pretendard/PretendardVariable.ttf | Latn,Hang | OFL-1.1 | fonts/pretendard/OFL.txt

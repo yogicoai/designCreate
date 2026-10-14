@@ -51,6 +51,7 @@ export async function GET() {
         src: `/api/video/${r.key ?? ''}`,
         poster: r.poster ?? '',
         createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+        fileAt: r.fileAt ? new Date(r.fileAt).toISOString() : null,
       })),
     });
   } catch (e) {
