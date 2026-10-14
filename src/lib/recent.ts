@@ -10,6 +10,12 @@ export const NEW_BADGE_MS = 24 * 60 * 60 * 1000;
  */
 export const NEW_VIDEO_BADGE_MS = 3 * NEW_BADGE_MS;
 
+/**
+ * 생성이미지 갤러리 · 드롭박스 · AI 생성 제품도 사흘 (사용자 요청 2026-10-14) — 새 자료가 들어온 날부터 사흘 동안만 N.
+ * 드롭박스와 AI 생성 제품은 "새로 생긴 메뉴" 표시로 N 을 메뉴에 박아 뒀더니 계속 붙어 있었다 — 이제 새 자료가 있을 때만 뜬다.
+ */
+export const NEW_ITEM_BADGE_MS = 3 * NEW_BADGE_MS;
+
 /** 등록 시각이 기준 시간(기본 하루) 안이면 true — 시각이 없거나 잘못됐으면 false */
 export function isRecent(
   iso: string | Date | null | undefined, now: number = Date.now(), within: number = NEW_BADGE_MS,

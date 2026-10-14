@@ -73,7 +73,7 @@ const NAV = [
       // { href: '/video', label: '영상 스토리보드', icon: '🎬' },
       // { href: '/video/proposal', label: '영상 스토리보드 제안', icon: '📄' },
       // 최종본을 어떻게 만들었고 힉스필드 크레딧을 얼마나 썼는지 — 다음 영상 계획·견적의 기준 (사용자 요청 2026-10-14)
-      { href: '/video/process', label: '영상 제작 과정', icon: '🧾', badge: 'N' },
+      { href: '/video/process', label: '영상 제작 과정', icon: '🧾' },
       /*
        * 영상 제작물 — 완성 영상이 쌓이는 곳 (예전 "영상 갤러리").
        * 2026-09-09 에 메뉴에서 숨겼다가 2026-09-15 사용자 요청으로 이름을 바꿔 다시 연다
@@ -91,11 +91,11 @@ const NAV = [
        * 레퍼런스와 같은 무리에 두되 컬렉션은 따로다(dropbox_assets) — 레퍼런스 4,600장에
        * 섞으면 기존 촬영·모델컷 작업이 묻힌다는 사용자 판단 (2026-09-21).
        */
-      { href: '/dropbox', label: '드롭박스', icon: '📦', badge: 'N' },
+      { href: '/dropbox', label: '드롭박스', icon: '📦' },
       { href: '/products', label: '제품 · 컬러', icon: '▤' },
       // 제품 하나를 여러 각도로 한 장에 뽑아 잘라둔 형태 기준 — 공식 사진끼리 모양이 안 맞는 문제의 대책
-      // badge — 새로 생긴 메뉴라는 표시 (사용자 요청 2026-09-14). 익숙해지면 이 값만 지우면 된다
-      { href: '/ai-products', label: 'AI 생성 제품', icon: '◈', badge: 'N' },
+      // N 표시는 메뉴에 박지 않는다 — 박아 두면 계속 붙는다(사용자 지적 2026-10-14). 새 자료가 들어온 뒤 사흘만 /api/nav-badges 가 붙인다
+      { href: '/ai-products', label: 'AI 생성 제품', icon: '◈' },
       { href: '/talents', label: '전속 모델', icon: '☺' },
       { href: '/poses', label: '포즈 레퍼런스', icon: '▥' },
       { href: '/model-refs', label: '모델 레퍼런스 등록', icon: '☻' },
@@ -219,8 +219,8 @@ function NavBody({
               : <div className="label px-2.5 mb-1.5">{g.group}</div>}
             {g.items.filter((it) => LOCAL_ONLY || !('localOnly' in it && it.localOnly)).map((it) => {
               const active = it.href === activeHref;
-              // 고정 배지(새 메뉴) 또는 서버가 알려준 "새 데이터" 배지
-              const badge = ('badge' in it && it.badge) || badges[it.href] || '';
+              // 서버가 알려준 "새 자료" 배지 — 새 자료가 들어왔거나 새로 생긴 메뉴일 때 며칠만 붙는다 (/api/nav-badges)
+              const badge = badges[it.href] || '';
               // 하위 항목은 펼친 메뉴에서만 — 접힌 52px 에는 글자가 들어갈 자리가 없다
               const subs = narrow ? [] : (subItems[it.href] ?? []);
               return (
@@ -304,7 +304,8 @@ export default function Sidebar() {
 
   /*
    * 새 데이터 배지 — 모델 레퍼런스가 새로 등록되면 하루 동안 N (사용자 요청 2026-09-15),
-   * 영상 제작물에 새 영상이 올라오면 사흘 동안 N (사용자 요청 2026-10-13).
+   * 영상 제작물에 새 영상이 올라오면 사흘 동안 N (사용자 요청 2026-10-13),
+   * 생성이미지 갤러리 · 드롭박스 · AI 생성 제품도 새 자료가 들어온 뒤 사흘 동안 N (사용자 요청 2026-10-14).
    * 레이아웃은 화면을 옮겨도 다시 그려지지 않아서, 주소가 바뀔 때마다 다시 묻는다
    * (방금 등록하고 다른 화면으로 가면 바로 뜨고, 하루가 지나면 사라진다).
    */
