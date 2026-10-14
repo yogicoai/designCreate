@@ -236,6 +236,9 @@ export interface CutDoc {
   origin?: string;
   /** 수정으로 만들어진 판이면 원본 배너의 id — 게시판에서 계보를 보여준다 */
   revisedFrom?: string;
+  /** 「포토샵」(이미지 편집)에서 고쳐 저장한 컷이면 불러왔던 원본 컷의 id · 주소 (provider='edit') */
+  editedFrom?: string | null;
+  editedFromUrl?: string | null;
 
   /**
    * 생성 직후 자동 검사 — 고치지 않고 기록만 한다. 갤러리가 "왜 실패했나" 를 여기서 읽는다.

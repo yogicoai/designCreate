@@ -123,9 +123,9 @@ function finish(buckets: Map<string, QcBucket>, dEs: Map<string, number[]>): QcB
 export async function getQcOverview(days = 56): Promise<QcOverview> {
   const col = await collection<Doc>(COLLECTIONS.cuts);
   const since = new Date(Date.now() - days * 86400000);
-  // 숨긴 컷도 센다 — 숨김은 곧 "실패" 라서 사유가 품질 지표다. 배너 디자인(provider=design)은 생성이 아니라 뺀다.
+  // 숨긴 컷도 센다 — 숨김은 곧 "실패" 라서 사유가 품질 지표다. 배너 디자인(provider=design)과 「포토샵」 편집본(provider=edit)은 생성이 아니라 뺀다.
   const docs = await col
-    .find({ source: 'imgcreate', provider: { $ne: 'design' }, createdAt: { $gte: since } })
+    .find({ source: 'imgcreate', provider: { $nin: ['design', 'edit'] }, createdAt: { $gte: since } })
     .project<Doc>({ prompt: 0, design: 0 })
     .sort({ createdAt: -1 })
     .toArray();

@@ -27,6 +27,8 @@ export const dynamic = 'force-dynamic';
  */
 const NEW_MENUS: Record<string, string> = {
   '/video/process': '2026-10-17T23:59:59+09:00',          // 영상 제작 과정 — 2026-10-14 에 생김
+  '/image-edit': '2026-10-17T23:59:59+09:00',             // 포토샵(이미지 편집) — 2026-10-14 에 생김
+  '/image-edit/guide': '2026-10-17T23:59:59+09:00',       // 포토샵 AI 사용설명서 — 2026-10-14 에 생김
 };
 
 export async function GET() {

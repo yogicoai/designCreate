@@ -11,6 +11,10 @@
  *
  * 2026-10-13 v0.8.2 로 확인: 끌어다 놓기로 그림이 열리고, Ctrl+S 는 PSD(image/vnd.adobe.photoshop)를 내놓는다.
  * PSD 는 안에 들어 있는 "합쳐진 그림"만 읽어 돌려받는다(psdComposite).
+ * 2026-10-14 확인: 캔버스에 합성 키 이벤트(Ctrl+S)를 보내도 저장이 일어난다 — 바뀐 것이 없어도 매번 내놓는다(requestSave).
+ *
+ * 쓰는 곳: 「포토샵」 메뉴(src/components/ImageEditStudio.tsx). 배너 편집기에 붙어 있던 것은 2026-10-14 사용자 요청으로
+ * 떼어 냈다("저기선 기존과 동일하게 간단 편집 기능으로 하고 이건 정말 포토샵 기능 사용하게").
  */
 
 /** PhotoCraft 정적 사이트의 주소 (public/photocraft/) */
@@ -67,6 +71,60 @@ export function captureDownloads(frame: HTMLIFrameElement, onFile: (f: Captured)
     w.URL.createObjectURL = origCreate;
     w.URL.revokeObjectURL = origRevoke;
     w.HTMLAnchorElement.prototype.click = origClick;
+  };
+}
+
+/**
+ * PhotoCraft 캔버스에 포커스를 준다. 캔버스가 포커스를 잃으면(바깥 창을 쓰는 동안) 단축키를 무시한다 —
+ * 2026-10-14 시험: AI 창을 쓴 뒤 보낸 Ctrl+S 가 그냥 사라졌고, 캔버스에 focus() 를 준 뒤에는 저장됐다.
+ */
+export function focusEditor(frame: HTMLIFrameElement) {
+  frame.contentWindow?.focus();
+  (frame.contentDocument?.getElementById('photocraft_canvas') as HTMLElement | null)?.focus();
+}
+
+/** PhotoCraft 에 저장(Ctrl+S)을 시킨다 — captureDownloads 를 걸어 두었으면 그쪽으로 PSD 가 온다 */
+export function requestSave(frame: HTMLIFrameElement): boolean {
+  const w = frame.contentWindow as (Window & typeof globalThis) | null;
+  const canvas = frame.contentDocument?.getElementById('photocraft_canvas');
+  if (!w || !canvas) return false;
+  focusEditor(frame);
+  for (const type of ['keydown', 'keyup']) {
+    canvas.dispatchEvent(new w.KeyboardEvent(type, { key: 's', code: 'KeyS', keyCode: 83, which: 83, ctrlKey: true, bubbles: true, cancelable: true }));
+  }
+  return true;
+}
+
+/**
+ * 문서 탭을 끌어 내려 "따로 떠 있는 창"으로 만드는 것을 막는다.
+ * v0.8.2 웹판은 떠 있는 창을 만들면 원래 자리에 그림이 그대로 남아 창 밖으로 삐져나와 보인다(사용자 제보 2026-10-14,
+ * 머리 없는 브라우저로 재현 — PhotoCraft 자체 문제, 최신판도 같음). 탭 줄(위에서 68~97px 띠)에서 누른 채 아래로
+ * 끌면 띠 밖으로 나간 움직임만 PhotoCraft 에 전하지 않는다 — 탭을 옆으로 옮겨 순서 바꾸기·탭 고르기는 그대로 된다.
+ * 띠 위치는 기본 작업 공간(Essentials) 기준이다. 돌려주는 함수를 부르면 원래대로.
+ */
+export function guardTabFloat(frame: HTMLIFrameElement, band: [number, number] = [68, 97]): () => void {
+  const w = frame.contentWindow;
+  if (!w) return () => {};
+  let dragging = false;
+  const down = (e: PointerEvent | MouseEvent) => { dragging = e.clientY >= band[0] && e.clientY <= band[1]; };
+  const move = (e: PointerEvent | MouseEvent) => {
+    if (dragging && (e.clientY > band[1] + 6 || e.clientY < band[0] - 6)) e.stopImmediatePropagation();
+  };
+  const up = () => { dragging = false; };
+  const opts = { capture: true } as const;
+  w.addEventListener('pointerdown', down, opts);
+  w.addEventListener('mousedown', down, opts);
+  w.addEventListener('pointermove', move, opts);
+  w.addEventListener('mousemove', move, opts);
+  w.addEventListener('pointerup', up, opts);
+  w.addEventListener('mouseup', up, opts);
+  return () => {
+    w.removeEventListener('pointerdown', down, opts);
+    w.removeEventListener('mousedown', down, opts);
+    w.removeEventListener('pointermove', move, opts);
+    w.removeEventListener('mousemove', move, opts);
+    w.removeEventListener('pointerup', up, opts);
+    w.removeEventListener('mouseup', up, opts);
   };
 }
 
@@ -177,47 +235,49 @@ export function psdComposite(buf: ArrayBuffer): Composite | null {
 }
 
 /**
- * 가로챈 파일을 우리 배너의 배경으로 쓸 JPEG 로 바꾼다.
- * PNG·JPEG·WebP 는 그대로 그리고, PSD 는 합쳐진 그림을 읽는다.
- * 비율이 배너와 같으면 배너 크기로 맞추고, PhotoCraft 에서 캔버스를 자르거나 늘려 비율이 달라졌으면
- * 찌그러뜨리지 않고 그 비율 그대로 돌려준다(긴 변 2048px 까지) — 편집기가 배경을 규격에 맞춰 채운다.
+ * 가로챈 파일(PSD · PNG · JPEG · WebP)을 캔버스 한 장으로 — PSD 는 합쳐진 그림을 읽는다.
+ * 투명한 곳은 그대로 둔다(PNG 로 내보낼 때 살아 있다). JPEG 로 만들 때 흰 바탕을 깐다(canvasToBlob).
  */
-export async function toBannerJpeg(f: Captured, want: { w: number; h: number }): Promise<Blob> {
-  let source: CanvasImageSource;
-  let sw: number;
-  let sh: number;
+export async function toCanvas(f: Captured): Promise<HTMLCanvasElement> {
+  const canvas = document.createElement('canvas');
   const isPsd = /photoshop/i.test(f.blob.type) || /\.psd$/i.test(f.name);
   if (isPsd) {
     const comp = psdComposite(await f.blob.arrayBuffer());
     if (!comp) throw new Error('이 PSD 는 읽지 못했습니다 — PhotoCraft 에서 File › Export 로 PNG 를 내보내 주세요.');
-    const tmp = document.createElement('canvas');
-    tmp.width = comp.width;
-    tmp.height = comp.height;
-    tmp.getContext('2d')!.putImageData(new ImageData(comp.data as Uint8ClampedArray<ArrayBuffer>, comp.width, comp.height), 0, 0);
-    source = tmp;
-    sw = comp.width;
-    sh = comp.height;
-  } else if (/^image\/(png|jpeg|webp)$/i.test(f.blob.type) || /\.(png|jpe?g|webp)$/i.test(f.name)) {
-    const bmp = await createImageBitmap(f.blob);
-    source = bmp;
-    sw = bmp.width;
-    sh = bmp.height;
-  } else {
-    throw new Error(`이 형식(${f.name})은 받지 못합니다 — PSD(Ctrl+S)나 PNG·JPEG 로 저장해 주세요.`);
+    canvas.width = comp.width;
+    canvas.height = comp.height;
+    canvas.getContext('2d')!.putImageData(new ImageData(comp.data as Uint8ClampedArray<ArrayBuffer>, comp.width, comp.height), 0, 0);
+    return canvas;
   }
-  const sameRatio = Math.abs(sw / sh - want.w / want.h) / (want.w / want.h) < 0.005;
-  const k = Math.min(1, 2048 / Math.max(sw, sh));
-  const ow = sameRatio ? want.w : Math.max(1, Math.round(sw * k));
-  const oh = sameRatio ? want.h : Math.max(1, Math.round(sh * k));
-  const canvas = document.createElement('canvas');
-  canvas.width = ow;
-  canvas.height = oh;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#ffffff';                           // 투명한 곳은 흰색으로 — JPEG 는 투명을 못 담는다
-  ctx.fillRect(0, 0, ow, oh);
+  if (/^image\/(png|jpeg|webp)$/i.test(f.blob.type) || /\.(png|jpe?g|webp)$/i.test(f.name)) {
+    const bmp = await createImageBitmap(f.blob);
+    canvas.width = bmp.width;
+    canvas.height = bmp.height;
+    canvas.getContext('2d')!.drawImage(bmp, 0, 0);
+    return canvas;
+  }
+  throw new Error(`이 형식(${f.name})은 받지 못합니다 — PSD(Ctrl+S)나 PNG·JPEG 로 저장해 주세요.`);
+}
+
+/**
+ * 캔버스를 파일로. maxSide 를 주면 긴 변을 그만큼으로 줄인다(서버로 보내는 그림은 2048px — /api/upload 와 같은 기준).
+ * JPEG 는 투명을 못 담아 흰 바탕을 깐다.
+ */
+export async function canvasToBlob(src: HTMLCanvasElement, type: 'image/png' | 'image/jpeg', maxSide = 0, quality = 0.95): Promise<Blob> {
+  const k = maxSide ? Math.min(1, maxSide / Math.max(src.width, src.height)) : 1;
+  const w = Math.max(1, Math.round(src.width * k));
+  const h = Math.max(1, Math.round(src.height * k));
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d')!;
+  if (type === 'image/jpeg') {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+  }
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(source, 0, 0, sw, sh, 0, 0, ow, oh);
-  const out = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', 0.95));
+  ctx.drawImage(src, 0, 0, w, h);
+  const out = await new Promise<Blob | null>((res) => c.toBlob(res, type, quality));
   if (!out) throw new Error('그림을 만들지 못했습니다.');
   return out;
 }
