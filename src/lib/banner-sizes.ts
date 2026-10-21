@@ -48,7 +48,10 @@ export const BANNER_SIZES: BannerSize[] = [
   { id: 'mo-popup',   channel: '자사몰', label: '앱·웹 팝업', w: 800, h: 1000, hidden: true },
 
   // ── 스마트스토어 — eventTemp 의 채널 규격 그대로 ──
-  { id: 'ss-pc-main',   channel: '스마트스토어', label: 'PC 메인', w: 1920, h: 400, note: '슬림 가로 배너' },
+  // 2026-10-21 PC 메인 1920×400 → 1920×860 정정 (디자인팀 지적: "스마트스토어 PC 배너 규격이 잘못돼 있다").
+  //  예전 1920×400 으로 저장한 배너를 다시 열 수 있게 옛 규격은 id 그대로 감춰 둔다.
+  { id: 'ss-pc-main-860', channel: '스마트스토어', label: 'PC 메인', w: 1920, h: 860 },
+  { id: 'ss-pc-main',   channel: '스마트스토어', label: 'PC 메인 (예전 1920×400)', w: 1920, h: 400, note: '슬림 가로 배너', hidden: true },
   { id: 'ss-mo-main',   channel: '스마트스토어', label: '모바일 메인', w: 750, h: 600 },
   { id: 'ss-pc-coupon', channel: '스마트스토어', label: 'PC 쿠폰·홍보 띠', w: 1280, h: 200, note: '아주 납작해서 문구는 한 줄' },
   { id: 'ss-mo-coupon', channel: '스마트스토어', label: '모바일 쿠폰 띠', w: 750, h: 240 },
@@ -79,7 +82,7 @@ export const BANNER_SIZES: BannerSize[] = [
  */
 export const AUTO_SET: Record<Channel, string[]> = {
   '자사몰': ['web-main', 'mo-main'],
-  '스마트스토어': ['ss-pc-main', 'ss-mo-main'],
+  '스마트스토어': ['ss-pc-main-860', 'ss-mo-main'],
   'SNS': ['ig-square', 'ig-port'],
   // 포스터는 A 계열이라 비율이 같다 — A2 로 잡으면 A1 은 같은 배치가 그대로 커진다
   'POP': ['pop-a2', 'pop-a1'],
