@@ -2377,14 +2377,23 @@ export async function writePrompt(spec: GenerationSpec, opts: WriteOptions = {})
     // 한 장도 못 받아오면 Opus 에게 텍스트만 주는 셈이라 템플릿과 다를 게 없다
     if (!imageBlocks.length && refs.length) throw new Error('참조 이미지를 한 장도 받아오지 못했습니다.');
 
-    const res = await client.messages.create({
-      model: process.env.ANTHROPIC_MODEL || 'claude-opus-5',
-      max_tokens: 4000,
-      thinking: { type: 'adaptive' },
-      output_config: { effort: 'high' },
-      system: OPUS_SYSTEM,
-      messages: [{ role: 'user', content: [...imageBlocks, { type: 'text', text: specToBrief(spec, refs) }] }],
-    });
+    /*
+     * max_tokens 는 생각(thinking)까지 합친 상한이다. 4000 이던 시절 Opus 5.5 가 생각에 대부분을 쓰고
+     * 프롬프트를 문장 중간에서 끊었는데(실측 2026-10-23 · 줄라 맥스 포즈 비교, 1,776자에서 잘림),
+     * 잘린 줄도 모르고 그대로 생성에 썼다. 넉넉히 주고 스트리밍으로 받는다(긴 요청의 타임아웃 방지),
+     * 그래도 상한에 걸리면 잘린 프롬프트를 쓰지 않고 템플릿으로 떨어진다.
+     */
+    const res = await client.messages
+      .stream({
+        model: process.env.ANTHROPIC_MODEL || 'claude-opus-5',
+        max_tokens: 16000,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' },
+        system: OPUS_SYSTEM,
+        messages: [{ role: 'user', content: [...imageBlocks, { type: 'text', text: specToBrief(spec, refs) }] }],
+      })
+      .finalMessage();
+    if (res.stop_reason === 'max_tokens') throw new Error('Opus 프롬프트가 길이 상한에서 잘렸습니다.');
 
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
