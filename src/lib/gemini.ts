@@ -44,6 +44,20 @@ export class GeminiError extends Error {
 }
 
 /**
+ * gemini-3-pro-image 공식 단가 ($/1M 토큰) — 실측 usageMetadata 와 곱해 실제 원가를 낸다.
+ * 사고(thinking) 토큰도 출력 단가로 과금된다. 이걸 빼먹어 한동안 원가를 60%% 과소 표기했다.
+ */
+const PRICE_IN_PER_TOKEN = 2.0 / 1_000_000;
+const PRICE_OUT_PER_TOKEN = 120.0 / 1_000_000;
+
+export function costFromUsage(u?: { promptTokens: number; imageTokens: number; thoughtTokens: number }): { usd: number; krw: number } | null {
+  if (!u) return null;
+  const usdToKrw = Number(process.env.USD_TO_KRW) || 1400;
+  const usd = u.promptTokens * PRICE_IN_PER_TOKEN + (u.imageTokens + u.thoughtTokens) * PRICE_OUT_PER_TOKEN;
+  return { usd: Number(usd.toFixed(5)), krw: Math.round(usd * usdToKrw) };
+}
+
+/**
  * 참조 이미지를 1024px JPEG 로 줄인다. **요청 본문 한도를 지키기 위한 필수 단계.**
  *
  * 참조는 "얼굴이 어떻게 생겼나 / 이 제품이 어떤 형태인가"를 보여주는 용도라 1024px 면 충분하다.

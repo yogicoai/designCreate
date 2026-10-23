@@ -2,6 +2,7 @@ import Link from 'next/link';
 import DashboardCut from '@/components/DashboardCut';
 import { getOverview, getCuts } from '@/lib/queries';
 import { isStudioCut } from '@/lib/cut-kind';
+import { faceFixCodes } from '@/lib/face-fix';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,6 +95,7 @@ export default async function DashboardPage() {
                     refs={(c.inputImages ?? []).map((r) => ({
                       kind: r.kind, title: r.title ?? '', url: r.url ?? '', swatchHex: r.swatchHex,
                     }))}
+                    faceCodes={faceFixCodes(c)}
                   />
                 );
               })}

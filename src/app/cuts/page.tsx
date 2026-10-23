@@ -3,7 +3,9 @@ import PageHeader from '@/components/PageHeader';
 import Zoomable from '@/components/Zoomable';
 import CutActions from '@/components/CutActions';
 import QcFlags, { qcSummary } from '@/components/QcFlags';
+import FaceFixButton from '@/components/FaceFixButton';
 import { isStudioCut } from '@/lib/cut-kind';
+import { faceFixCodes } from '@/lib/face-fix';
 import { getCuts, getProducts, getTalents } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
@@ -206,6 +208,8 @@ export default async function CutsPage({ searchParams }: PageProps<'/cuts'>) {
                       )}
                     </div>
                   )}
+                  {/* 얼굴 다시 그리기 — 전속 모델 얼굴이 보이는 생성 컷 (2026-10-21) */}
+                  {faceFixCodes(c).length > 0 && <FaceFixButton cutId={String(c.id)} codes={faceFixCodes(c)} compact />}
                   <CutActions id={c.id} source={c.source} url={c.url} title={c.title || c.spec || 'yogibo'} />
                 </div>
               ))}

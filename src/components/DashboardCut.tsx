@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import FaceFixButton, { faceFixSummary, type FaceFixResult } from './FaceFixButton';
 
 /**
  * 대시보드 '최근 생성 컷' 한 장.
@@ -12,6 +13,9 @@ import { useRouter } from 'next/navigation';
  *
  * 숨김 = 목록에서만 제외 (파일·기록 유지) / 삭제 = FTP 파일까지 제거.
  * 삭제는 이 앱이 생성한 컷만 — 이관 컷은 youtube 자산이라 숨김만 된다.
+ *
+ * 얼굴 다시 그리기(2026-10-21 사용자 요청: "이 안에 얼굴 재생성 같은 게 있어야") — 확인하다 얼굴이 달라 보이면
+ * 팝업 안에서 바로 고친다. 결과는 새 컷이고, 팝업은 새 컷을 보여 주되 원본과 번갈아 볼 수 있다.
  */
 export default function DashboardCut({
   id,
@@ -21,6 +25,7 @@ export default function DashboardCut({
   caption,
   source,
   refs = [],
+  faceCodes = [],
 }: {
   id: string;
   url: string;
@@ -30,10 +35,15 @@ export default function DashboardCut({
   source: string;
   /** 이 컷을 만들 때 들어간 참조 — 팝업에서 작게 함께 보여준다 */
   refs?: { kind: string; title: string; url: string; swatchHex?: string }[];
+  /** 얼굴 다시 그리기 대상 전속 모델 (lib/face-fix.ts) — 비어 있으면 버튼을 안 그린다 */
+  faceCodes?: string[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [fixed, setFixed] = useState<FaceFixResult | null>(null);
+  const [showFixed, setShowFixed] = useState(true);
+  const shownUrl = fixed?.url && showFixed ? fixed.url : url;
 
   useEffect(() => {
     if (!open) return;
@@ -118,10 +128,22 @@ export default function DashboardCut({
           style={{ background: 'rgba(0,0,0,.88)', cursor: 'zoom-out' }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt={label} className="max-w-[96vw] max-h-[78vh] object-contain rounded-lg" />
+          <img src={shownUrl} alt={label} className="max-w-[96vw] max-h-[78vh] object-contain rounded-lg" />
           <div className="text-[12px] text-center max-w-[70ch] whitespace-pre-line" style={{ color: '#c8ccd4' }}>
             {caption}
           </div>
+          {/* 얼굴 다시 그린 결과 — 새 컷과 원본을 번갈아 본다 */}
+          {fixed?.url && (
+            <div className="flex items-center gap-2 flex-wrap justify-center text-[11.5px]" style={{ color: '#c8ccd4' }}
+                 onClick={(e) => e.stopPropagation()}>
+              <span style={{ color: '#7ee2a8' }}>얼굴 다시 그린 새 컷으로 저장됨</span>
+              {popBtn(showFixed ? '원본 보기' : '새 컷 보기', () => setShowFixed((v) => !v), '#c8ccd4')}
+              <a href={fixed.url} target="_blank" rel="noreferrer" style={{ color: '#8fb8ff' }}>새 컷 열기</a>
+              {faceFixSummary(fixed).map((s) => (
+                <span key={s} title="자동 얼굴 대조 결과 — 참고용이고, 최종 판단은 눈으로" style={{ color: '#8b909a' }}>{s}</span>
+              ))}
+            </div>
+          )}
           {/* 무엇을 보고 만들었는지 — 결과 옆에 입력이 있어야 재현할 수 있다 */}
           {refs.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap justify-center max-w-[80vw]"
@@ -145,6 +167,14 @@ export default function DashboardCut({
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             {popBtn('숨김', () => act(false), '#c8ccd4')}
             {source === 'imgcreate' && popBtn('삭제', () => act(true), '#ff8080')}
+            {faceCodes.length > 0 && (
+              <FaceFixButton
+                cutId={id}
+                codes={faceCodes}
+                variant="dark"
+                onDone={(r) => { setFixed(r); setShowFixed(true); router.refresh(); }}
+              />
+            )}
           </div>
           <button
             onClick={(e) => { e.stopPropagation(); setOpen(false); }}

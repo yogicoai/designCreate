@@ -10,7 +10,7 @@ import {
   type ProductSpec,
   SCENE_TONE_UNMEASURED,
 } from '@/lib/prompt-writer';
-import { generateImage, loadReference, colorSwatch, GeminiError, type GenAspect, type InlineImage } from '@/lib/gemini';
+import { generateImage, loadReference, colorSwatch, costFromUsage, GeminiError, type GenAspect, type InlineImage } from '@/lib/gemini';
 import { generateImage as hfGenerate, higgsfieldConfigured, HiggsfieldError } from '@/lib/higgsfield';
 import { generateImageGpt, openaiConfigured, OpenAIImageError } from '@/lib/openai-image';
 import { uploadBuffer, dailySubpath, ftpConfigured } from '@/lib/ftp';
@@ -42,19 +42,8 @@ export const maxDuration = 300;
 
 const USAGE_KEY = 'gemini-image';
 
-/**
- * gemini-3-pro-image 공식 단가 ($/1M 토큰) — 실측 usageMetadata 와 곱해 실제 원가를 낸다.
- * 사고(thinking) 토큰도 출력 단가로 과금된다. 이걸 빼먹어 한동안 원가를 60%% 과소 표기했다.
- */
-const PRICE_IN_PER_TOKEN = 2.0 / 1_000_000;
-const PRICE_OUT_PER_TOKEN = 120.0 / 1_000_000;
+// 이미지 원가(costFromUsage)는 lib/gemini.ts — 얼굴 다시 그리기(/api/face-fix)와 같은 단가를 쓴다
 const USD_TO_KRW = Number(process.env.USD_TO_KRW) || 1400;
-
-function costFromUsage(u?: { promptTokens: number; imageTokens: number; thoughtTokens: number }): { usd: number; krw: number } | null {
-  if (!u) return null;
-  const usd = u.promptTokens * PRICE_IN_PER_TOKEN + (u.imageTokens + u.thoughtTokens) * PRICE_OUT_PER_TOKEN;
-  return { usd: Number(usd.toFixed(5)), krw: Math.round(usd * USD_TO_KRW) };
-}
 
 /**
  * 프롬프트 작성(Opus) 원가. 단가는 env 로 뺀다 — 여기에 숫자를 박아두면
@@ -263,7 +252,14 @@ export async function POST(req: Request) {
      * 비율은 그대로라 배치·용도는 안 바뀌고 파일만 커진다. 자유 인물(freeform)만 있으면 건드리지 않는다.
      */
     if (talentPicks.some((t) => !t.freeform)) {
-      if (!gptRequested && body.imageSize !== '4K') body.imageSize = '2K';
+      /*
+       * 2인 이상은 4K 로 그린다 (사용자 결정 2026-10-21). 10/13~10/20 전속 모델 컷 109장에서 얼굴 변형·애매 판정이
+       * 2인 컷 20%(4/20), 1인 컷 3%(3/99) — 한 화면에 둘이면 얼굴이 작아진다(머리 9~14%). 결과 파일은 그대로
+       * 짧은 변 2048 이고, 생성만 큰 판에서 해 얼굴을 더 많은 픽셀로 그리게 한다. 효과는 아직 검증 전.
+       */
+      const multi = talentPicks.filter((t) => !t.freeform).length >= 2;
+      if (!gptRequested && multi) body.imageSize = '4K';
+      else if (!gptRequested && body.imageSize !== '4K') body.imageSize = '2K';
       const genLong = body.imageSize === '4K' ? 4096 : 2048;
       const shortSide = Math.min(size.width, size.height);
       const longSide = Math.max(size.width, size.height);

@@ -7,6 +7,8 @@ import { shrinkForUpload, formatBytes } from '@/lib/client-image';
 import Zoomable from '@/components/Zoomable';
 import { refWarnings, type RefRead, type HygieneRole } from '@/lib/ref-hygiene';
 import { thumbUrl } from '@/lib/thumb';
+import FaceFixButton from '@/components/FaceFixButton';
+import NewTag from '@/components/NewTag';
 import { defaultPanelKey, supportPanels, livePanels, isComboSheet, comboLabelKr, lineKr, type AiProductSheet } from '@/lib/ai-products';
 
 type WithId<T> = T & { id: string };
@@ -264,6 +266,11 @@ function bestIndex(rs: GenResult[]): number {
   const min = Math.min(...ok.map((x) => x.p));
   const winners = ok.filter((x) => x.p === min);
   return winners.length === ok.length ? -1 : winners[0].i;
+}
+
+/** 얼굴 다시 그리기 대상 — 얼굴이 보이는 전속 모델(뒷모습·가린 얼굴 제외) */
+function faceCodesOf(r: GenResult): string[] {
+  return (r.qc?.face?.verdicts ?? []).filter((v) => v.verdict !== 'noFace').map((v) => v.code);
 }
 
 /** 자동 재생성 표시 — 다시 뽑은 컷과, 그 원인이 된 컷 */
@@ -2499,6 +2506,18 @@ ${hint}` : hint))}>
                 🛡 전속 모델 컷은 얼굴 보호를 위해 결과물이 자동으로 짧은 변 2048px까지 상향됩니다 (작은 규격을 골라도 서버가 올립니다).
               </div>
             )}
+            {/*
+              2인 이상 — 얼굴이 작아져 변형이 잦다 (10/13~10/20 실측: 2인 컷 20%, 1인 컷 3%). 서버가 4K 로 그리고(route.ts),
+              여기서는 구도 안내와 「얼굴 다시 그리기」 를 알린다 (사용자 결정 2026-10-21).
+            */}
+            {withPeople && picks.length >= 2 && effectiveEngine !== 'gpt' && (
+              <div className="text-[10px] px-1 mt-1 leading-relaxed" style={{ color: 'var(--warn)' }}>
+                <NewTag feature="multiFace4k" />{' '}
+                2인 이상 컷은 얼굴이 작아져 얼굴 변형이 잦습니다(실측 2인 20% · 1인 3%) — 자동으로 4K로 그립니다.
+                얼굴이 중요하면 1인 컷이나 얼굴이 크게 나오는 구도를, 2인 와이드 컷은 옆모습·뒷모습 구도를 권장합니다.
+                그래도 얼굴이 달라지면 결과의 「얼굴 다시 그리기」를 쓰세요.
+              </div>
+            )}
           </div>
 
           {/*
@@ -2595,6 +2614,7 @@ ${hint}` : hint))}>
                     <RetryChip r={r} />
                     <QcChips qc={r.qc} />
                   </div>
+                  {r.id && faceCodesOf(r).length > 0 && <FaceFixButton cutId={r.id} codes={faceCodesOf(r)} />}
                 </div>
               ) : (
                 <div key={i} className="card p-2 text-[11px]" style={{ color: 'var(--danger)' }}>
@@ -2813,6 +2833,7 @@ ${hint}` : hint))}>
                     <RetryChip r={r} />
                     <QcChips qc={r.qc} />
                   </div>
+                  {r.id && faceCodesOf(r).length > 0 && <FaceFixButton cutId={r.id} codes={faceCodesOf(r)} />}
                 </div>
               ))}
             </div>
