@@ -546,8 +546,10 @@ const memo = new Map<string, Promise<string>>();
  * 검사가 실패하면 기록하지 않고 원래 URL 로 진행한다 (다음 요청에서 다시 시도).
  * 지운 사본은 매번 새 이름으로 올린다 — 같은 이름을 HEAD 로 확인해 재사용하면 올리다 만 파일을 집을 수 있다.
  */
-export async function scrubReferenceUrl(url: string): Promise<{ url: string; cleaned: boolean }> {
-  if (!/^https?:\/\//i.test(url) || !ftpConfigured() || !process.env.GEMINI_API_KEY) return { url, cleaned: false };
+export async function scrubReferenceUrl(url: string): Promise<{ url: string; cleaned: boolean; failed?: boolean }> {
+  if (!/^https?:\/\//i.test(url)) return { url, cleaned: false };
+  // 키·FTP 가 없으면 검사 자체를 못 한다 — 태그가 그대로 생성에 들어갈 수 있으니 failed 로 알린다
+  if (!ftpConfigured() || !process.env.GEMINI_API_KEY) return { url, cleaned: false, failed: true };
   const id = `${createHash('sha1').update(url).digest('hex').slice(0, 20)}_${VERSION}`;
   if (!memo.has(id)) {
     memo.set(id, (async () => {
@@ -586,7 +588,7 @@ export async function scrubReferenceUrl(url: string): Promise<{ url: string; cle
   } catch (e) {
     memo.delete(id);
     console.warn('[logo-guard] 참조 검사 실패 — 원본을 씁니다:', url, (e as Error).message);
-    return { url, cleaned: false };
+    return { url, cleaned: false, failed: true };
   }
 }
 

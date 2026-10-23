@@ -2336,7 +2336,7 @@ export async function writePrompt(spec: GenerationSpec, opts: WriteOptions = {})
     return { prompt: parts.join('\n\n'), refs, mode: 'manual' };
   }
 
-  // 키가 있으면 기본이 Opus 다. 장당 ~₩60 은 품질 대비 감수할 값이고,
+  // 키가 있으면 기본이 Opus 다. 호출당 약 ₩250~375 (Opus 5.5 · 생각 포함, 2026-10-23 실측 — 이미지 1장 ~₩228 보다 비싸다),
   // 손으로 쓴 프롬프트 수준이 나오는 지점이 바로 여기다.
   // 로컬 개발만 .env.local 의 PROMPT_MODE=local 로 명시적으로 끈다.
   // 컷 단위 override 가 오면 그게 이긴다 (화면의 프롬프트 작성 토글).

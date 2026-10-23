@@ -49,6 +49,8 @@ export interface FaceCheck {
   usage?: VisionUsage;
   model: string;
   checked: boolean;
+  /** 검사하려 했는데 비전 호출이 실패했다 — "볼 모델이 없어서 안 함"(checked:false 만)과 구분해 화면에 알린다 */
+  failed?: boolean;
 }
 
 /*
@@ -139,7 +141,8 @@ export async function checkFaces(
   const key = process.env.GEMINI_API_KEY;
   const model = visionModel();
   const empty: FaceCheck = { verdicts: [], model, checked: false };
-  if (!key || !talents.length) return empty;
+  if (!talents.length) return empty;
+  if (!key) return { ...empty, failed: true };
 
   try {
     // 결과물은 1536 까지 남긴다 — 와이드 컷에서 얼굴이 100px 수준이라 1024 로 줄이면 판정이 무너진다
@@ -259,9 +262,9 @@ export async function checkFaces(
     }
     return { verdicts, ...(usage ? { usage } : {}), model, checked: true };
   } catch (e) {
-    // 얼굴 검사 실패로 생성물을 버리지 않는다
+    // 얼굴 검사 실패로 생성물을 버리지 않는다 — 대신 failed 로 남겨 화면이 "검사 건너뜀"을 알리게 한다
     console.warn('[face-guard] 얼굴 대조 실패 — 검사 없이 진행:', (e as Error).message);
-    return empty;
+    return { ...empty, failed: true };
   }
 }
 

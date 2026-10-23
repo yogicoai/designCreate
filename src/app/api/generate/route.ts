@@ -736,11 +736,14 @@ export async function POST(req: Request) {
     const SCRUB_KINDS = new Set<RefSlot['kind']>(['base', 'background', 'style', 'shape', 'pose', 'usage', 'product']);
     const originalOf = new Map<string, string>();
     const doScrub = !body.dryRun || !!body.handoff;
+    // 비전이 죽어 태그 검사를 못 한 참조 수 — 0 이 아니면 결과 카드에 "검사 건너뜀" 을 띄운다 (점검 2026-10-23)
+    let refsCheckFailed = 0;
     const refsToLoad: RefSlot[] = await Promise.all(written.refs.map(async (r) => {
       if (!doScrub || !r.url || r.swatchHex || !SCRUB_KINDS.has(r.kind)) return r;
       // 드롭박스 실촬영 원본의 진짜 태그는 지우지 않는다 — 다른 사진류(배경·분위기 등)는 그대로 지운다
       if (keepRealTags && r.kind === 'base') return r;
       const s = await scrubReferenceUrl(r.url);
+      if (s.failed) refsCheckFailed += 1;
       if (!s.cleaned) return r;
       originalOf.set(s.url, r.url);
       return { ...r, url: s.url };
@@ -1072,12 +1075,18 @@ export async function POST(req: Request) {
         ...(guard.erased.length ? { logoBoxes: guard.erased, rawUrl } : {}),
         topFold: guard.topFold,
         refsCleaned: originalOf.size,
+        ...(refsCheckFailed ? { refsCheckFailed } : {}),
         // 스튜디오 컷인가(그림 기준) — ΔE 숫자를 믿어도 되는 컷인지 화면이 이걸로 가른다 (cut-kind.ts)
         studio: isStudio,
         ...(colorFix ? { colorFix: { before: colorFix.before, after: colorFix.after, ...(preColorUrl ? { rawUrl: preColorUrl } : {}) } } : {}),
         scene: sceneCheck,
         ...(guard.usage ? { usage: guard.usage } : {}),
-        face: { checked: faceCheck.checked, verdicts: faceCheck.verdicts, ...(faceCheck.usage ? { usage: faceCheck.usage } : {}) },
+        face: {
+          checked: faceCheck.checked,
+          ...(faceCheck.failed ? { failed: true } : {}),
+          verdicts: faceCheck.verdicts,
+          ...(faceCheck.usage ? { usage: faceCheck.usage } : {}),
+        },
       };
 
       const doc = {
@@ -1206,9 +1215,10 @@ export async function POST(req: Request) {
         elapsedMs: gen.elapsedMs,
         qc: {
           checked: qc.checked, logoErased: qc.logoErased, topFold: qc.topFold, refsCleaned: qc.refsCleaned,
+          ...(refsCheckFailed ? { refsCheckFailed } : {}),
           studio: isStudio,
           ...(colorFix ? { colorFix: { before: colorFix.before, after: colorFix.after } } : {}),
-          face: { checked: faceCheck.checked, verdicts: faceCheck.verdicts },
+          face: { checked: faceCheck.checked, ...(faceCheck.failed ? { failed: true } : {}), verdicts: faceCheck.verdicts },
           scene: sceneCheck,
         },
       });

@@ -34,6 +34,8 @@ export interface SceneCheck {
    */
   colour?: { ok: boolean; note: string };
   usage?: VisionUsage;
+  /** 검사하려 했는데 비전 호출이 실패했다 — 화면이 "검사 건너뜀" 을 알릴 근거 */
+  failed?: boolean;
 }
 
 export interface SceneCheckInput {
@@ -211,7 +213,7 @@ const EMPTY = (model: string): SceneCheck => ({
 export async function checkScene(buf: Buffer, input: SceneCheckInput): Promise<SceneCheck> {
   const key = process.env.GEMINI_API_KEY;
   const model = visionModel();
-  if (!key) return EMPTY(model);
+  if (!key) return { ...EMPTY(model), failed: true };
   try {
     const small = await sharp(buf).rotate().resize(1024, 1024, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
     const wanted = input.products.length
@@ -289,8 +291,8 @@ export async function checkScene(buf: Buffer, input: SceneCheckInput): Promise<S
       } : {}),
     };
   } catch (e) {
-    // 검사 실패로 생성물을 버리지 않는다 — 화면에는 "검사 안 됨" 으로 나간다
+    // 검사 실패로 생성물을 버리지 않는다 — failed 로 남겨 화면이 "검사 건너뜀" 을 알린다
     console.warn('[scene-check] 결과 검사 실패:', (e as Error).message);
-    return EMPTY(model);
+    return { ...EMPTY(model), failed: true };
   }
 }

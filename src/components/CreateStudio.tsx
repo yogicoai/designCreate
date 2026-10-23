@@ -220,15 +220,18 @@ interface GenResult {
   /** 결과물 자동 검사 — 태그는 지웠고, 윗부분 말림은 표시만 (logo-guard.ts) */
   qc?: {
     checked: boolean; logoErased: number; topFold: { suspected: boolean; note: string } | null; refsCleaned: number;
+    /** 비전이 죽어 태그 검사를 못 한 참조 수 — 태그가 그대로 들어갔을 수 있다 */
+    refsCheckFailed?: number;
     /** 스튜디오 컷인가(그림 기준) — ΔE 는 이 컷에서만 보여 준다 */
     studio?: boolean;
     /** 스튜디오 제품 컷의 색을 컬러칩에 맞춰 보정했다 — 보정 전·후 ΔE */
     colorFix?: { before: number; after: number };
     /** 전속 모델 얼굴이 등록된 얼굴과 같은 사람인지 — 고치지는 않고 알리기만 한다 */
-    face?: { checked: boolean; verdicts: { code: string; score: number; verdict: string; note: string; headFrac: number }[] };
+    face?: { checked: boolean; failed?: boolean; verdicts: { code: string; score: number; verdict: string; note: string; headFrac: number }[] };
     /** 제품 일치·방 가구 대비 크기·조명 일치 (scene-check.ts) — 실패 원인을 컷에 남긴다 */
     scene?: {
       checked: boolean;
+      failed?: boolean;
       product: { ok: boolean; note: string; missing: string[] };
       scale: { ok: boolean; note: string };
       light: { score: number; note: string };
@@ -338,6 +341,24 @@ function QcChips({ qc }: { qc?: GenResult['qc'] }) {
           </span>
         ) : null
       ))}
+      {/*
+        검사 건너뜀 — 비전(제미나이)이 응답하지 않으면 로고·얼굴·장면 검사가 조용히 생략되던 문제 (점검 2026-10-23,
+        선불 402 때 실측: 컷이 검사 없이 갤러리에 들어가도 화면엔 아무 표시가 없었다). 건너뛴 검사를 알려 눈으로 보게 한다.
+      */}
+      {(() => {
+        const skipped = [
+          !qc.checked ? '결과 태그' : '',
+          qc.refsCheckFailed ? `참조 태그 ${qc.refsCheckFailed}장` : '',
+          qc.face?.failed ? '얼굴 대조' : '',
+          qc.scene?.failed ? '제품·크기·조명' : '',
+        ].filter(Boolean);
+        return skipped.length ? (
+          <span style={{ color: 'var(--warn)' }}
+                title="비전(제미나이) 호출이 실패해 이 검사들을 건너뛰었습니다. 태그나 얼굴 변형이 남아 있을 수 있으니 눈으로 확인하세요.">
+            ⚠ 검사 건너뜀 — {skipped.join(' · ')}
+          </span>
+        ) : null;
+      })()}
     </>
   );
 }
