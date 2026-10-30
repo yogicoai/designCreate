@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDb, COLLECTIONS } from '@/lib/db';
+import { NOT_IDEA } from '@/lib/idea-videos';
 
 /**
  * 영상 갤러리 — 완성 영상 목록.
@@ -35,8 +36,9 @@ function toKey(raw: string): string {
 export async function GET() {
   try {
     const db = await getDb();
+    // 영상 제작물 화면이 새로 고칠 때 쓰는 목록 — 레퍼런스 제작물(기획안 시험작)은 빼고 (loadGallery 와 같은 범위)
     const rows = await db.collection(COLLECTIONS.videos)
-      .find({ hidden: { $ne: true } }).sort({ order: 1, createdAt: -1 }).limit(200).toArray();
+      .find({ hidden: { $ne: true }, ...NOT_IDEA }).sort({ order: 1, createdAt: -1 }).limit(200).toArray();
     return NextResponse.json({
       ok: true,
       videos: rows.map((r) => ({

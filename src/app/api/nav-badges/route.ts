@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb, COLLECTIONS } from '@/lib/db';
 import { NEW_BADGE_MS, NEW_ITEM_BADGE_MS, NEW_VIDEO_BADGE_MS } from '@/lib/recent';
+import { IDEA_AREA, IDEA_FOLDERS_ID } from '@/lib/idea-videos';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,8 @@ export const dynamic = 'force-dynamic';
  *   /video/gallery — 영상이 새로 올라옴. 이것만 사흘이다 (사용자 요청 2026-10-13).
  *                    그 영상이 든 하위 폴더(/video/gallery/[주소])에도 같이 붙는다 — 폴더에 든 영상은
  *                    '전체'에 안 보여서 폴더까지 짚어 줘야 찾는다.
+ *   /ideas/works — 레퍼런스 제작물(기획안 시험작, area='ideas')에 영상이 새로 올라옴. 영상 제작물과 같은 사흘·같은 폴더 방식이고,
+ *                  영상 제작물 쪽 N 에는 섞지 않는다 (2026-10-30).
  * 아래 셋도 사흘이다 (사용자 요청 2026-10-14):
  *   /cuts        — 이 앱·대화에서 새로 만든 컷이 있음 (숨긴 것 · 이관 컷 · SNS 자동화 컷 제외 — 갤러리 화면과 같은 범위)
  *   /dropbox     — 드롭박스 사진이 새로 들어옴
@@ -43,15 +46,16 @@ export async function GET() {
     // 있는지만 보면 되니 한 건에서 멈춘다 — 컷·드롭박스는 수천 건이라 다 세지 않는다
     const any = (name: string, q: Record<string, unknown>) =>
       db.collection(name).countDocuments({ ...q, createdAt: { $gte: itemSince } }, { limit: 1 });
-    const [newModelRefs, newTalents, newVideos, folderMeta, newCuts, newDropbox, newAiProducts] = await Promise.all([
+    const settings = db.collection<{ _id: string; folders?: { name: string; slug?: string }[] }>(COLLECTIONS.settings);
+    const [newModelRefs, newTalents, newVideos, folderMeta, ideaFolderMeta, newCuts, newDropbox, newAiProducts] = await Promise.all([
       db.collection('model_refs').countDocuments({ hidden: { $ne: true }, createdAt: { $gte: since } }),
       db.collection('talents').countDocuments({ active: true, createdAt: { $gte: since } }),
-      // fileAt = 카드는 그대로 두고 영상 파일만 새 것으로 바꾼 시각
+      // fileAt = 카드는 그대로 두고 영상 파일만 새 것으로 바꾼 시각 · area 로 영상 제작물과 레퍼런스 제작물을 가른다
       db.collection(COLLECTIONS.videos)
         .find({ hidden: { $ne: true }, $or: [{ createdAt: { $gte: videoSince } }, { fileAt: { $gte: videoSince } }] })
-        .project<{ folder?: string }>({ folder: 1 }).limit(200).toArray(),
-      db.collection<{ _id: string; folders?: { name: string; slug?: string }[] }>(COLLECTIONS.settings)
-        .findOne({ _id: 'video_folders' }),
+        .project<{ folder?: string; area?: string }>({ folder: 1, area: 1 }).limit(200).toArray(),
+      settings.findOne({ _id: 'video_folders' }),
+      settings.findOne({ _id: IDEA_FOLDERS_ID }),
       any(COLLECTIONS.cuts, { hidden: { $ne: true }, source: 'imgcreate', origin: { $ne: 'sns-auto' } }),
       any('dropbox_assets', { active: { $ne: false } }),
       any(COLLECTIONS.aiProducts, { hidden: { $ne: true } }),
@@ -65,14 +69,17 @@ export async function GET() {
     for (const [href, until] of Object.entries(NEW_MENUS)) {
       if (Date.now() < new Date(until).getTime()) badges[href] = 'N';
     }
-    if (newVideos.length > 0) {
-      badges['/video/gallery'] = 'N';
-      const slugOf = new Map((folderMeta?.folders ?? []).map((f) => [f.name, f.slug]));
-      for (const v of newVideos) {
+    const markVideos = (list: { folder?: string }[], base: string, meta: typeof folderMeta) => {
+      if (list.length === 0) return;
+      badges[base] = 'N';
+      const slugOf = new Map((meta?.folders ?? []).map((f) => [f.name, f.slug]));
+      for (const v of list) {
         const slug = v.folder ? slugOf.get(v.folder) : '';
-        if (slug) badges[`/video/gallery/${slug}`] = 'N';
+        if (slug) badges[`${base}/${slug}`] = 'N';
       }
-    }
+    };
+    markVideos(newVideos.filter((v) => v.area !== IDEA_AREA), '/video/gallery', folderMeta);
+    markVideos(newVideos.filter((v) => v.area === IDEA_AREA), '/ideas/works', ideaFolderMeta);
     return NextResponse.json({ ok: true, badges }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) {
     // 배지는 부가 정보다 — 실패해도 메뉴는 그대로 보이게 빈 값으로

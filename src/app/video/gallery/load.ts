@@ -1,14 +1,16 @@
 import { getDb, COLLECTIONS } from '@/lib/db';
+import { NOT_IDEA } from '@/lib/idea-videos';
 import type { VideoFolder, VideoRow } from '@/components/VideoGallery';
 
 /**
  * 영상 제작물 화면 공통 — 숨기지 않은 영상 전부와 폴더 설정(이름·주소·소개·묶음 순서).
  * /video/gallery(전체)와 /video/gallery/[폴더 주소](폴더 하나)가 같이 쓴다.
+ * 기획안 시험작(레퍼런스 제작물, /ideas/works)은 같은 컬렉션에 있지만 여기서는 뺀다.
  */
 export async function loadGallery(): Promise<{ videos: VideoRow[]; folders: VideoFolder[] }> {
   const db = await getDb();
   const rows = await db.collection(COLLECTIONS.videos)
-    .find({ hidden: { $ne: true } }).sort({ order: 1, createdAt: -1 }).limit(200).toArray();
+    .find({ hidden: { $ne: true }, ...NOT_IDEA }).sort({ order: 1, createdAt: -1 }).limit(200).toArray();
 
   const videos = rows.map((r) => ({
     id: String(r._id),

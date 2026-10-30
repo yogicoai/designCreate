@@ -131,6 +131,11 @@ const NAV = [
     group: '기획',
     items: [
       { href: '/ideas', label: '아이디어 · 레퍼런스', icon: '💡' },
+      /*
+       * 레퍼런스 제작물 — 기획안을 영상으로 먼저 만들어 본 것 (사용자 요청 2026-10-30: "아이디어 레퍼런스 아래다가 · 레퍼런스 제작물로 해서").
+       * 기획안 한 편이 폴더 하나 — 하위 폴더는 영상 제작물처럼 /api/video-folders 가 알려 준다.
+       */
+      { href: '/ideas/works', label: '레퍼런스 제작물', icon: '▶' },
     ],
   },
   /*
@@ -342,11 +347,13 @@ export default function Sidebar() {
       .then((r) => r.json())
       .then((j) => {
         if (!alive || !Array.isArray(j?.folders)) return;
+        type F = { name: string; slug: string; count: number };
+        const under = (base: string, list: F[] = []) => list.map((f) => ({ href: `${base}/${f.slug}`, label: f.name, count: f.count }));
         setSubItems((s) => ({
           ...s,
-          '/video/gallery': j.folders.map((f: { name: string; slug: string; count: number }) => ({
-            href: `/video/gallery/${f.slug}`, label: f.name, count: f.count,
-          })),
+          '/video/gallery': under('/video/gallery', j.folders),
+          // 레퍼런스 제작물 아래 기획안 폴더 (2026-10-30)
+          '/ideas/works': under('/ideas/works', j.ideaFolders),
         }));
       })
       .catch(() => { /* 하위 폴더도 부가 정보 — 실패하면 '영상 제작물'만 보인다 */ });
