@@ -117,10 +117,20 @@ const NAV = [
       { href: '/automation/sns-product', label: 'SNS 제품 자동화', icon: '📦' },
       { href: '/automation/gallery', label: '자동화 생성이미지', icon: '▦' },
       /*
-       * 포켓몬 — 사용자와 Claude 둘만 쓰는 작업 폴더(사용자 요청 2026-10-02).
-       * localOnly: 이 PC 의 개발 서버에서만 보이고 배포(서버)에서는 메뉴에서 빠진다 — src/lib/local-only.ts
+       * 포켓몬 — 메뉴에서 뺌 (사용자 요청 2026-10-29: "포켓몬은 삭제해도 될 듯 이제").
+       * 화면(/automation/pokemon)과 데이터는 남아 있어 주소로는 들어가진다. 다시 보이려면 아래 줄과 하위 카테고리 fetch 를 되살린다.
        */
-      { href: '/automation/pokemon', label: '포켓몬', icon: '◓', localOnly: true },
+      // { href: '/automation/pokemon', label: '포켓몬', icon: '◓', localOnly: true },
+    ],
+  },
+  {
+    /*
+     * 기획 — 숏츠 기획안·시안 이미지·월 3,000 크레딧 운영 방향 (사용자 요청 2026-10-29: "하단에 아이디어 등 레퍼런스라고 해서
+     * 하나 제일 하단에 생성"). 회사에 기획자가 없어 기획을 Claude 가 맡고, 시안을 팀이 검토한 뒤 영상으로 만든다.
+     */
+    group: '기획',
+    items: [
+      { href: '/ideas', label: '아이디어 · 레퍼런스', icon: '💡' },
     ],
   },
   /*
@@ -340,21 +350,7 @@ export default function Sidebar() {
         }));
       })
       .catch(() => { /* 하위 폴더도 부가 정보 — 실패하면 '영상 제작물'만 보인다 */ });
-    // '포켓몬' 아래 카테고리 (사용자 요청 2026-10-02) — 로컬 전용이라 배포에서는 묻지도 않는다
-    if (LOCAL_ONLY) {
-      fetch('/api/pokemon/categories', { cache: 'no-store' })
-        .then((r) => r.json())
-        .then((j) => {
-          if (!alive || !Array.isArray(j?.categories)) return;
-          setSubItems((s) => ({
-            ...s,
-            '/automation/pokemon': j.categories.map((c: { slug: string; name: string; references: number; results: number }) => ({
-              href: `/automation/pokemon/${c.slug}`, label: c.name, count: c.references + c.results,
-            })),
-          }));
-        })
-        .catch(() => { /* 실패하면 '포켓몬'만 보인다 */ });
-    }
+    // '포켓몬' 하위 카테고리는 메뉴에서 뺐다 (2026-10-29) — 되살리려면 git 기록의 /api/pokemon/categories fetch 를 복구
     return () => { alive = false; };
   }, [path]);
 
